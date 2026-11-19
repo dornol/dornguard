@@ -8,6 +8,20 @@
     "version": { "const": 1 },
     "profiles": { "$ref": "#/$defs/profiles" },
     "rules": { "$ref": "#/$defs/rules" },
+    "ignore": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "rule", "fingerprint", "reason"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "rule": { "type": "string", "minLength": 1 },
+          "fingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "reason": { "type": "string", "pattern": "\\S" }
+        }
+      }
+    },
     "ruleset": {
       "oneOf": [
         {
@@ -15,7 +29,7 @@
           "additionalProperties": false,
           "properties": {
             "source": { "const": "builtin" },
-            "version": { "const": "1.0.0" }
+            "version": { "const": "1.1.0" }
           }
         },
         {

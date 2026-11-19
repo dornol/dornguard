@@ -29,14 +29,24 @@ pub enum SourceLanguage {
     Java,
     Kotlin,
     Html,
+    Template,
+    Javascript,
+    Jsp,
 }
+
+pub const TEMPLATE_DIR: &str = "src/main/resources/templates";
 
 impl SourceLanguage {
     pub fn of(path: &Path) -> Option<Self> {
         match path.extension()?.to_str()? {
             "java" => Some(Self::Java),
             "kt" => Some(Self::Kotlin),
+            "html" | "htm" if path.ancestors().any(|p| p.ends_with(TEMPLATE_DIR)) => {
+                Some(Self::Template)
+            }
             "html" | "htm" => Some(Self::Html),
+            "js" | "mjs" | "cjs" => Some(Self::Javascript),
+            "jsp" | "jspx" | "jspf" | "tag" | "tagx" => Some(Self::Jsp),
             _ => None,
         }
     }
@@ -45,7 +55,9 @@ impl SourceLanguage {
         match self {
             Self::Java => "java",
             Self::Kotlin => "kotlin",
-            Self::Html => "html",
+            Self::Html | Self::Template => "html",
+            Self::Javascript => "javascript",
+            Self::Jsp => "regex",
         }
     }
 }
@@ -55,6 +67,8 @@ impl SourceLanguage {
 pub enum EngineName {
     Semgrep,
     Pmd,
+    Eslint,
+    Builtin,
     Archunit,
     Gradle,
 }
@@ -64,6 +78,8 @@ impl EngineName {
         match self {
             Self::Semgrep => "semgrep",
             Self::Pmd => "pmd",
+            Self::Eslint => "eslint",
+            Self::Builtin => "builtin",
             Self::Archunit => "java",
             Self::Gradle => "gradlew",
         }
@@ -96,6 +112,13 @@ pub struct Diagnostic {
 
 pub fn fingerprint(identity: &str) -> String {
     format!("{:x}", Sha256::digest(identity.as_bytes()))
+}
+
+pub fn valid_fingerprint(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]

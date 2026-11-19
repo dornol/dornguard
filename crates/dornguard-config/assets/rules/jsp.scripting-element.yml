@@ -1,0 +1,9 @@
+id: jsp.scripting-element
+engine: semgrep
+severity: warning
+description: This JSP contains embedded scripting code.
+fix: Move logic to Java code and use JSP EL or tag libraries for rendering.
+jsp_only: true
+implementation:
+  config: rules/semgrep/jsp/scripting-element.yml
+  rule_id: jsp-scripting-element

@@ -1,0 +1,8 @@
+id: java.fully-qualified-type
+engine: semgrep
+severity: warning
+description: This reference looks like a fully qualified type name.
+fix: Use an import and the simple type name where it is unambiguous.
+implementation:
+  config: rules/semgrep/java/fully-qualified-type.yml
+  rule_id: java-fully-qualified-type

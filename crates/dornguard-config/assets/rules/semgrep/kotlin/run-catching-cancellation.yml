@@ -1,0 +1,33 @@
+rules:
+  - id: kotlin-run-catching-cancellation
+    languages: [kotlin]
+    severity: WARNING
+    message: Let cancellation propagate from suspending calls.
+    patterns:
+      - pattern-either:
+          - pattern-inside: kotlin.runCatching { ... }
+          - pattern-inside: runCatching { ... }
+      - pattern-not-inside: kotlin.runCatching { ... }.getOrThrow()
+      - pattern-not-inside: runCatching { ... }.getOrThrow()
+      - pattern-either:
+          - pattern: kotlinx.coroutines.delay(...)
+          - pattern: kotlinx.coroutines.yield()
+          - pattern: kotlinx.coroutines.awaitCancellation()
+          - pattern: kotlinx.coroutines.awaitAll(...)
+          - pattern: kotlinx.coroutines.joinAll(...)
+          - pattern: kotlinx.coroutines.withContext(...) { ... }
+          - pattern: kotlinx.coroutines.coroutineScope { ... }
+          - pattern: kotlinx.coroutines.supervisorScope { ... }
+          - pattern: kotlinx.coroutines.withTimeout(...) { ... }
+          - patterns:
+              - pattern-either:
+                  - pattern-inside: |
+                      suspend fun $TARGET() { ... }
+                      ...
+                      suspend fun $CALLER(...) { $...BODY }
+                  - pattern-inside: |
+                      suspend fun $CALLER(...) { $...BODY }
+                      ...
+                      suspend fun $TARGET() { ... }
+              - focus-metavariable: $...BODY
+              - pattern: $TARGET()

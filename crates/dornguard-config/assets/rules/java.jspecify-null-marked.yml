@@ -1,0 +1,5 @@
+id: java.jspecify-null-marked
+engine: builtin
+severity: error
+description: Java types must be in an org.jspecify.annotations.NullMarked scope.
+fix: Apply JSpecify @NullMarked to the type or its package and remove any @NullUnmarked that overrides it.

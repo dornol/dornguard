@@ -1,0 +1,17 @@
+rules:
+  - id: kotlin-thread-sleep-in-suspend
+    languages: [kotlin]
+    severity: WARNING
+    message: Use delay for a suspending wait.
+    patterns:
+      - pattern-either:
+          - pattern-inside: |
+              suspend fun $FUNCTION(...) { ... }
+          - pattern-inside: |
+              suspend fun $FUNCTION(...) = $BODY
+      - pattern-either:
+          - pattern: java.lang.Thread.sleep(...)
+          - patterns:
+              - pattern: Thread.sleep(...)
+              # Kotlin implicitly imports java.lang.Thread. An explicit import can shadow it.
+              - pattern-not-regex: '(?ms)^[ \t]*import[ \t]+(?:(?!java\.lang\.Thread\b)[\w.]+\.Thread[ \t\r]*(?=;|//|$)|[\w.]+[ \t]+as[ \t]+Thread\b).*'

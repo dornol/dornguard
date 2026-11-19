@@ -1,0 +1,28 @@
+rules:
+  - id: kotlin-fully-qualified-type
+    languages: [kotlin]
+    severity: WARNING
+    message: Consider importing this type and using its simple name or an import alias.
+    pattern-regex: |-
+      (?mx)
+      (?(DEFINE)
+        (?<BLOCK> /\* (?: [^*/]++ | / (?!\*) | \* (?!/) | (?&BLOCK) )* \*/ )
+      )
+      (?:
+          (?: ^ | (?<=;) ) \h* (?:package|import) \h+ [^;\r\n]* ;?
+        | // [^\r\n]*
+        | (?&BLOCK)
+        | """ [\s\S]*? """
+        | " (?: \\[^\r\n] | [^"\\\r\n] )* "
+        | ' (?: \\[^\r\n] | [^'\\\r\n] )* '
+        | ` [^`\r\n]* `
+      ) (*SKIP)(*F)
+      |
+      (?<![\w$.`])
+      (?! (?:this|super) \s* \. )
+      (?:
+          (?: [a-z_][a-z0-9_]* \s* \. \s* ){2,} [A-Z][\w$]*
+        | [a-z_][a-z0-9_]* \s* \. \s* [A-Z][\w$]*[a-z][\w$]*
+      )
+      (?: \s* \. \s* [A-Z][\w$]*[a-z][\w$]* )*
+      (?![\w$])

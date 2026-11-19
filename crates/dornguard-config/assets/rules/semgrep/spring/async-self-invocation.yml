@@ -1,0 +1,33 @@
+rules:
+  - id: spring-async-self-invocation
+    languages: [java]
+    severity: WARNING
+    message: A direct call to this method bypasses Spring asynchronous advice in proxy mode.
+    patterns:
+      - pattern-either:
+          - patterns:
+              - pattern-inside: |
+                  class $OWNER {
+                    ...
+                    @org.springframework.scheduling.annotation.Async(...)
+                    $RETURN $TARGET() { ... }
+                    ...
+                    $CALLER_RETURN $CALLER(...) { $...BODY }
+                    ...
+                  }
+              - focus-metavariable: $...BODY
+          - patterns:
+              - pattern-inside: |
+                  class $OWNER {
+                    ...
+                    $CALLER_RETURN $CALLER(...) { $...BODY }
+                    ...
+                    @org.springframework.scheduling.annotation.Async(...)
+                    $RETURN $TARGET() { ... }
+                    ...
+                  }
+              - focus-metavariable: $...BODY
+      - pattern-either:
+          - pattern: this.$TARGET()
+          - pattern: $TARGET()
+      - pattern-not-inside: new $TYPE(...) { ... }

@@ -1,0 +1,7 @@
+id: javascript.no-implied-eval
+engine: eslint
+severity: warning
+description: Avoid sending JavaScript strings to APIs that evaluate them.
+fix: Pass a callback function instead of a string.
+implementation:
+  rule_id: no-implied-eval

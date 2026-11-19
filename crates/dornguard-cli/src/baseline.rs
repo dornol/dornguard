@@ -3,7 +3,8 @@ use std::fs::File;
 use std::io::{BufReader, Write};
 use std::path::Path;
 
-use dornguard_core::{Diagnostic, Outcome};
+use dornguard_config::Ignore;
+use dornguard_core::{Diagnostic, Outcome, valid_fingerprint};
 use miette::{IntoDiagnostic, Result, WrapErr, bail, miette};
 use serde::{Deserialize, Serialize};
 
@@ -71,13 +72,7 @@ impl Baseline {
                 }
                 _ => false,
             };
-            if entry.rule_id.is_empty()
-                || !valid_location
-                || entry.fingerprint.len() != 64
-                || !entry
-                    .fingerprint
-                    .bytes()
-                    .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+            if entry.rule_id.is_empty() || !valid_location || !valid_fingerprint(&entry.fingerprint)
             {
                 bail!("Baseline contains an invalid violation identity");
             }
@@ -86,7 +81,25 @@ impl Baseline {
         Ok(Self(entries))
     }
 
+    pub fn from_config(entries: &[Ignore]) -> Self {
+        let mut counts = BTreeMap::new();
+        for entry in entries {
+            let identity = Entry {
+                rule_id: entry.rule.clone(),
+                path: Some(entry.path.clone()),
+                module: None,
+                class_name: None,
+                fingerprint: entry.fingerprint.clone(),
+            };
+            *counts.entry(identity).or_insert(0) += 1;
+        }
+        Self(counts)
+    }
+
     pub fn apply(mut self, outcome: &mut Outcome) {
+        if self.0.is_empty() {
+            return;
+        }
         outcome.diagnostics.sort();
         outcome.diagnostics.dedup();
         outcome.diagnostics.retain(|diagnostic| {

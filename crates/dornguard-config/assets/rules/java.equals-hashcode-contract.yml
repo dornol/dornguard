@@ -1,0 +1,8 @@
+id: java.equals-hashcode-contract
+engine: pmd
+severity: warning
+description: Overriding equals or hashCode alone can break hash-based collections.
+fix: Implement equals and hashCode together so equal objects have the same hash code.
+implementation:
+  config: rules/pmd/java/equals-hashcode-contract.xml
+  rule_id: OverrideBothEqualsAndHashcode

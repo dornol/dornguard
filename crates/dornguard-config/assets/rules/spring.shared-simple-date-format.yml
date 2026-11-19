@@ -1,0 +1,8 @@
+id: spring.shared-simple-date-format
+engine: semgrep
+severity: warning
+description: A Spring singleton holds a non-thread-safe SimpleDateFormat.
+fix: Use an immutable DateTimeFormatter or create the formatter for each operation.
+implementation:
+  config: rules/semgrep/spring/shared-simple-date-format.yml
+  rule_id: spring-shared-simple-date-format

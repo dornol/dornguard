@@ -1,0 +1,12 @@
+rules:
+  - id: kotlin-run-blocking-in-suspend
+    languages: [kotlin]
+    severity: WARNING
+    message: Call suspending code directly inside a suspend function.
+    patterns:
+      - pattern-either:
+          - pattern-inside: |
+              suspend fun $FUNCTION(...) { ... }
+          - pattern-inside: |
+              suspend fun $FUNCTION(...) = $BODY
+      - pattern: kotlinx.coroutines.runBlocking(...)

@@ -1,0 +1,9 @@
+id: html.inline-event-handler
+engine: semgrep
+severity: warning
+description: This HTML or Thymeleaf attribute contains an inline event handler.
+fix: Register the event handler from a JavaScript file with addEventListener.
+all_html: true
+implementation:
+  config: rules/semgrep/html/inline-event-handler.yml
+  rule_id: html-inline-event-handler

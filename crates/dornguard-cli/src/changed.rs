@@ -26,6 +26,15 @@ impl Changes {
     pub fn paths(&self) -> impl Iterator<Item = &Path> {
         self.source_paths.iter().map(PathBuf::as_path)
     }
+
+    pub fn java_scope_changed(&self) -> bool {
+        self.paths().any(|path| {
+            matches!(
+                path.file_name().and_then(|name| name.to_str()),
+                Some("package-info.java" | "module-info.java")
+            )
+        })
+    }
 }
 
 pub async fn discover(

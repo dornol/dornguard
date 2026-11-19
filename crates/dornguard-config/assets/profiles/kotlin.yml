@@ -2,3 +2,9 @@ name: kotlin
 description: Kotlin/JVM source checks
 rules:
   - kotlin.stdout-usage
+  - kotlin.run-blocking-in-suspend
+  - kotlin.global-scope
+  - kotlin.swallowed-cancellation
+  - kotlin.fully-qualified-type
+  - kotlin.thread-sleep-in-suspend
+  - kotlin.run-catching-cancellation

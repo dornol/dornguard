@@ -1,0 +1,25 @@
+rules:
+  - id: thymeleaf-unescaped-output
+    languages: [html]
+    severity: WARNING
+    message: Review this expression rendered without HTML escaping.
+    pattern-either:
+      - patterns:
+          - pattern: <$TAG $ATTRIBUTE="$VALUE" ...>...</$TAG>
+          - metavariable-regex:
+              metavariable: $ATTRIBUTE
+              regex: '^(?:th:|data-th-)utext$'
+          - metavariable-regex:
+              metavariable: $VALUE
+              regex: >-
+                (?xs) ^ (?: [^'"] | '(?:[^']|'')*' | "(?:[^"]|"")*" )*? [$*#@~]\{
+          - focus-metavariable: $VALUE
+      - patterns:
+          - pattern-regex: >-
+              (?isx)
+              (?: <!-- .*? --> | <(script|style)(?=[\s/>]) [^>]*> .*? </\1\s*>
+                  | </?[a-z](?: "[^"]*" | '[^']*' | [^"'<>] )* > ) (*SKIP)(*F)
+              | \[\( (?: (?!\)\])[^'"<] | '(?:[^']|'')*' | "(?:[^"]|"")*" )*?
+                [$*#@~]\{ .*? \)\]
+          - pattern-not-inside: <$TAG th:inline="none" ...>...</$TAG>
+          - pattern-not-inside: <$TAG data-th-inline="none" ...>...</$TAG>

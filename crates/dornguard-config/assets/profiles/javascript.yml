@@ -1,0 +1,7 @@
+name: javascript
+description: JavaScript checks using ESLint
+rules:
+  - javascript.no-eval
+  - javascript.no-implied-eval
+  - javascript.no-new-func
+  - javascript.no-async-promise-executor

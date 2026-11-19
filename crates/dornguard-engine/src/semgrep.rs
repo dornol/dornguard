@@ -81,7 +81,7 @@ impl Engine for Semgrep {
 }
 
 // Keep batches below Windows' command-line limit, including quoting and flags.
-fn budgeted_batch() -> impl FnMut(&PathBuf, &PathBuf) -> bool {
+pub(super) fn budgeted_batch() -> impl FnMut(&PathBuf, &PathBuf) -> bool {
     fn cost(path: &OsStr) -> usize {
         path.len() * 2 + 4
     }
@@ -216,6 +216,9 @@ fn normalize(
                 EngineName::Semgrep,
                 "Semgrep returned an invalid diagnostic position",
             );
+            continue;
+        }
+        if rule.excludes_path(&path) {
             continue;
         }
         outcome.diagnostics.push(Diagnostic {

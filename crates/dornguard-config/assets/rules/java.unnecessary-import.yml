@@ -1,0 +1,8 @@
+id: java.unnecessary-import
+engine: pmd
+severity: warning
+description: This Java import is unnecessary.
+fix: Remove the unused, duplicated, or implicit import.
+implementation:
+  config: rules/pmd/java/unnecessary-import.xml
+  rule_id: UnnecessaryImport

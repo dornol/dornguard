@@ -15,6 +15,13 @@ command. Semgrep requires Python 3.10 through 3.14. Set `DORNGUARD_PYTHON`
 to select an executable. PMD requires JDK 21 and uses curl and unzip
 (`tar.exe` on Windows) for managed installation.
 
+For the optional `javascript` profile, install ESLint 9 or 10 in the
+project or make it available on PATH. See [web checks](web-checks.md) for
+the ESLint rules and the independent CSP command.
+
+The `jspecify` profile uses a Java parser bundled with DornGuard and runs
+without a separate engine installation.
+
 Managed installations use `DORNGUARD_ENGINE_DIR` when set and otherwise
 use the operating system's local application data directory. The CLI looks
 there first and then on PATH for the supported version.

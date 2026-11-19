@@ -1,0 +1,8 @@
+id: spring.singleton-request-state
+engine: semgrep
+severity: warning
+description: This singleton controller stores a request-handler parameter in an instance field.
+fix: Keep request data in local variables or a request-scoped object.
+implementation:
+  config: rules/semgrep/spring/singleton-request-state.yml
+  rule_id: spring-singleton-request-state

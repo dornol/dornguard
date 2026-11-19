@@ -1,0 +1,44 @@
+rules:
+  - id: spring-singleton-request-state
+    languages: [java]
+    severity: WARNING
+    message: Keep request data local to the handler in a singleton controller.
+    patterns:
+      - pattern-either:
+          - pattern-inside: '@org.springframework.stereotype.Controller(...) class $CONTROLLER { ... }'
+          - pattern-inside: '@org.springframework.web.bind.annotation.RestController(...) class $CONTROLLER { ... }'
+      - pattern-not-inside: '@org.springframework.web.context.annotation.RequestScope(...) class $CONTROLLER { ... }'
+      - pattern-not-inside: '@org.springframework.web.context.annotation.SessionScope(...) class $CONTROLLER { ... }'
+      - pattern-not-inside: '@org.springframework.web.context.annotation.ApplicationScope(...) class $CONTROLLER { ... }'
+      - pattern-either:
+          - patterns:
+              - pattern-inside: 'class $CONTROLLER { ... }'
+              - pattern-not-inside: '@org.springframework.context.annotation.Scope(...) class $CONTROLLER { ... }'
+          - patterns:
+              - pattern-either:
+                  - pattern-inside: '@org.springframework.context.annotation.Scope($SCOPE) class $CONTROLLER { ... }'
+                  - pattern-inside: '@org.springframework.context.annotation.Scope(value = $SCOPE) class $CONTROLLER { ... }'
+                  - pattern-inside: '@org.springframework.context.annotation.Scope(scopeName = $SCOPE) class $CONTROLLER { ... }'
+              - metavariable-regex:
+                  metavariable: $SCOPE
+                  regex: '^(?:"singleton"|(?:(?:org\.springframework\.beans\.factory\.config\.)?ConfigurableBeanFactory\.)?SCOPE_SINGLETON)$'
+      - patterns:
+          - pattern-inside: |
+              class $CONTROLLER {
+                ...
+                @$MAPPING(...)
+                $RETURN $HANDLER(..., $TYPE $INPUT, ...) { $...BODY }
+                ...
+              }
+          - focus-metavariable: $...BODY
+      - metavariable-pattern:
+          metavariable: $MAPPING
+          pattern-either:
+            - pattern: org.springframework.web.bind.annotation.RequestMapping
+            - pattern: org.springframework.web.bind.annotation.GetMapping
+            - pattern: org.springframework.web.bind.annotation.PostMapping
+            - pattern: org.springframework.web.bind.annotation.PutMapping
+            - pattern: org.springframework.web.bind.annotation.PatchMapping
+            - pattern: org.springframework.web.bind.annotation.DeleteMapping
+      - pattern: this.$FIELD = $INPUT
+      - pattern-not-inside: new $ANONYMOUS(...) { ... }

@@ -1,0 +1,11 @@
+rules:
+  - id: jsp-scripting-element
+    languages: [regex]
+    severity: WARNING
+    message: Move scripting code out of the JSP.
+    pattern-either:
+      - pattern-regex: '(?s)<%--.*?--%>(*SKIP)(*F)|<%(?!@|--).*?%>'
+      - pattern-regex: >-
+          (?xs)
+          (?: <%-- .*? --%> | <!-- .*? --> ) (*SKIP)(*F)
+          | <jsp:(?:scriptlet|expression|declaration) (?=[\s>]) [^>]* >

@@ -1,0 +1,8 @@
+id: spring.private-transactional
+engine: semgrep
+severity: warning
+description: Spring proxy mode cannot apply transaction advice to a private method.
+fix: Place the transaction boundary on a method invoked through a Spring proxy.
+implementation:
+  config: rules/semgrep/spring/private-transactional.yml
+  rule_id: spring-private-transactional

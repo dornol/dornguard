@@ -1,0 +1,4 @@
+name: spring-rollback
+description: Checked exception rollback review for Spring projects using the default rollback policy
+rules:
+  - spring.checked-exception-rollback

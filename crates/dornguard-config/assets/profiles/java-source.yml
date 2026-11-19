@@ -2,3 +2,5 @@ name: java-source
 description: Java source checks using Semgrep
 rules:
   - java.stdout-usage
+  - java.ignored-interrupt
+  - java.fully-qualified-type

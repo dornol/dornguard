@@ -1,0 +1,8 @@
+id: java.resource-not-closed
+engine: pmd
+severity: warning
+description: The code may leave a Java resource open.
+fix: Use try-with-resources or close the resource according to its ownership.
+implementation:
+  config: rules/pmd/java/resource-not-closed.xml
+  rule_id: CloseResource

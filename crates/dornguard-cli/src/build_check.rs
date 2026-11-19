@@ -4,15 +4,14 @@ use std::path::{Path, PathBuf};
 
 use dornguard_config::{ProjectConfig, Registry, Rule};
 use dornguard_core::{
-    Diagnostic, EngineName, FailureKind, Module, Outcome, ProjectModel, SourceLanguage, fingerprint,
+    Diagnostic, EngineName, FailureKind, Module, Outcome, ProjectModel, SourceLanguage,
+    TEMPLATE_DIR, fingerprint,
 };
 use dornguard_engine::{ArchModule, check_architecture};
 use dornguard_gradle::CompileModules;
 use miette::{Result, bail, miette};
 
-use crate::{
-    TEMPLATE_DIR, changed::Changes, failure, is_template, run_source_engines, source_files,
-};
+use crate::{changed::Changes, failure, run_source_engines, source_files};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum BuildSystem {
@@ -125,10 +124,8 @@ pub async fn check(check: Check<'_>) -> Outcome {
         .collect::<BTreeMap<_, _>>();
     let rules_for = |name: &str| overrides.get(name).map_or(global, Vec::as_slice);
     let kotlin_for = |name: &str| global_kotlin || kotlin_modules.contains(name);
-    let html_for = |name: &str| {
-        rules_for(name)
-            .iter()
-            .any(|rule| rule.applies_to(SourceLanguage::Html))
+    let web_for = |name: &str, language: SourceLanguage| {
+        rules_for(name).iter().any(|rule| rule.applies_to(language))
     };
     let has_arch = |rules: &[&Rule]| rules.iter().any(|rule| rule.engine == EngineName::Archunit);
     let (discovery, affected, fallback_reason) = if let Some(changes_found) = changes {
@@ -142,7 +139,7 @@ pub async fn check(check: Check<'_>) -> Outcome {
             changes_found,
             kotlin_for,
             global_kotlin || !kotlin_modules.is_empty(),
-            html_for,
+            web_for,
         ) {
             Ok(affected) => (Some(model), Some(affected), None),
             Err(error) => {
@@ -270,13 +267,12 @@ pub async fn check(check: Check<'_>) -> Outcome {
                 });
             }
         }
-        if html_for(&module.path) {
-            match module_files(build_name, root, target, module, required, |language| {
-                language == SourceLanguage::Html
-            }) {
-                Ok(templates) => files.extend(templates),
-                Err(error) => return preparation_error(error),
-            }
+        match module_files(build_name, root, target, module, required, |language| {
+            !matches!(language, SourceLanguage::Java | SourceLanguage::Kotlin)
+                && web_for(&module.path, language)
+        }) {
+            Ok(web_files) => files.extend(web_files),
+            Err(error) => return preparation_error(error),
         }
         if let Some(changes) = changes {
             files.retain(|file| changes.matches(file));
@@ -284,7 +280,15 @@ pub async fn check(check: Check<'_>) -> Outcome {
         let source_rules = rules
             .iter()
             .copied()
-            .filter(|rule| matches!(rule.engine, EngineName::Semgrep | EngineName::Pmd))
+            .filter(|rule| {
+                matches!(
+                    rule.engine,
+                    EngineName::Semgrep
+                        | EngineName::Pmd
+                        | EngineName::Eslint
+                        | EngineName::Builtin
+                )
+            })
             .collect::<Vec<_>>();
         files.retain(|file| {
             SourceLanguage::of(file)
@@ -387,7 +391,7 @@ fn affected_modules(
     changes: &Changes,
     kotlin_for: impl Fn(&str) -> bool,
     any_kotlin: bool,
-    html_for: impl Fn(&str) -> bool,
+    web_for: impl Fn(&str, SourceLanguage) -> bool,
 ) -> Result<BTreeSet<String>> {
     let mut affected = BTreeSet::new();
     for path in changes.paths() {
@@ -395,9 +399,6 @@ fn affected_modules(
             continue;
         };
         if language == SourceLanguage::Kotlin && !any_kotlin {
-            continue;
-        }
-        if language == SourceLanguage::Html && !is_template(path) {
             continue;
         }
         let full = root.join(path);
@@ -411,13 +412,13 @@ fn affected_modules(
             let enabled = match language {
                 SourceLanguage::Java => true,
                 SourceLanguage::Kotlin => kotlin_for(&module.path),
-                SourceLanguage::Html => html_for(&module.path),
+                other => web_for(&module.path, other),
             };
             if enabled {
                 affected.insert(module.path.clone());
             }
         }
-        if !matched && language != SourceLanguage::Html {
+        if !matched && matches!(language, SourceLanguage::Java | SourceLanguage::Kotlin) {
             bail!(
                 "Changed source path does not map to a Gradle module: {}",
                 path.display()
@@ -451,6 +452,9 @@ fn module_files(
         SourceLanguage::Java,
         SourceLanguage::Kotlin,
         SourceLanguage::Html,
+        SourceLanguage::Template,
+        SourceLanguage::Javascript,
+        SourceLanguage::Jsp,
     ]
     .into_iter()
     .filter(|&language| accepts(language))
@@ -482,6 +486,22 @@ fn source_dirs(module: &Module, language: SourceLanguage) -> Cow<'_, [PathBuf]> 
     match language {
         SourceLanguage::Java => Cow::Borrowed(&module.source_dirs),
         SourceLanguage::Kotlin => Cow::Borrowed(&module.kotlin_source_dirs),
-        SourceLanguage::Html => Cow::Owned(vec![module.project_dir.join(TEMPLATE_DIR)]),
+        SourceLanguage::Template => Cow::Owned(vec![module.project_dir.join(TEMPLATE_DIR)]),
+        SourceLanguage::Jsp => Cow::Owned(vec![module.project_dir.join("src/main/webapp")]),
+        SourceLanguage::Html | SourceLanguage::Javascript => {
+            let mut dirs = vec![
+                "src/main/resources/static",
+                "src/main/resources/public",
+                "src/main/webapp",
+            ];
+            if language == SourceLanguage::Javascript {
+                dirs.extend([TEMPLATE_DIR, "src/main/js", "src/main/frontend"]);
+            }
+            Cow::Owned(
+                dirs.into_iter()
+                    .map(|dir| module.project_dir.join(dir))
+                    .collect(),
+            )
+        }
     }
 }

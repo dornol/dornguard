@@ -44,6 +44,13 @@ The check exit codes are 0 for success, 1 for a policy violation, 2 for
 configuration errors, 3 for engine errors, and 4 for preparation errors.
 JSON reports identify the scan scope and whether the checks completed.
 
+Use `dornguard audit` for a Maven dependency vulnerability report.
+See [Maven dependency audit](docs/dependency-audit.md) for setup and scope.
+
+The `html` and `javascript` profiles check inline scripts and JavaScript
+evaluation. Use `dornguard csp URL` to inspect an HTTP response.
+See [HTML, JavaScript, and CSP](docs/web-checks.md).
+
 ## Verify
 
 ```sh

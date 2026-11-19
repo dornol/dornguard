@@ -1,0 +1,5 @@
+name: jsp
+description: JSP scripting and output escaping review
+rules:
+  - jsp.scripting-element
+  - jsp.unescaped-output

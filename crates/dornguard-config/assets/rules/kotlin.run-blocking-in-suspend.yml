@@ -1,0 +1,8 @@
+id: kotlin.run-blocking-in-suspend
+engine: semgrep
+severity: warning
+description: runBlocking blocks the thread inside a suspend function.
+fix: Call the suspending operation directly or use coroutineScope for structured concurrency.
+implementation:
+  config: rules/semgrep/kotlin/run-blocking-in-suspend.yml
+  rule_id: kotlin-run-blocking-in-suspend

@@ -1,0 +1,39 @@
+rules:
+  - id: spring-checked-exception-rollback
+    languages: [java]
+    severity: WARNING
+    message: Review whether this checked exception should roll back the transaction.
+    patterns:
+      # Named statement sequences bind only statements in the matched block.
+      - pattern-either:
+          - pattern: |
+              @org.springframework.transaction.annotation.Transactional
+              $RETURN $METHOD(...) {
+                $...BEFORE
+                throw new $CHECKED(...);
+                $...AFTER
+              }
+          - pattern: |
+              @org.springframework.transaction.annotation.Transactional
+              $RETURN $METHOD(...) {
+                $...BEFORE
+                if (...) {
+                  $...PRE
+                  throw new $CHECKED(...);
+                  $...POST
+                }
+                $...AFTER
+              }
+          - pattern: |
+              @org.springframework.transaction.annotation.Transactional
+              $RETURN $METHOD(...) {
+                $...BEFORE
+                if (...) throw new $CHECKED(...);
+                $...AFTER
+              }
+      - metavariable-pattern:
+          metavariable: $CHECKED
+          pattern-either:
+            - pattern: java.io.IOException
+            - pattern: java.sql.SQLException
+      - focus-metavariable: $CHECKED

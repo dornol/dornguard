@@ -1,0 +1,7 @@
+id: javascript.no-async-promise-executor
+engine: eslint
+severity: warning
+description: An async Promise executor can leave the outer Promise pending if it throws.
+fix: Use an async function directly or keep the Promise executor synchronous.
+implementation:
+  rule_id: no-async-promise-executor

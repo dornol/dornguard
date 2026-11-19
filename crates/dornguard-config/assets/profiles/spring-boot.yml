@@ -3,3 +3,8 @@ description: Spring Boot source checks
 extends: [java]
 rules:
   - spring.field-injection
+  - spring.private-transactional
+  - spring.transactional-self-invocation
+  - spring.shared-simple-date-format
+  - spring.singleton-request-state
+  - spring.async-self-invocation

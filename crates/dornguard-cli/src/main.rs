@@ -6,16 +6,19 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand, ValueEnum};
 use dornguard_config::{BUILTIN_VERSION, CONFIG_FILE, DEFAULT_CONFIG, Registry};
 use dornguard_core::{EngineName, Failure, FailureKind, Outcome, Scope, SourceLanguage};
-use dornguard_engine::{Engine, Pmd, Request, Semgrep, inspect, install, supported_version};
+use dornguard_engine::{
+    Engine, Eslint, JSpecify, Pmd, Request, Semgrep, inspect, install, supported_version,
+};
 use ignore::WalkBuilder;
 use miette::{IntoDiagnostic, Result, WrapErr, bail, miette};
 
+mod audit;
 mod baseline;
 mod build_check;
 mod changed;
+mod csp;
 mod maven;
-
-const TEMPLATE_DIR: &str = "src/main/resources/templates";
+mod suppressions;
 
 #[derive(Parser)]
 #[command(
@@ -54,6 +57,22 @@ enum Action {
         /// Enforce a policy supplied outside the project worktree
         #[arg(long, value_name = "PATH")]
         organization_policy: Option<PathBuf>,
+    },
+    /// Audit a Maven project's resolved runtime dependencies for known vulnerabilities
+    Audit {
+        #[arg(default_value = ".")]
+        project: PathBuf,
+        #[arg(long, value_enum, default_value_t = TextOrJson::Text)]
+        format: TextOrJson,
+        /// Activate Maven profiles for dependency resolution
+        #[arg(long)]
+        maven_profile: Vec<String>,
+    },
+    /// Inspect the enforced CSP and inline scripts of an HTML response
+    Csp {
+        url: String,
+        #[arg(long, value_enum, default_value_t = TextOrJson::Text)]
+        format: TextOrJson,
     },
     /// Create a default configuration in the current directory
     Init,
@@ -129,6 +148,12 @@ enum Format {
     Json,
     Agent,
     Sarif,
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum TextOrJson {
+    Text,
+    Json,
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -208,6 +233,12 @@ async fn dispatch(action: Action) -> Result<u8> {
             .wrap_err("Could not write the check result")?;
             Ok(report.exit_code)
         }
+        Action::Audit {
+            project,
+            format,
+            maven_profile,
+        } => audit::scan(&project, &maven_profile, format).await,
+        Action::Csp { url, format } => csp::check(&url, format).await,
         Action::Init => {
             let file = OpenOptions::new()
                 .write(true)
@@ -271,7 +302,12 @@ async fn dispatch(action: Action) -> Result<u8> {
         Action::Engines {
             command: EngineAction::List,
         } => {
-            for engine in [EngineName::Semgrep, EngineName::Pmd] {
+            for engine in [
+                EngineName::Semgrep,
+                EngineName::Pmd,
+                EngineName::Eslint,
+                EngineName::Builtin,
+            ] {
                 println!("{} {}", engine.executable(), supported_version(engine));
             }
             Ok(0)
@@ -389,8 +425,18 @@ async fn check(
         Err(error) => return config_error(error),
     };
     let mut fallback_reason = None;
+    let jspecify_enabled = rules.iter().any(|rule| rule.engine == EngineName::Builtin)
+        || config.modules.keys().any(|name| {
+            registry
+                .resolve(&config, Some(name), profiles)
+                .is_ok_and(|rules| rules.iter().any(|rule| rule.engine == EngineName::Builtin))
+        });
     let changes = if let Some(request) = changed {
         match changed::discover(root, &project, config.local_ruleset_path(), request).await {
+            Ok(changes) if jspecify_enabled && changes.java_scope_changed() => {
+                fallback_reason = Some("A Java package or module declaration changed".to_owned());
+                None
+            }
             Ok(changes) => Some(changes),
             Err(error) => {
                 fallback_reason = Some(error.to_string());
@@ -442,6 +488,9 @@ async fn check(
                 fallback_reason
             };
         }
+        if organization.is_none() {
+            suppressions::apply(root, &config.ignore, &mut outcome);
+        }
         return outcome;
     }
     let scoped_prep_error = |error| {
@@ -477,6 +526,9 @@ async fn check(
     let mut outcome = run_source_engines(root, &files, &registry, &rules).await;
     outcome.scope = scope;
     outcome.fallback_reason = fallback_reason;
+    if organization.is_none() {
+        suppressions::apply(root, &config.ignore, &mut outcome);
+    }
     outcome
 }
 
@@ -486,78 +538,70 @@ async fn run_source_engines(
     registry: &Registry,
     rules: &[&dornguard_config::Rule],
 ) -> Outcome {
-    let languages = files
-        .iter()
-        .filter_map(|path| SourceLanguage::of(path))
-        .collect::<std::collections::BTreeSet<_>>();
-    let selected = |engine| {
-        rules
+    let check_group = async |engine, files: Vec<PathBuf>| {
+        let languages = files
+            .iter()
+            .filter_map(|path| SourceLanguage::of(path))
+            .collect::<std::collections::BTreeSet<_>>();
+        let rules = rules
             .iter()
             .copied()
             .filter(|rule| {
                 rule.engine == engine && languages.iter().any(|&language| rule.applies_to(language))
             })
-            .collect::<Vec<_>>()
-    };
-    let (semgrep_rules, pmd_rules) = (selected(EngineName::Semgrep), selected(EngineName::Pmd));
-    let files_for = |rules: &[&dornguard_config::Rule]| {
-        files
-            .iter()
+            .collect::<Vec<_>>();
+        if rules.is_empty() {
+            return Outcome::default();
+        }
+        let files = files
+            .into_iter()
             .filter(|path| {
                 SourceLanguage::of(path)
                     .is_some_and(|language| rules.iter().any(|rule| rule.applies_to(language)))
             })
-            .cloned()
-            .collect::<Vec<_>>()
+            .collect::<Vec<_>>();
+        let request = Request {
+            root,
+            files: &files,
+            rules: &rules,
+            registry,
+        };
+        match engine {
+            EngineName::Semgrep => Semgrep::default().check(request).await,
+            EngineName::Pmd => Pmd.check(request).await,
+            EngineName::Eslint => Eslint.check(request).await,
+            EngineName::Builtin => JSpecify.check(request).await,
+            _ => unreachable!("source runner requires a source engine"),
+        }
     };
-    let (semgrep_files, pmd_files) = (files_for(&semgrep_rules), files_for(&pmd_rules));
     let semgrep = async {
-        // Generic JVM rules must not run on templates in a mixed project.
-        let (templates, jvm): (Vec<_>, Vec<_>) = semgrep_files
-            .into_iter()
-            .partition(|file| SourceLanguage::of(file) == Some(SourceLanguage::Html));
+        // Keep template rules off ordinary HTML and generic JVM rules off web sources.
         let mut outcome = Outcome::default();
-        for files in [&jvm, &templates] {
-            if files.is_empty() {
-                continue;
-            }
-            let languages = files
+        for group in [
+            &[SourceLanguage::Java, SourceLanguage::Kotlin][..],
+            &[SourceLanguage::Template],
+            &[SourceLanguage::Html],
+            &[SourceLanguage::Javascript],
+            &[SourceLanguage::Jsp],
+        ] {
+            let files = files
                 .iter()
-                .filter_map(|file| SourceLanguage::of(file))
-                .collect::<std::collections::BTreeSet<_>>();
-            let rules = semgrep_rules
-                .iter()
-                .copied()
-                .filter(|rule| languages.iter().any(|&language| rule.applies_to(language)))
-                .collect::<Vec<_>>();
-            outcome.merge(
-                Semgrep::default()
-                    .check(Request {
-                        root,
-                        files,
-                        rules: &rules,
-                        registry,
-                    })
-                    .await,
-            );
+                .filter(|path| SourceLanguage::of(path).is_some_and(|kind| group.contains(&kind)))
+                .cloned()
+                .collect();
+            outcome.merge(check_group(EngineName::Semgrep, files).await);
         }
         outcome
     };
-    let pmd = async {
-        if pmd_rules.is_empty() {
-            Outcome::default()
-        } else {
-            Pmd.check(Request {
-                root,
-                files: &pmd_files,
-                rules: &pmd_rules,
-                registry,
-            })
-            .await
-        }
-    };
-    let (mut outcome, pmd_outcome) = tokio::join!(semgrep, pmd);
-    outcome.merge(pmd_outcome);
+    let (mut outcome, pmd, eslint, builtin) = tokio::join!(
+        semgrep,
+        check_group(EngineName::Pmd, files.to_vec()),
+        check_group(EngineName::Eslint, files.to_vec()),
+        check_group(EngineName::Builtin, files.to_vec()),
+    );
+    outcome.merge(pmd);
+    outcome.merge(eslint);
+    outcome.merge(builtin);
     outcome
 }
 
@@ -634,6 +678,14 @@ fn source_files(
     }
     let mut files = Vec::new();
     let mut walker = WalkBuilder::new(target);
+    let web = [
+        SourceLanguage::Html,
+        SourceLanguage::Template,
+        SourceLanguage::Javascript,
+        SourceLanguage::Jsp,
+    ]
+    .into_iter()
+    .any(&accepts);
     walker
         .require_git(false)
         .git_global(false)
@@ -641,7 +693,9 @@ fn source_files(
         .ignore(false)
         .hidden(!required)
         .git_ignore(!required)
-        .filter_entry(|entry| entry.file_name() != ".git");
+        .filter_entry(move |entry| {
+            entry.file_name() != ".git" && (!web || entry.file_name() != "node_modules")
+        });
     for entry in walker.build() {
         let entry = entry
             .into_diagnostic()
@@ -651,9 +705,13 @@ fn source_files(
         }
         let path = entry.path();
         if entry.file_type().is_some_and(|kind| kind.is_file())
-            && SourceLanguage::of(path).is_some_and(|language| {
-                accepts(language) && (language != SourceLanguage::Html || is_template(path))
-            })
+            && SourceLanguage::of(path).is_some_and(&accepts)
+            && (!web
+                || !path.strip_prefix(root).is_ok_and(|relative| {
+                    relative
+                        .components()
+                        .any(|part| part.as_os_str() == "node_modules")
+                }))
         {
             let relative = path.strip_prefix(root).into_diagnostic()?;
             if relative.to_str().is_none() {
@@ -667,11 +725,6 @@ fn source_files(
     }
     files.sort();
     Ok(files)
-}
-
-fn is_template(path: &Path) -> bool {
-    path.ancestors()
-        .any(|parent| parent.ends_with(TEMPLATE_DIR))
 }
 
 fn failure(kind: FailureKind, error: miette::Report) -> Outcome {

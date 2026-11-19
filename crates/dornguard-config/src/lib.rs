@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
-use dornguard_core::{EngineName, Severity, SourceLanguage};
+use dornguard_core::{EngineName, Severity, SourceLanguage, valid_fingerprint};
 use miette::{IntoDiagnostic, Result, WrapErr, bail, miette};
 use serde::Deserialize;
 
@@ -11,7 +11,7 @@ use ruleset::{PolicySource, Ruleset, Source};
 
 pub const CONFIG_FILE: &str = ".dornguard.yml";
 pub const DEFAULT_CONFIG: &str = "version: 1\nprofiles: [java]\n";
-pub const BUILTIN_VERSION: &str = "1.0.0";
+pub const BUILTIN_VERSION: &str = "1.1.0";
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -26,7 +26,18 @@ pub struct ProjectConfig {
     #[serde(default)]
     pub module_dependencies: ModuleDependencies,
     #[serde(default)]
+    pub ignore: Vec<Ignore>,
+    #[serde(default)]
     rules: BTreeMap<String, RuleOverride>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Ignore {
+    pub path: String,
+    pub rule: String,
+    pub fingerprint: String,
+    reason: String,
 }
 
 #[derive(Deserialize)]
@@ -83,17 +94,30 @@ pub struct Rule {
     pub fix: String,
     implementation: Option<Implementation>,
     pub options: Option<ArchitectureOptions>,
+    #[serde(default)]
+    all_html: bool,
+    #[serde(default)]
+    jsp_only: bool,
+    #[serde(default)]
+    skip_java_tests: bool,
     #[serde(skip)]
     semgrep_languages: Vec<String>,
 }
 
 impl Rule {
     pub fn applies_to(&self, language: SourceLanguage) -> bool {
+        if self.jsp_only != (language == SourceLanguage::Jsp) {
+            return false;
+        }
+        if language == SourceLanguage::Html && !self.all_html {
+            return false;
+        }
         match self.engine {
-            EngineName::Pmd => language == SourceLanguage::Java,
+            EngineName::Eslint => language == SourceLanguage::Javascript,
+            EngineName::Pmd | EngineName::Builtin => language == SourceLanguage::Java,
             EngineName::Semgrep => self.semgrep_languages.iter().any(|name| {
                 name == language.semgrep_name()
-                    || (language != SourceLanguage::Html
+                    || (matches!(language, SourceLanguage::Java | SourceLanguage::Kotlin)
                         && matches!(name.as_str(), "generic" | "regex"))
             }),
             _ => false,
@@ -102,6 +126,14 @@ impl Rule {
 
     pub fn enables_kotlin(&self) -> bool {
         self.semgrep_languages.iter().any(|name| name == "kotlin")
+    }
+
+    pub fn excludes_path(&self, path: &Path) -> bool {
+        self.skip_java_tests
+            && path
+                .ancestors()
+                .skip(1)
+                .any(|directory| directory.ends_with("src/test/java"))
     }
 
     pub fn implementation(&self) -> Result<&Implementation> {
@@ -122,6 +154,7 @@ pub struct ArchitectureOptions {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Implementation {
+    #[serde(default)]
     pub config: String,
     pub rule_id: String,
 }
@@ -137,19 +170,26 @@ impl Registry {
         let profile_sources = [
             include_str!("../assets/profiles/java-source.yml"),
             include_str!("../assets/profiles/java.yml"),
+            include_str!("../assets/profiles/jspecify.yml"),
             include_str!("../assets/profiles/kotlin.yml"),
             include_str!("../assets/profiles/security.yml"),
             include_str!("../assets/profiles/spring-boot.yml"),
+            include_str!("../assets/profiles/spring-rollback.yml"),
             include_str!("../assets/profiles/thymeleaf.yml"),
+            include_str!("../assets/profiles/thymeleaf-output-review.yml"),
             include_str!("../assets/profiles/hexagonal.yml"),
             include_str!("../assets/profiles/layered.yml"),
             include_str!("../assets/profiles/java-library.yml"),
             include_str!("../assets/profiles/rest-api.yml"),
             include_str!("../assets/profiles/scheduler.yml"),
+            include_str!("../assets/profiles/html.yml"),
+            include_str!("../assets/profiles/javascript.yml"),
+            include_str!("../assets/profiles/jsp.yml"),
         ];
         let rule_sources = [
             include_str!("../assets/rules/java.stdout-usage.yml"),
             include_str!("../assets/rules/java.empty-catch.yml"),
+            include_str!("../assets/rules/java.jspecify-null-marked.yml"),
             include_str!("../assets/rules/kotlin.stdout-usage.yml"),
             include_str!("../assets/rules/security.cors-wildcard.yml"),
             include_str!("../assets/rules/spring.field-injection.yml"),
@@ -162,8 +202,78 @@ impl Registry {
             include_str!("../assets/rules/architecture.repository-independence.yml"),
             include_str!("../assets/rules/architecture.module-dependency.yml"),
             include_str!("../assets/rules/architecture.library-framework-independence.yml"),
+            include_str!("../assets/rules/java.ignored-interrupt.yml"),
+            include_str!("../assets/rules/kotlin.run-blocking-in-suspend.yml"),
+            include_str!("../assets/rules/kotlin.global-scope.yml"),
+            include_str!("../assets/rules/spring.private-transactional.yml"),
+            include_str!("../assets/rules/spring.transactional-self-invocation.yml"),
+            include_str!("../assets/rules/java.unnecessary-import.yml"),
+            include_str!("../assets/rules/spring.shared-simple-date-format.yml"),
+            include_str!("../assets/rules/java.preserve-stack-trace.yml"),
+            include_str!("../assets/rules/java.resource-not-closed.yml"),
+            include_str!("../assets/rules/kotlin.swallowed-cancellation.yml"),
+            include_str!("../assets/rules/spring.singleton-request-state.yml"),
+            include_str!("../assets/rules/spring.checked-exception-rollback.yml"),
+            include_str!("../assets/rules/java.fully-qualified-type.yml"),
+            include_str!("../assets/rules/kotlin.fully-qualified-type.yml"),
+            include_str!("../assets/rules/html.inline-script.yml"),
+            include_str!("../assets/rules/html.inline-event-handler.yml"),
+            include_str!("../assets/rules/javascript.no-eval.yml"),
+            include_str!("../assets/rules/javascript.no-implied-eval.yml"),
+            include_str!("../assets/rules/javascript.no-new-func.yml"),
+            include_str!("../assets/rules/java.bigdecimal-from-floating-point-literal.yml"),
+            include_str!("../assets/rules/java.return-from-finally.yml"),
+            include_str!("../assets/rules/spring.async-self-invocation.yml"),
+            include_str!("../assets/rules/kotlin.thread-sleep-in-suspend.yml"),
+            include_str!("../assets/rules/thymeleaf.unescaped-output.yml"),
+            include_str!("../assets/rules/java.broken-null-check.yml"),
+            include_str!("../assets/rules/java.equals-hashcode-contract.yml"),
+            include_str!("../assets/rules/javascript.no-async-promise-executor.yml"),
+            include_str!("../assets/rules/jsp.scripting-element.yml"),
+            include_str!("../assets/rules/jsp.unescaped-output.yml"),
+            include_str!("../assets/rules/kotlin.run-catching-cancellation.yml"),
         ];
         let engine_configs = BTreeMap::from([
+            (
+                "rules/pmd/java/broken-null-check.xml",
+                include_str!("../assets/rules/pmd/java/broken-null-check.xml"),
+            ),
+            (
+                "rules/pmd/java/equals-hashcode-contract.xml",
+                include_str!("../assets/rules/pmd/java/equals-hashcode-contract.xml"),
+            ),
+            (
+                "rules/semgrep/jsp/scripting-element.yml",
+                include_str!("../assets/rules/semgrep/jsp/scripting-element.yml"),
+            ),
+            (
+                "rules/semgrep/jsp/unescaped-output.yml",
+                include_str!("../assets/rules/semgrep/jsp/unescaped-output.yml"),
+            ),
+            (
+                "rules/semgrep/kotlin/run-catching-cancellation.yml",
+                include_str!("../assets/rules/semgrep/kotlin/run-catching-cancellation.yml"),
+            ),
+            (
+                "rules/pmd/java/bigdecimal-from-floating-point-literal.xml",
+                include_str!("../assets/rules/pmd/java/bigdecimal-from-floating-point-literal.xml"),
+            ),
+            (
+                "rules/pmd/java/return-from-finally.xml",
+                include_str!("../assets/rules/pmd/java/return-from-finally.xml"),
+            ),
+            (
+                "rules/semgrep/spring/async-self-invocation.yml",
+                include_str!("../assets/rules/semgrep/spring/async-self-invocation.yml"),
+            ),
+            (
+                "rules/semgrep/kotlin/thread-sleep-in-suspend.yml",
+                include_str!("../assets/rules/semgrep/kotlin/thread-sleep-in-suspend.yml"),
+            ),
+            (
+                "rules/semgrep/thymeleaf/unescaped-output.yml",
+                include_str!("../assets/rules/semgrep/thymeleaf/unescaped-output.yml"),
+            ),
             (
                 "rules/semgrep/java/stdout-usage.yml",
                 include_str!("../assets/rules/semgrep/java/stdout-usage.yml"),
@@ -187,6 +297,70 @@ impl Registry {
             (
                 "rules/semgrep/spring/field-injection.yml",
                 include_str!("../assets/rules/semgrep/spring/field-injection.yml"),
+            ),
+            (
+                "rules/semgrep/java/ignored-interrupt.yml",
+                include_str!("../assets/rules/semgrep/java/ignored-interrupt.yml"),
+            ),
+            (
+                "rules/semgrep/kotlin/run-blocking-in-suspend.yml",
+                include_str!("../assets/rules/semgrep/kotlin/run-blocking-in-suspend.yml"),
+            ),
+            (
+                "rules/semgrep/kotlin/global-scope.yml",
+                include_str!("../assets/rules/semgrep/kotlin/global-scope.yml"),
+            ),
+            (
+                "rules/semgrep/spring/private-transactional.yml",
+                include_str!("../assets/rules/semgrep/spring/private-transactional.yml"),
+            ),
+            (
+                "rules/semgrep/spring/transactional-self-invocation.yml",
+                include_str!("../assets/rules/semgrep/spring/transactional-self-invocation.yml"),
+            ),
+            (
+                "rules/pmd/java/unnecessary-import.xml",
+                include_str!("../assets/rules/pmd/java/unnecessary-import.xml"),
+            ),
+            (
+                "rules/semgrep/spring/shared-simple-date-format.yml",
+                include_str!("../assets/rules/semgrep/spring/shared-simple-date-format.yml"),
+            ),
+            (
+                "rules/pmd/java/preserve-stack-trace.xml",
+                include_str!("../assets/rules/pmd/java/preserve-stack-trace.xml"),
+            ),
+            (
+                "rules/pmd/java/resource-not-closed.xml",
+                include_str!("../assets/rules/pmd/java/resource-not-closed.xml"),
+            ),
+            (
+                "rules/semgrep/kotlin/swallowed-cancellation.yml",
+                include_str!("../assets/rules/semgrep/kotlin/swallowed-cancellation.yml"),
+            ),
+            (
+                "rules/semgrep/spring/singleton-request-state.yml",
+                include_str!("../assets/rules/semgrep/spring/singleton-request-state.yml"),
+            ),
+            (
+                "rules/semgrep/spring/checked-exception-rollback.yml",
+                include_str!("../assets/rules/semgrep/spring/checked-exception-rollback.yml"),
+            ),
+            (
+                "rules/semgrep/java/fully-qualified-type.yml",
+                include_str!("../assets/rules/semgrep/java/fully-qualified-type.yml"),
+            ),
+            (
+                "rules/semgrep/kotlin/fully-qualified-type.yml",
+                include_str!("../assets/rules/semgrep/kotlin/fully-qualified-type.yml"),
+            ),
+            (
+                "rules/semgrep/html/inline-script.yml",
+                include_str!("../assets/rules/semgrep/html/inline-script.yml"),
+            ),
+            (
+                "rules/semgrep/html/inline-event-handler.yml",
+                include_str!("../assets/rules/semgrep/html/inline-event-handler.yml"),
             ),
         ]);
         let mut registry = Self {
@@ -218,6 +392,9 @@ impl Registry {
         if let Some(source) = Source::open(path, &config.ruleset)? {
             registry.extend(source)?;
         }
+        for entry in &config.ignore {
+            registry.rule(&entry.rule).wrap_err("Invalid ignore rule")?;
+        }
         Ok(registry)
     }
 
@@ -236,7 +413,7 @@ impl Registry {
                     self.engine_configs.insert(path.clone(), contents);
                 }
                 EngineName::Archunit => {}
-                EngineName::Pmd | EngineName::Gradle => {
+                EngineName::Pmd | EngineName::Eslint | EngineName::Builtin | EngineName::Gradle => {
                     bail!("Custom rules support Semgrep patterns and ArchUnit package checks");
                 }
             }
@@ -266,11 +443,8 @@ impl Registry {
     fn insert_rule(&mut self, mut rule: Rule) -> Result<()> {
         let id = rule.id.clone();
         match rule.engine {
-            EngineName::Semgrep | EngineName::Pmd => {
+            EngineName::Semgrep | EngineName::Pmd | EngineName::Eslint => {
                 let implementation = rule.implementation()?;
-                let Some(contents) = self.engine_configs.get(&implementation.config) else {
-                    bail!("Rule {id} is missing its engine configuration");
-                };
                 if self.rules.values().any(|other| {
                     other.engine == rule.engine
                         && other
@@ -280,7 +454,11 @@ impl Registry {
                 }) {
                     bail!("Duplicate engine rule ID: {}", implementation.rule_id);
                 }
-                if rule.engine == EngineName::Semgrep {
+                let contents = self.engine_configs.get(&implementation.config);
+                if rule.engine != EngineName::Eslint && contents.is_none() {
+                    bail!("Rule {id} is missing its engine configuration");
+                }
+                if let (EngineName::Semgrep, Some(contents)) = (rule.engine, contents) {
                     let path = &implementation.config;
                     let semgrep: SemgrepRules = serde_saphyr::from_str(contents)
                         .into_diagnostic()
@@ -306,7 +484,7 @@ impl Registry {
             {
                 bail!("Rule {id} requires architecture options with forbidden packages");
             }
-            EngineName::Archunit | EngineName::Gradle => {}
+            EngineName::Archunit | EngineName::Builtin | EngineName::Gradle => {}
         }
         if id.is_empty() || self.rules.insert(id.clone(), rule).is_some() {
             bail!("Empty or duplicate rule ID: {id}");
@@ -355,6 +533,22 @@ impl Registry {
             );
         }
         config.ruleset.validate()?;
+        for entry in &config.ignore {
+            let path = &entry.path;
+            if path.contains(['\\', ':'])
+                || path.split('/').any(|part| matches!(part, "" | "." | ".."))
+            {
+                bail!(
+                    "Ignore path must be a project-relative file path with forward slashes: {path}"
+                );
+            }
+            if !valid_fingerprint(&entry.fingerprint) {
+                bail!("Ignore fingerprint for {path} must be a lowercase SHA-256 digest");
+            }
+            if entry.reason.trim().is_empty() {
+                bail!("Ignore entry for {path} requires a reason");
+            }
+        }
         Ok(config)
     }
 
@@ -549,6 +743,9 @@ mod tests {
     #[test]
     fn profile_inheritance_deduplicates_rules_and_reports_cycles() {
         let mut registry = Registry::builtin().unwrap();
+        let java_config: ProjectConfig =
+            serde_saphyr::from_str("version: 1\nprofiles: [java]\n").unwrap();
+        let java_rules = registry.resolve(&java_config, None, &[]).unwrap();
         registry.profiles.insert(
             "extra".into(),
             Profile {
@@ -562,7 +759,9 @@ mod tests {
         let selected = ["extra".into(), "java".into()];
         let config: ProjectConfig =
             serde_saphyr::from_str("version: 1\nprofiles: [extra, java]\n").unwrap();
-        assert_eq!(registry.resolve(&config, None, &[]).unwrap().len(), 2);
+        let resolved = registry.resolve(&config, None, &[]).unwrap();
+        let ids = |rules: &[Rule]| rules.iter().map(|rule| rule.id.clone()).collect::<Vec<_>>();
+        assert_eq!(ids(&resolved), ids(&java_rules));
         registry
             .profiles
             .get_mut("java")

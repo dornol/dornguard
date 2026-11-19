@@ -1,0 +1,8 @@
+id: java.return-from-finally
+engine: pmd
+severity: warning
+description: Returning from finally can suppress an exception or replace the original return value.
+fix: Keep cleanup in finally and return outside the finally block.
+implementation:
+  config: rules/pmd/java/return-from-finally.xml
+  rule_id: ReturnFromFinallyBlock

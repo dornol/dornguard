@@ -1,0 +1,11 @@
+rules:
+  - id: jsp-unescaped-output
+    languages: [regex]
+    severity: WARNING
+    message: Review output rendered with JSTL escaping disabled.
+    pattern-regex: >-
+      (?xs)
+      <%-- .*? --%> (*SKIP)(*F)
+      | <c:out
+        (?: \s+ [\w:.-]+ \s*=\s* (?: "[^"]*" | '[^']*' ) )*?
+        \s+ escapeXml\s*=\s*(?:"false"|'false')

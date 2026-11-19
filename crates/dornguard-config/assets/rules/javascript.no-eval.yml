@@ -1,0 +1,7 @@
+id: javascript.no-eval
+engine: eslint
+severity: warning
+description: Avoid evaluating strings as JavaScript with eval.
+fix: Use a direct function call or a data parser.
+implementation:
+  rule_id: no-eval

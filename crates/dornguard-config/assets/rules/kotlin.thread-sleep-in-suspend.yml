@@ -1,0 +1,8 @@
+id: kotlin.thread-sleep-in-suspend
+engine: semgrep
+severity: warning
+description: Thread.sleep blocks the thread inside a suspend function.
+fix: Use kotlinx.coroutines.delay for a suspending wait.
+implementation:
+  config: rules/semgrep/kotlin/thread-sleep-in-suspend.yml
+  rule_id: kotlin-thread-sleep-in-suspend

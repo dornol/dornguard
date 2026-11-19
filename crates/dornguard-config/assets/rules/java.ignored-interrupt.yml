@@ -1,0 +1,8 @@
+id: java.ignored-interrupt
+engine: semgrep
+severity: warning
+description: An InterruptedException is logged and consumed.
+fix: Rethrow the exception or restore the interrupt status with Thread.currentThread().interrupt().
+implementation:
+  config: rules/semgrep/java/ignored-interrupt.yml
+  rule_id: java-ignored-interrupt

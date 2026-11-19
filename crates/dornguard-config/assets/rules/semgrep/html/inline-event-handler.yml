@@ -1,0 +1,22 @@
+rules:
+  - id: html-inline-event-handler
+    languages: [html]
+    severity: WARNING
+    message: Register this event handler from a JavaScript file.
+    patterns:
+      - pattern: <$TAG $ATTRIBUTE="$VALUE" ...>...</$TAG>
+      - metavariable-regex:
+          metavariable: $ATTRIBUTE
+          regex: >-
+            (?ix)^(?:(?:th:|data-th-))?on
+            (?: auxclick|beforeinput|blur|change|click|contextmenu|dblclick
+              | drag(?:end|enter|leave|over|start)?|drop|error|focus(?:in|out)?
+              | input|keydown|keypress|keyup|load|message
+              | mouse(?:down|enter|leave|move|out|over|up)
+              | pointer(?:cancel|down|enter|leave|move|out|over|up)
+              | reset|resize|scroll|select|submit|touch(?:cancel|end|move|start)
+              | wheel )$
+      - metavariable-regex:
+          metavariable: $VALUE
+          regex: '^\s*\S'
+      - focus-metavariable: $VALUE

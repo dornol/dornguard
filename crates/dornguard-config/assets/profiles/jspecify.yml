@@ -1,0 +1,4 @@
+name: jspecify
+description: Require a JSpecify null-marked scope for Java types
+rules:
+  - java.jspecify-null-marked

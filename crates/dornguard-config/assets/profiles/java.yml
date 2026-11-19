@@ -3,3 +3,10 @@ description: Java code quality checks using Semgrep and PMD
 extends: [java-source]
 rules:
   - java.empty-catch
+  - java.unnecessary-import
+  - java.preserve-stack-trace
+  - java.resource-not-closed
+  - java.bigdecimal-from-floating-point-literal
+  - java.return-from-finally
+  - java.broken-null-check
+  - java.equals-hashcode-contract

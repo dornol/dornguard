@@ -1,0 +1,8 @@
+id: kotlin.swallowed-cancellation
+engine: semgrep
+severity: warning
+description: This catch consumes a coroutine cancellation exception.
+fix: Rethrow the cancellation exception after any logging or cleanup.
+implementation:
+  config: rules/semgrep/kotlin/swallowed-cancellation.yml
+  rule_id: kotlin-swallowed-cancellation

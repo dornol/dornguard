@@ -1,0 +1,8 @@
+id: java.broken-null-check
+engine: pmd
+severity: warning
+description: This null check can still evaluate an operation on a null reference.
+fix: Use a short-circuit condition that accesses the value only when it is non-null.
+implementation:
+  config: rules/pmd/java/broken-null-check.xml
+  rule_id: BrokenNullCheck

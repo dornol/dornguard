@@ -1,0 +1,8 @@
+id: kotlin.run-catching-cancellation
+engine: semgrep
+severity: warning
+description: runCatching can store cancellation from this suspending coroutine operation as a failure.
+fix: Let cancellation propagate or explicitly rethrow CancellationException.
+implementation:
+  config: rules/semgrep/kotlin/run-catching-cancellation.yml
+  rule_id: kotlin-run-catching-cancellation

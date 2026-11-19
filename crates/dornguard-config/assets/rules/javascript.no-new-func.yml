@@ -1,0 +1,7 @@
+id: javascript.no-new-func
+engine: eslint
+severity: warning
+description: Avoid creating functions from strings.
+fix: Use a declared function or a function expression.
+implementation:
+  rule_id: no-new-func

@@ -10,13 +10,17 @@ use tokio::process::Command;
 use tokio::time::{Instant, timeout_at};
 
 mod archunit;
+mod eslint;
 mod install;
+mod jspecify;
 mod pmd;
 mod semgrep;
 mod source;
 
 pub use archunit::{ArchModule, check_architecture, maven_model_path};
+pub use eslint::Eslint;
 pub use install::install;
+pub use jspecify::JSpecify;
 pub use pmd::Pmd;
 pub use semgrep::Semgrep;
 
@@ -38,12 +42,17 @@ pub fn supported_version(engine: EngineName) -> &'static str {
     match engine {
         EngineName::Semgrep => SEMGREP_VERSION,
         EngineName::Pmd => PMD_VERSION,
+        EngineName::Eslint => "9.x or 10.x",
+        EngineName::Builtin => "bundled",
         EngineName::Archunit => "21",
         EngineName::Gradle => "9.9.1",
     }
 }
 
 pub async fn inspect(engine: EngineName, root: &Path) -> Result<()> {
+    if engine == EngineName::Builtin {
+        return Ok(());
+    }
     check_version(engine, root, Instant::now() + Duration::from_secs(30)).await
 }
 
@@ -64,16 +73,24 @@ async fn check_version(engine: EngineName, root: &Path, deadline: Instant) -> Re
     let text = String::from_utf8_lossy(&version.stdout);
     let detected = match engine {
         EngineName::Semgrep => Some(text.trim()),
+        EngineName::Eslint => text.trim().strip_prefix('v'),
         EngineName::Pmd => text.lines().find_map(|line| {
             line.strip_prefix("PMD ")
                 .and_then(|rest| rest.split_whitespace().next())
         }),
-        EngineName::Archunit | EngineName::Gradle => None,
+        EngineName::Archunit | EngineName::Builtin | EngineName::Gradle => None,
     };
     let Some(detected) = detected.filter(|value| !value.is_empty()) else {
         bail!("{} did not report a version", engine.executable());
     };
-    if detected != supported_version(engine) {
+    let supported = if engine == EngineName::Eslint {
+        detected
+            .split_once('.')
+            .is_some_and(|(major, _)| matches!(major, "9" | "10"))
+    } else {
+        detected == supported_version(engine)
+    };
+    if !supported {
         bail!(
             "Unsupported {} version; install {}",
             engine.executable(),
@@ -84,8 +101,25 @@ async fn check_version(engine: EngineName, root: &Path, deadline: Instant) -> Re
 }
 
 fn command(engine: EngineName, root: &Path) -> Result<Command> {
-    let mut command = install::engine_command(engine)?;
+    let mut command = if engine == EngineName::Eslint {
+        let executable = if cfg!(windows) {
+            "eslint.cmd"
+        } else {
+            "eslint"
+        };
+        let local = root.join("node_modules").join(".bin").join(executable);
+        if local.is_file() {
+            Command::new(local)
+        } else {
+            Command::new(executable)
+        }
+    } else {
+        install::engine_command(engine)?
+    };
     command.current_dir(root).kill_on_drop(true);
+    if engine == EngineName::Eslint {
+        command.env_remove("NODE_OPTIONS");
+    }
     let prefix = format!("{}_", engine.executable().to_ascii_uppercase());
     for (key, _) in std::env::vars_os() {
         if key

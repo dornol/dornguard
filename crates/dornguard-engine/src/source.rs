@@ -25,9 +25,20 @@ impl Sources {
         start: (u32, u32),
         end: (u32, u32),
     ) -> Option<String> {
+        self.span(root, path, start, end, true)
+    }
+
+    pub fn span(
+        &mut self,
+        root: &Path,
+        path: &Path,
+        start: (u32, u32),
+        end: (u32, u32),
+        inclusive: bool,
+    ) -> Option<String> {
         let source = self.get(root, path)?;
         let start = byte_offset(source, start.0, start.1, false)?;
-        let end = byte_offset(source, end.0, end.1, true)?;
+        let end = byte_offset(source, end.0, end.1, inclusive)?;
         fragment_fingerprint(source.get(start..end)?)
     }
 
@@ -57,11 +68,12 @@ fn byte_offset(source: &str, line: u32, column: u32, inclusive: bool) -> Option<
     }
     let line = lines.next()?;
     let mut target = column.checked_sub(1)? as usize;
-    for (index, character) in line.trim_end_matches(['\r', '\n']).char_indices() {
+    let line = line.trim_end_matches(['\r', '\n']);
+    for (index, character) in line.char_indices() {
         if target < character.len_utf16() {
             return Some(start + index + usize::from(inclusive) * character.len_utf8());
         }
         target -= character.len_utf16();
     }
-    None
+    (!inclusive && target == 0).then_some(start + line.len())
 }

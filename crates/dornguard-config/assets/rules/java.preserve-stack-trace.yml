@@ -1,0 +1,8 @@
+id: java.preserve-stack-trace
+engine: pmd
+severity: warning
+description: This exception drops the original cause.
+fix: Pass the caught exception as the cause.
+implementation:
+  config: rules/pmd/java/preserve-stack-trace.xml
+  rule_id: PreserveStackTrace

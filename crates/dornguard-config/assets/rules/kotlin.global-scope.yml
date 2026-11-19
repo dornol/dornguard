@@ -1,0 +1,8 @@
+id: kotlin.global-scope
+engine: semgrep
+severity: warning
+description: GlobalScope launches work outside the caller's lifecycle.
+fix: Use coroutineScope or a CoroutineScope owned by the component that manages the work.
+implementation:
+  config: rules/semgrep/kotlin/global-scope.yml
+  rule_id: kotlin-global-scope

@@ -1,0 +1,30 @@
+rules:
+  - id: kotlin-swallowed-cancellation
+    languages: [kotlin]
+    severity: WARNING
+    message: Rethrow the cancellation exception so it can propagate.
+    patterns:
+      - pattern-either:
+          - pattern: |
+              try { ... } catch ($ERROR: $TYPE) {}
+          - pattern: |
+              try { ... } catch ($ERROR: $TYPE) { return }
+          - patterns:
+              - pattern-either:
+                  - pattern: |
+                      try { ... } catch ($ERROR: $TYPE) { $LOGGER.$LEVEL(...) }
+                  - pattern: |
+                      try { ... } catch ($ERROR: $TYPE) { $LOGGER.$LEVEL(...); return }
+              - metavariable-regex:
+                  metavariable: $LOGGER
+                  regex: '(?i)^(?:[\w$]+\.)*(?:log|logger|[\w$]+logger)$'
+              - metavariable-regex:
+                  metavariable: $LEVEL
+                  regex: '^(?:trace|debug|info|warn|error|fatal|log|warning|fine|finer|finest|severe|config)$'
+      - metavariable-pattern:
+          metavariable: $TYPE
+          pattern-either:
+            - pattern: kotlinx.coroutines.CancellationException
+            - pattern: kotlin.coroutines.cancellation.CancellationException
+            - pattern: java.util.concurrent.CancellationException
+      - focus-metavariable: $ERROR

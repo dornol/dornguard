@@ -1,0 +1,5 @@
+name: html
+description: HTML and Thymeleaf checks for inline JavaScript
+rules:
+  - html.inline-script
+  - html.inline-event-handler

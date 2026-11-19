@@ -1,0 +1,9 @@
+id: html.inline-script
+engine: semgrep
+severity: warning
+description: This HTML script contains inline JavaScript.
+fix: Move the JavaScript to a file and load it with src.
+all_html: true
+implementation:
+  config: rules/semgrep/html/inline-script.yml
+  rule_id: html-inline-script

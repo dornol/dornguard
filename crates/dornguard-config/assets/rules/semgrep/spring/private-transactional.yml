@@ -1,0 +1,8 @@
+rules:
+  - id: spring-private-transactional
+    languages: [java]
+    severity: WARNING
+    message: A private method cannot be advised by a Spring transaction proxy.
+    pattern: |
+      @org.springframework.transaction.annotation.Transactional(...)
+      private $RETURN $METHOD(...) { ... }

@@ -1,0 +1,33 @@
+rules:
+  - id: spring-shared-simple-date-format
+    languages: [java]
+    severity: WARNING
+    message: Avoid sharing a SimpleDateFormat in a singleton Spring bean.
+    patterns:
+      - pattern-either:
+          - pattern-inside: '@org.springframework.stereotype.Component(...) class $BEAN { ... }'
+          - pattern-inside: '@org.springframework.context.annotation.Configuration(...) class $BEAN { ... }'
+          - pattern-inside: '@org.springframework.stereotype.Service(...) class $BEAN { ... }'
+          - pattern-inside: '@org.springframework.stereotype.Repository(...) class $BEAN { ... }'
+          - pattern-inside: '@org.springframework.stereotype.Controller(...) class $BEAN { ... }'
+          - pattern-inside: '@org.springframework.web.bind.annotation.RestController(...) class $BEAN { ... }'
+      - pattern-not-inside: '@org.springframework.web.context.annotation.RequestScope(...) class $BEAN { ... }'
+      - pattern-not-inside: '@org.springframework.web.context.annotation.SessionScope(...) class $BEAN { ... }'
+      - pattern-not-inside: '@org.springframework.web.context.annotation.ApplicationScope(...) class $BEAN { ... }'
+      - pattern-either:
+          - patterns:
+              - pattern-inside: 'class $BEAN { ... }'
+              - pattern-not-inside: '@org.springframework.context.annotation.Scope(...) class $BEAN { ... }'
+          - patterns:
+              - pattern-either:
+                  - pattern-inside: '@org.springframework.context.annotation.Scope($SCOPE) class $BEAN { ... }'
+                  - pattern-inside: '@org.springframework.context.annotation.Scope(value = $SCOPE) class $BEAN { ... }'
+                  - pattern-inside: '@org.springframework.context.annotation.Scope(scopeName = $SCOPE) class $BEAN { ... }'
+              - metavariable-regex:
+                  metavariable: $SCOPE
+                  regex: '^(?:"singleton"|(?:(?:org\.springframework\.beans\.factory\.config\.)?ConfigurableBeanFactory\.)?SCOPE_SINGLETON)$'
+      - pattern-either:
+          - pattern: 'class $BEAN { ... java.text.SimpleDateFormat $FIELD; ... }'
+          - pattern: 'class $BEAN { ... java.text.SimpleDateFormat $FIELD = ...; ... }'
+          - pattern: 'class $BEAN { ... $TYPE $FIELD = new java.text.SimpleDateFormat(...); ... }'
+      - focus-metavariable: $FIELD

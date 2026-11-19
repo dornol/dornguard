@@ -1,5 +1,7 @@
 # Releases
 
+See the [v0.0.2 release notes](releases/v0.0.2.md) for upgrade details.
+
 The [release workflow](../.github/workflows/release.yml) builds archives for
 Linux x86-64 and ARM64, macOS ARM64, and Windows x86-64. Each
 archive includes the native CLI, the ArchUnit runner and the Maven model
@@ -11,6 +13,18 @@ The workflow checks that a release tag matches
 The archive can be extracted to a directory on PATH. On Linux and Apple silicon Macs,
 `scripts/install.sh vVERSION` installs a specific release to the user's
 data directory and links the executable from the local bin directory.
+This mode checks for `curl`, `unzip`, and `shasum` when downloading a release.
+
+On Ubuntu, including Ubuntu on WSL, add `--with-deps` to install missing
+system packages through apt and install Semgrep and PMD as the current user.
+The script reuses a supported Python with `venv` and `ensurepip` and an
+existing JDK 21 or later. It ends by running `dornguard doctor`.
+
+```sh
+sh scripts/install.sh v0.0.2 --with-deps
+export PATH="$HOME/.local/bin:$PATH"
+```
+
 On Windows, compare the archive digest with its accompanying SHA-256 file
 using `Get-FileHash -Algorithm SHA256`, then extract it to a directory on PATH.
 

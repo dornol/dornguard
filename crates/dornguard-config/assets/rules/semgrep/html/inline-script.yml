@@ -1,0 +1,19 @@
+rules:
+  - id: html-inline-script
+    languages: [html]
+    severity: WARNING
+    message: Move executable inline JavaScript to a script file.
+    patterns:
+      - pattern-either:
+          - patterns:
+              - pattern: <script ...>...</script>
+              - pattern-not: <script type="$TYPE" ...>...</script>
+          - patterns:
+              - pattern: <script type="$TYPE" ...>...</script>
+              - metavariable-regex:
+                  metavariable: $TYPE
+                  regex: '(?i)^\s*(?:module|(?:text|application)/(?:x-)?(?:javascript(?:1\.[0-5])?|ecmascript|jscript|livescript))?\s*$'
+      - pattern-not: <script src="$URL" ...>...</script>
+      - pattern-not: <script th:src="$URL" ...>...</script>
+      - pattern-not: <script data-th-src="$URL" ...>...</script>
+      - pattern-not-regex: '(?is)<script\b[^>]*>\s*</script\s*>'

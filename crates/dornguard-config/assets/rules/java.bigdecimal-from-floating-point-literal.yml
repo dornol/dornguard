@@ -1,0 +1,8 @@
+id: java.bigdecimal-from-floating-point-literal
+engine: pmd
+severity: warning
+description: Constructing BigDecimal from a floating-point literal can introduce a rounding error.
+fix: Use a decimal string or BigDecimal.valueOf for a double literal.
+implementation:
+  config: rules/pmd/java/bigdecimal-from-floating-point-literal.xml
+  rule_id: AvoidDecimalLiteralsInBigDecimalConstructor

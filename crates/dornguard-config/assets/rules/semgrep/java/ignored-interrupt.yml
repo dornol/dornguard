@@ -1,0 +1,26 @@
+rules:
+  - id: java-ignored-interrupt
+    languages: [java]
+    severity: WARNING
+    message: Rethrow InterruptedException or restore the thread interrupt status.
+    patterns:
+      - pattern-either:
+          - pattern: |
+              try { ... } catch ($TYPE $ERROR) {
+                $LOGGER.$LEVEL(...);
+              }
+          - pattern: |
+              try { ... } catch ($TYPE $ERROR) {
+                $LOGGER.$LEVEL(...);
+                return;
+              }
+      - metavariable-regex:
+          metavariable: $TYPE
+          regex: '^(?:java\.lang\.)?InterruptedException$'
+      - metavariable-regex:
+          metavariable: $LOGGER
+          regex: '(?i)^(?:[\w$]+\.)*(?:log|logger|[\w$]+logger)$'
+      - metavariable-regex:
+          metavariable: $LEVEL
+          regex: '^(?:trace|debug|info|warn|error|fatal|log|warning|fine|finer|finest|severe|config)$'
+      - focus-metavariable: $ERROR

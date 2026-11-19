@@ -1,0 +1,5 @@
+name: thymeleaf-output-review
+description: Review of Thymeleaf expressions rendered without HTML escaping
+extends: [thymeleaf]
+rules:
+  - thymeleaf.unescaped-output

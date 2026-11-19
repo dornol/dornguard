@@ -31,6 +31,39 @@ Use `enabled: false` to disable an activated rule in a project or module. For
 ArchUnit, `options` replaces the rule's package selectors. A single name
 matches a package segment and a dotted name matches a package prefix.
 
+## Intentional exceptions
+
+To exempt a Java source finding at a specific statement, put a standalone
+comment immediately before the line the diagnostic reports. The comment
+must name the rule and include a reason.
+
+```java
+// dornguard-ignore java.stdout-usage -- The calling script reads standard output.
+System.out.println(result);
+```
+
+Each comment exempts one finding for the named rule on the next line.
+Move the comment with the code.
+
+To keep an exception in `.dornguard.yml`, copy the diagnostic's `path`,
+`rule_id`, and `fingerprint` from `dornguard check --format json`. Use
+the `rule` key for the rule ID and give a reason.
+
+```yaml
+ignore:
+  - path: docs/scripts/JasyptTool.java
+    rule: java.stdout-usage
+    fingerprint: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    reason: "The calling script reads standard output."
+```
+
+Use a project-relative path with forward slashes. Replace the example
+fingerprint with the reported value. Each entry exempts one matching
+finding when the code moves within the file. For identical code in the
+same file, use a comment to exempt a specific occurrence. The report
+includes both exception forms in its suppressed count. Baseline creation
+records findings that remain after these exceptions have been applied.
+
 ## Baseline
 
 Run `dornguard baseline create` from the project root, review the result, then
@@ -51,6 +84,6 @@ its local ruleset from outside the checkout. An organization Git ruleset
 requires HTTPS and a full commit ID.
 
 Organization rules run over the full project with blocking severity.
-The checkout's Baseline, rule overrides, ignore list and CLI scope are
-applied to the project scan. Gradle still uses the project's build model,
+Baselines, source comments, YAML exceptions, rule overrides, and CLI scope
+from the checkout apply only to the project scan. Gradle still uses the project's build model,
 so protect updates to the build configuration and use isolated CI workers.

@@ -1,0 +1,52 @@
+# HTML, JavaScript, and CSP checks
+
+Enable the web profiles alongside the existing project profiles.
+
+```yaml
+version: 1
+profiles: [spring-boot, thymeleaf, html, javascript]
+```
+
+The `html` profile warns about executable inline script blocks and common
+inline event attributes such as `onclick`, `onerror`, and the Thymeleaf
+`th:on*` and `data-th-on*` forms. Separate scripts loaded through `src` or
+`th:src` and data blocks such as `application/ld+json` are skipped.
+
+The `javascript` profile requires ESLint 9 or 10. DornGuard prefers
+`node_modules/.bin/eslint` in the project and falls back to PATH. It
+checks `.js`, `.mjs`, and `.cjs` with `no-eval`, `no-implied-eval`,
+`no-new-func`, and `no-async-promise-executor`. It uses its own ESLint config
+and reports those findings as warnings unless the project overrides their severity. Files under
+`node_modules` are excluded. [ESLint setup](https://eslint.org/docs/latest/use/getting-started)
+
+When a Maven or Gradle build is active, HTML and JavaScript are discovered
+under each selected module’s `src/main/webapp`, `src/main/resources/static`,
+`src/main/resources/public`, and template directory. JavaScript is also
+discovered under `src/main/js` and `src/main/frontend`.
+
+## JSP
+
+Add `jsp` to the project's profiles to warn about JSP scripting elements
+such as `<% ... %>` and `<jsp:expression>`, and `<c:out>` tags with a
+literal `escapeXml="false"`. It scans `.jsp`, `.jspx`, `.jspf`, `.tag`, and
+`.tagx` files. In Maven and Gradle build checks, JSP sources are discovered
+under each selected module's `src/main/webapp`.
+
+## Inspect a deployed response
+
+```sh
+dornguard csp https://staging.example.com/books --format json
+```
+
+This command uses curl to fetch one successful UTF-8 HTML response.
+It distinguishes enforced CSP headers from Report-Only headers and
+checks for missing script restrictions and effective `unsafe-inline`
+and `unsafe-eval` permissions. It compares each executable inline
+script’s nonce or content hash with every enforcing policy. The report
+identifies blocked inline scripts by their order in the response.
+The runtime scope is the response headers and the authorization of its
+inline script blocks.
+
+Exit code `0` means the checks passed, `1` means findings were reported,
+and `2` means the command could not complete. Use the final page URL
+when the server redirects. [CSP Level 3](https://www.w3.org/TR/CSP3/)

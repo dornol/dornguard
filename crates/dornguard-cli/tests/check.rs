@@ -54,6 +54,119 @@ fn invalid_config_and_missing_targets_have_distinct_statuses() {
     assert_eq!(result["status"], "preparation_error");
 }
 
+#[test]
+fn jspecify_checks_effective_java_scopes_without_external_engines() {
+    let project = project(CLEAN);
+    let root = project.path();
+    fs::remove_file(root.join("src/Example.java")).unwrap();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [jspecify]\n",
+    )
+    .unwrap();
+    for (file, source) in [
+        (
+            "core/src/main/java/example/package-info.java",
+            "@NullMarked\npackage example;\nimport org.jspecify.annotations.NullMarked;\n",
+        ),
+        (
+            "core/src/main/java/example/Example.java",
+            "package example;\nimport org.jspecify.annotations.*;\nclass Example {\n  record Covered() {}\n  @NullUnmarked class OptOut {\n    @NullMarked interface CoveredAgain {}\n  }\n  @NullUnmarked void f() { class Local {} }\n}\n",
+        ),
+        (
+            "core/src/main/java/example/sub/Other.java",
+            "package example.sub;\nimport other.NullMarked;\n@NullMarked class Other {}\n@org.jspecify.annotations.NullMarked enum Covered { ONE }\n@interface Marker {}\n",
+        ),
+        (
+            "core/src/test/java/example/ExampleTest.java",
+            "package example;\nclass ExampleTest {}\n",
+        ),
+        (
+            "jpms/src/main/java/module-info.java",
+            "import org.jspecify.annotations.NullMarked;\n@NullMarked module example.jpms { requires static org.jspecify; }\n",
+        ),
+        (
+            "jpms/src/main/java/example/a/Modular.java",
+            "package example.a;\nclass Modular {}\n",
+        ),
+        (
+            "jpms/src/main/java/example/b/package-info.java",
+            "@org.jspecify.annotations.NullUnmarked package example.b;\n",
+        ),
+        (
+            "jpms/src/main/java/example/b/Legacy.java",
+            "package example.b;\nclass Legacy {}\n",
+        ),
+    ] {
+        let path = root.join(file);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, source).unwrap();
+    }
+
+    let result = report(check(root).output().unwrap(), 1);
+    let diagnostics = result["diagnostics"].as_array().unwrap();
+    let locations = diagnostics
+        .iter()
+        .map(|diagnostic| {
+            assert_eq!(diagnostic["rule_id"], "java.jspecify-null-marked");
+            assert_eq!(diagnostic["engine"], "builtin");
+            (
+                diagnostic["path"].as_str().unwrap(),
+                diagnostic["line"].as_u64().unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        locations,
+        [
+            ("core/src/main/java/example/Example.java", 5),
+            ("core/src/main/java/example/Example.java", 8),
+            ("core/src/main/java/example/sub/Other.java", 3),
+            ("core/src/main/java/example/sub/Other.java", 5),
+            ("core/src/test/java/example/ExampleTest.java", 2),
+            ("jpms/src/main/java/example/b/Legacy.java", 2),
+        ]
+    );
+    let selected = report(
+        check(root)
+            .arg("jpms/src/main/java/example/a/Modular.java")
+            .output()
+            .unwrap(),
+        0,
+    );
+    assert_eq!(selected["files_scanned"], 1);
+}
+
+#[test]
+#[ignore = "requires Git"]
+fn jspecify_changed_rechecks_types_when_package_marking_is_deleted() {
+    let project = project("package example; class Example {}");
+    let root = project.path();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [jspecify]\n",
+    )
+    .unwrap();
+    let descriptor = root.join("src/package-info.java");
+    fs::write(
+        &descriptor,
+        "@org.jspecify.annotations.NullMarked package example;",
+    )
+    .unwrap();
+    commit_fixture(root);
+    let clean = report(check(root).output().unwrap(), 0);
+    assert_eq!(clean["files_scanned"], 2);
+
+    fs::remove_file(descriptor).unwrap();
+    let result = report(check(root).arg("--changed").output().unwrap(), 1);
+    assert_eq!(result["scope"], "full");
+    assert_eq!(
+        result["fallback_reason"],
+        "A Java package or module declaration changed"
+    );
+    assert_eq!(result["diagnostics"][0]["path"], "src/Example.java");
+}
+
 #[cfg(unix)]
 #[test]
 fn missing_engine_is_reported_as_an_incomplete_check() {
@@ -105,6 +218,230 @@ fn real_semgrep_passes_flags_violations_and_rejects_analysis_errors() {
     let result = report(check(root).output().unwrap(), 3);
     assert_eq!(result["status"], "engine_error");
     assert_eq!(result["complete"], false);
+}
+
+#[test]
+#[ignore = "requires the pinned Semgrep and PMD versions on PATH"]
+fn spring_field_injection_allows_java_test_fixtures() {
+    let project = project(CLEAN);
+    let root = project.path();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [spring-boot]\n",
+    )
+    .unwrap();
+    let service = "web/src/main/java/example/Service.java";
+    let fixture = "web/src/test/java/example/ServiceIntegrationTest.java";
+    for path in [service, fixture] {
+        let file = root.join(path);
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(
+            file,
+            r#"
+import org.springframework.beans.factory.annotation.Autowired;
+
+class Example {
+    @Autowired
+    private Object dependency;
+
+    void run() {
+        System.out.println(dependency);
+    }
+}
+"#,
+        )
+        .unwrap();
+    }
+
+    let result = report(check(root).output().unwrap(), 1);
+    assert_eq!(result["files_scanned"], 3);
+    assert_eq!(
+        result["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| (
+                item["path"].as_str().unwrap(),
+                item["rule_id"].as_str().unwrap()
+            ))
+            .collect::<Vec<_>>(),
+        [
+            (service, "spring.field-injection"),
+            (service, "java.stdout-usage"),
+            (fixture, "java.stdout-usage"),
+        ],
+    );
+}
+
+#[test]
+#[ignore = "requires the pinned Semgrep and PMD versions on PATH"]
+fn java_profile_warns_about_broken_null_checks_and_hash_contracts() {
+    let project = project(
+        r#"class Example {
+    boolean broken(String key) { return key != null || key.isEmpty(); }
+    boolean safe(String key) { return key != null && key.isEmpty(); }
+    @Override public boolean equals(Object other) { return other instanceof Example; }
+}
+class Complete {
+    @Override public boolean equals(Object other) { return other instanceof Complete; }
+    @Override public int hashCode() { return 1; }
+}
+"#,
+    );
+    let result = report(
+        check(project.path())
+            .args(["--profile", "java"])
+            .output()
+            .unwrap(),
+        0,
+    );
+    assert_eq!(result["complete"], true);
+    assert_eq!(
+        result["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|finding| (
+                finding["rule_id"].as_str().unwrap(),
+                finding["line"].as_u64().unwrap(),
+                finding["severity"].as_str().unwrap(),
+            ))
+            .collect::<Vec<_>>(),
+        [
+            ("java.broken-null-check", 2, "warning"),
+            ("java.equals-hashcode-contract", 4, "warning"),
+        ],
+        "{result}"
+    );
+}
+
+#[test]
+#[ignore = "requires the pinned Semgrep and PMD versions on PATH"]
+fn java_and_spring_warn_about_decimal_precision_finally_and_async_self_calls() {
+    let project = project(
+        r#"import java.math.BigDecimal;
+import org.springframework.scheduling.annotation.Async;
+
+class Example {
+    void before() { work(); }
+
+    @Async("executor")
+    void work() {}
+    void work(int value) {}
+
+    void after(Example other) {
+        this.work();
+        work(1);
+        other.work();
+    }
+
+    BigDecimal inexact() { return new BigDecimal(0.1); }
+    BigDecimal exact() { return new BigDecimal("0.1"); }
+    BigDecimal exactValue() { return BigDecimal.valueOf(0.1); }
+
+    int eclipsed() {
+        try { return 1; } finally { return 2; }
+    }
+
+    int preserved() {
+        try { return 1; } finally { work(1); }
+    }
+}
+"#,
+    );
+    let result = report(
+        check(project.path())
+            .args(["--profile", "spring-boot"])
+            .output()
+            .unwrap(),
+        0,
+    );
+    assert_eq!(result["complete"], true);
+    assert_eq!(
+        result["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|finding| (
+                finding["rule_id"].as_str().unwrap(),
+                finding["line"].as_u64().unwrap(),
+                finding["severity"].as_str().unwrap(),
+            ))
+            .collect::<Vec<_>>(),
+        [
+            ("spring.async-self-invocation", 5, "warning"),
+            ("spring.async-self-invocation", 12, "warning"),
+            ("java.bigdecimal-from-floating-point-literal", 17, "warning"),
+            ("java.return-from-finally", 22, "warning"),
+        ],
+        "{result}"
+    );
+}
+
+#[test]
+#[ignore = "requires the pinned Semgrep version on PATH"]
+fn thymeleaf_output_review_is_opt_in_and_flags_unescaped_expressions() {
+    let project = project(CLEAN);
+    let root = project.path();
+    let template = "src/main/resources/templates/example.html";
+    fs::create_dir_all(root.join(template).parent().unwrap()).unwrap();
+    fs::write(
+        root.join(template),
+        r#"<div th:utext="${description}"></div>
+<div data-th-utext="${description}"></div>
+<div th:utext="'prefix ' + ${description}"></div>
+<div th:text="${description}">[[${description}]]</div>
+<div>[(${description})]</div>
+<div>[('prefix ' + ${description})]</div>
+<div th:inline="none">[(${description})]</div>
+<div data-th-inline="none"><b>[(${description})]</b></div>
+<!-- <div th:utext="${description}">[(${description})]</div> -->
+<div title="[(${description})]"></div>
+<script>let template = '[(${description})]';</script>
+<div th:utext="'constant'"></div>
+<div th:utext="'${literal}'">[('${literal}')]</div>
+"#,
+    )
+    .unwrap();
+    let default = report(
+        check(root)
+            .args(["--profile", "thymeleaf"])
+            .arg(template)
+            .output()
+            .unwrap(),
+        0,
+    );
+    assert_eq!(default["diagnostics"], serde_json::json!([]));
+
+    let review = report(
+        check(root)
+            .args(["--profile", "thymeleaf-output-review"])
+            .arg(template)
+            .output()
+            .unwrap(),
+        0,
+    );
+    assert_eq!(review["complete"], true);
+    assert_eq!(
+        review["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|finding| (
+                finding["rule_id"].as_str().unwrap(),
+                finding["line"].as_u64().unwrap(),
+                finding["severity"].as_str().unwrap(),
+            ))
+            .collect::<Vec<_>>(),
+        [
+            ("thymeleaf.unescaped-output", 1, "warning"),
+            ("thymeleaf.unescaped-output", 2, "warning"),
+            ("thymeleaf.unescaped-output", 3, "warning"),
+            ("thymeleaf.unescaped-output", 5, "warning"),
+            ("thymeleaf.unescaped-output", 6, "warning"),
+        ],
+        "{review}"
+    );
 }
 
 #[test]
@@ -301,7 +638,13 @@ fn gradle_project_enforces_architecture_and_keeps_module_policies_separate() {
         check(root).args(["--module", ":admin"]).output().unwrap(),
         1,
     );
-    let diagnostics = admin["diagnostics"].as_array().unwrap();
+    let diagnostics = admin["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|finding| finding["engine"] == "archunit")
+        .collect::<Vec<_>>();
+    assert!(!diagnostics.is_empty());
     assert!(
         diagnostics
             .iter()
@@ -784,6 +1127,121 @@ fn kotlin_source_rules_and_external_languages_run_in_kotlin_only_modules() {
     assert_eq!(finding["path"], file);
     assert_eq!(finding["line"], 4);
 
+    fs::write(
+        root.join(file),
+        r#"package example
+
+import kotlinx.coroutines.GlobalScope as ApplicationScope
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import java.lang.Thread as JvmThread
+
+suspend fun load() {
+    runBlocking { read() }
+    worker.runBlocking { read() }
+    ApplicationScope.launch { read() }
+    kotlinx.coroutines.GlobalScope.async { read() }
+}
+
+suspend fun loadExpression() = kotlinx.coroutines.runBlocking { read() }
+fun main() = runBlocking { read() }
+fun unrelated() = worker.launch { read() }
+
+suspend fun cancellation() {
+    try { read() } catch (stop: kotlinx.coroutines.CancellationException) { logger.warn("cancel", stop) }
+    try { read() } catch (stop: java.util.concurrent.CancellationException) { }
+    try { read() } catch (stop: kotlin.coroutines.cancellation.CancellationException) { return }
+    try { read() } catch (stop: kotlinx.coroutines.CancellationException) { logger.warn("cancel", stop); throw stop }
+    try { read() } catch (stop: custom.CancellationException) { logger.warn("unrelated", stop) }
+}
+
+suspend fun blockingWait() {
+    Thread.sleep(10)
+    java.lang.Thread.sleep(10)
+    JvmThread.sleep(10)
+    worker.sleep(10)
+}
+suspend fun expressionWait() = Thread.sleep(10)
+fun ordinaryWait() = Thread.sleep(10)
+
+suspend fun localOperation() {}
+fun synchronousOperation() {}
+suspend fun wrap() {
+    runCatching { localOperation() }
+    runCatching { kotlinx.coroutines.delay(10) }
+    runCatching { kotlinx.coroutines.yield() }.getOrThrow()
+    runCatching { synchronousOperation() }
+    runCatching { laterOperation() }
+}
+suspend fun laterOperation() {}
+"#,
+    )
+    .unwrap();
+    let warnings = report(check(root).output().unwrap(), 0);
+    assert_eq!(warnings["complete"], true);
+    let diagnostics = warnings["diagnostics"].as_array().unwrap();
+    assert_eq!(
+        diagnostics
+            .iter()
+            .filter(|finding| finding["rule_id"] != "kotlin.fully-qualified-type")
+            .map(|finding| (
+                finding["rule_id"].as_str().unwrap(),
+                finding["line"].as_u64().unwrap()
+            ))
+            .collect::<Vec<_>>(),
+        [
+            ("kotlin.run-blocking-in-suspend", 10),
+            ("kotlin.global-scope", 12),
+            ("kotlin.global-scope", 13),
+            ("kotlin.run-blocking-in-suspend", 16),
+            ("kotlin.swallowed-cancellation", 21),
+            ("kotlin.swallowed-cancellation", 22),
+            ("kotlin.swallowed-cancellation", 23),
+            ("kotlin.thread-sleep-in-suspend", 29),
+            ("kotlin.thread-sleep-in-suspend", 30),
+            ("kotlin.thread-sleep-in-suspend", 31),
+            ("kotlin.thread-sleep-in-suspend", 34),
+            ("kotlin.run-catching-cancellation", 40),
+            ("kotlin.run-catching-cancellation", 41),
+            ("kotlin.run-catching-cancellation", 44),
+        ],
+        "{warnings}"
+    );
+    assert!(
+        diagnostics
+            .iter()
+            .all(|finding| finding["severity"] == "warning")
+    );
+    fs::write(
+        root.join(file),
+        r#"package example
+import java.util.ArrayList as JavaList
+import java.time.Instant
+/* Outer /* nested */ java.util.TreeSet */
+class Demo : java.util.ArrayList<String>() {
+    val instant: java.time.Instant? = null
+    val short: Instant? = null
+    val label = "java.util.List"
+    val raw = """java.util.Date"""
+    val imported = JavaList<String>()
+}
+"#,
+    )
+    .unwrap();
+    let qualified = report(check(root).output().unwrap(), 0);
+    let qualified = qualified["diagnostics"].as_array().unwrap();
+    assert_eq!(qualified.len(), 2);
+    assert_eq!(qualified[0]["line"], 5);
+    assert_eq!(qualified[1]["line"], 6);
+    assert!(
+        qualified
+            .iter()
+            .all(|item| item["rule_id"] == "kotlin.fully-qualified-type")
+    );
+
+    fs::write(root.join(file), source).unwrap();
+
     write_custom_ruleset(&root.join(".policy"));
     fs::write(
         root.join(".dornguard.yml"),
@@ -979,7 +1437,7 @@ fn maven_reactor_enforces_layered_and_hexagonal_profiles() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join(".dornguard.yml"),
-        "version: 1\nprofiles: [layered, hexagonal, thymeleaf]\n",
+        "version: 1\nprofiles: [layered, hexagonal, thymeleaf, jsp]\n",
     )
     .unwrap();
     fs::write(
@@ -1056,17 +1514,36 @@ fn maven_reactor_enforces_layered_and_hexagonal_profiles() {
     let template = root.join("web/src/main/resources/templates/books.htm");
     fs::create_dir_all(template.parent().unwrap()).unwrap();
     fs::write(&template, r#"<a th:href="${@bookLinks.list()}">Books</a>"#).unwrap();
+    let jsp = root.join("web/src/main/webapp/books.jsp");
+    fs::create_dir_all(jsp.parent().unwrap()).unwrap();
+    fs::write(&jsp, "<%= books.size() %>").unwrap();
 
     fs::write(root.join(".gitignore"), "target/\n").unwrap();
     commit_fixture(&root);
-    let result = report(check(&root).arg("--changed").output().unwrap(), 1);
+    let result = report(
+        check(&root)
+            .args(["--changed", "--profile", "jspecify"])
+            .output()
+            .unwrap(),
+        1,
+    );
     assert_eq!(result["scope"], "full");
     assert_eq!(
         result["fallback_reason"],
         "Maven build checks scan the full reactor"
     );
     assert_eq!(result["complete"], true);
-    assert_eq!(result["files_scanned"], 5);
+    assert_eq!(result["files_scanned"], 6);
+    assert!(
+        result["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|finding| {
+                finding["rule_id"] == "java.jspecify-null-marked"
+                    && finding["path"] == "web/custom sources/example/domain/Book.java"
+            })
+    );
     assert!(
         result["diagnostics"]
             .as_array()
@@ -1075,6 +1552,16 @@ fn maven_reactor_enforces_layered_and_hexagonal_profiles() {
             .any(|finding| {
                 finding["rule_id"] == "thymeleaf.restricted-bean-access"
                     && finding["path"] == "web/src/main/resources/templates/books.htm"
+            })
+    );
+    assert!(
+        result["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|finding| {
+                finding["rule_id"] == "jsp.scripting-element"
+                    && finding["path"] == "web/src/main/webapp/books.jsp"
             })
     );
     for (rule, path) in [
@@ -1112,11 +1599,12 @@ fn maven_reactor_enforces_layered_and_hexagonal_profiles() {
     .unwrap();
     fs::write(domain, "package example.domain; public class Book {}").unwrap();
     fs::write(template, r#"<a th:href="@{/books}">Books</a>"#).unwrap();
+    fs::write(jsp, "<c:out value=\"books\"/>").unwrap();
     let mut selected = check(&root);
     selected.args(["--module", "example:web"]);
     let result = report(selected.output().unwrap(), 0);
     assert_eq!(result["complete"], true);
-    assert_eq!(result["files_scanned"], 3);
+    assert_eq!(result["files_scanned"], 4);
 
     fs::write(
         web.join("domain/Book.java"),
@@ -1126,6 +1614,66 @@ fn maven_reactor_enforces_layered_and_hexagonal_profiles() {
     let result = report(check(&root).output().unwrap(), 4);
     assert_eq!(result["status"], "preparation_error");
     assert_eq!(result["complete"], false);
+}
+
+#[test]
+#[ignore = "requires Git and the pinned Semgrep version"]
+fn jsp_profile_handles_changed_jsp_sources_without_running_other_regex_rules() {
+    let project = project(CLEAN);
+    let root = project.path();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [java-source, jsp]\n",
+    )
+    .unwrap();
+    let web = root.join("src/main/webapp");
+    fs::create_dir_all(&web).unwrap();
+    commit_fixture(root);
+    fs::write(
+        web.join("books.jsp"),
+        r#"<%@ page contentType="text/html" %>
+<%-- <%= hidden %> <c:out value="hidden" escapeXml="false"/> --%>
+<% int page = 1; %>
+<%= com.example.Books.title() %>
+<!-- <%= title %> -->
+<c:out value="${title}" escapeXml="true"/>
+<c:out value="${description}" escapeXml='false'/>
+"#,
+    )
+    .unwrap();
+    fs::write(
+        web.join("layout.jspx"),
+        r#"<jsp:root xmlns:jsp="http://java.sun.com/JSP/Page" version="2.3">
+<!-- <jsp:scriptlet>int hidden = 1;</jsp:scriptlet> -->
+<jsp:expression>title</jsp:expression>
+</jsp:root>
+"#,
+    )
+    .unwrap();
+    fs::write(web.join("unrelated.html"), "<%= example %>").unwrap();
+
+    let result = report(check(root).arg("--changed").output().unwrap(), 0);
+    assert_eq!(result["scope"], "changed");
+    assert_eq!(result["files_scanned"], 2);
+    assert_eq!(
+        result["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|finding| (
+                finding["rule_id"].as_str().unwrap(),
+                finding["line"].as_u64().unwrap()
+            ))
+            .collect::<Vec<_>>(),
+        [
+            ("jsp.scripting-element", 3),
+            ("jsp.scripting-element", 4),
+            ("jsp.scripting-element", 5),
+            ("jsp.unescaped-output", 7),
+            ("jsp.scripting-element", 3),
+        ],
+        "{result}"
+    );
 }
 
 #[test]
@@ -1182,4 +1730,629 @@ fn thymeleaf_profile_reports_restricted_bean_access_in_changed_templates() {
         assert_eq!(finding["rule_id"], "thymeleaf.restricted-bean-access");
         assert_eq!(finding["severity"], "error");
     }
+}
+
+#[test]
+#[ignore = "requires Git and the pinned Semgrep version"]
+fn intentional_exceptions_survive_line_moves_and_keep_org_findings() {
+    let source = "class Example {
+    void run() {
+        System.out.println(42);
+        System.out.println(42);
+        System.out.println(43);
+        System.out.println(43);
+    }
+}
+";
+    let project = project(source);
+    let root = project.path();
+    let initial = report(check(root).output().unwrap(), 1);
+    let fingerprint = initial["diagnostics"][2]["fingerprint"].as_str().unwrap();
+    fs::write(
+        root.join(".dornguard.yml"),
+        format!(
+            "version: 1\nprofiles: [java-source]\nignore:\n  - path: src/Example.java\n    rule: java.stdout-usage\n    fingerprint: '{fingerprint}'\n    reason: Script output\n"
+        ),
+    )
+    .unwrap();
+    commit_fixture(root);
+
+    let moved = "
+class Example {
+    void run() {
+        System.out.println(42);
+        // dornguard-ignore java.stdout-usage — Script output
+        System.out.println(42);
+        System.out.println(43);
+        System.out.println(43);
+    }
+}
+";
+    fs::write(root.join("src/Example.java"), moved).unwrap();
+    let local = report(check(root).arg("--changed").output().unwrap(), 1);
+    assert_eq!(local["scope"], "changed");
+    assert_eq!(local["files_scanned"], 1);
+    assert_eq!(local["suppressed_count"], 2);
+    let lines = |report: &Value| {
+        report["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|finding| finding["line"].as_u64().unwrap())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(lines(&local), [4, 8]);
+
+    let authority = tempfile::tempdir().unwrap();
+    let policy = authority.path().join("required.yml");
+    fs::write(&policy, "version: 1\nprofiles: [java-source]\n").unwrap();
+    let required = report(
+        check(root)
+            .arg("--organization-policy")
+            .arg(policy)
+            .output()
+            .unwrap(),
+        1,
+    );
+    assert_eq!(required["organization_policy_enforced"], true);
+    assert_eq!(lines(&required), [4, 6, 7, 8]);
+}
+
+#[test]
+fn malformed_ignore_entries_are_configuration_errors() {
+    let project = project(CLEAN);
+    let root = project.path();
+    let valid_fingerprint = "f".repeat(64);
+    for (path, rule, fingerprint, reason, error) in [
+        (
+            "../outside.java",
+            "java.stdout-usage",
+            valid_fingerprint.as_str(),
+            "purpose",
+            "project-relative",
+        ),
+        (
+            "src/Example.java",
+            "java.stdout-usage",
+            "a",
+            "purpose",
+            "SHA-256",
+        ),
+        (
+            "src/Example.java",
+            "java.stdout-usage",
+            valid_fingerprint.as_str(),
+            "  ",
+            "requires a reason",
+        ),
+        (
+            "src/Example.java",
+            "unknown",
+            valid_fingerprint.as_str(),
+            "purpose",
+            "Unknown rule",
+        ),
+    ] {
+        fs::write(
+            root.join(".dornguard.yml"),
+            format!(
+                "version: 1\nprofiles: [java-source]\nignore:\n  - path: '{path}'\n    rule: {rule}\n    fingerprint: '{fingerprint}'\n    reason: '{reason}'\n"
+            ),
+        )
+        .unwrap();
+        let result = report(check(root).output().unwrap(), 2);
+        assert!(
+            result["failures"][0]["message"]
+                .as_str()
+                .unwrap()
+                .contains(error),
+            "{result}"
+        );
+    }
+}
+
+#[test]
+#[ignore = "requires the pinned Semgrep and PMD engines"]
+fn java_and_spring_profiles_warn_about_interrupts_and_transaction_proxies() {
+    let project = project(
+        r#"import org.springframework.transaction.annotation.Transactional;
+
+class Example {
+    void before() {
+        work();
+    }
+
+    @Transactional(readOnly = true)
+    void work() {}
+
+    void work(int other) {}
+
+    @Transactional
+    private void internal() {}
+
+    void after(Example another) {
+        this.work();
+        this.work(1);
+        another.work();
+    }
+
+    class Inner {
+        void after(Example another) {
+            this.work();
+        }
+        void work() {}
+    }
+
+    void interrupted() throws InterruptedException {
+        try { pause(); }
+        catch (InterruptedException first) { logger.warn("Interrupted", first); }
+
+        try { pause(); }
+        catch (java.lang.InterruptedException second) { this.logger.error("Interrupted", second); return; }
+
+        try { pause(); }
+        catch (InterruptedException restored) { logger.warn("Interrupted", restored); Thread.currentThread().interrupt(); }
+
+        try { pause(); }
+        catch (InterruptedException rethrown) { logger.warn("Interrupted", rethrown); throw rethrown; }
+
+        try { pause(); }
+        catch (InterruptedException handled) { handler.warn(handled); }
+
+        try { pause(); }
+        catch (IllegalStateException unrelated) { logger.warn("Not interrupted", unrelated); }
+    }
+
+    @custom.Transactional
+    private void customTransaction() {}
+
+    void pause() throws InterruptedException {}
+}
+"#,
+    );
+    let root = project.path();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1
+profiles: [spring-boot]
+",
+    )
+    .unwrap();
+    let result = report(check(root).output().unwrap(), 0);
+    assert_eq!(result["status"], "passed");
+    assert_eq!(result["complete"], true);
+    let diagnostics = result["diagnostics"].as_array().unwrap();
+    assert_eq!(
+        diagnostics
+            .iter()
+            .filter(|finding| finding["rule_id"] != "java.fully-qualified-type")
+            .map(|finding| (
+                finding["rule_id"].as_str().unwrap(),
+                finding["line"].as_u64().unwrap()
+            ))
+            .collect::<Vec<_>>(),
+        [
+            ("spring.transactional-self-invocation", 5),
+            ("spring.private-transactional", 13),
+            ("spring.transactional-self-invocation", 17),
+            ("java.ignored-interrupt", 31),
+            ("java.ignored-interrupt", 34),
+        ],
+        "{result}"
+    );
+    assert!(
+        diagnostics
+            .iter()
+            .all(|finding| finding["severity"] == "warning")
+    );
+}
+
+#[test]
+#[ignore = "requires the pinned Semgrep and PMD engines"]
+fn spring_profile_warns_about_unnecessary_imports_and_shared_formatters() {
+    let source = r#"package example;
+
+import java.io.InputStream;
+import java.lang.String;
+import java.util.List;
+import java.util.List;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import java.time.format.DateTimeFormatter;
+import org.springframework.beans.factory.config.ConfigurableBeanFactory;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Scope;
+import org.springframework.stereotype.Service;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.context.annotation.RequestScope;
+
+@Service("dates")
+class Dates {
+    private final SimpleDateFormat shared = new SimpleDateFormat("yyyy");
+    private final DateFormat indirect = new SimpleDateFormat("yyyy");
+    private SimpleDateFormat fromConstructor;
+    private final DateTimeFormatter safe = DateTimeFormatter.ISO_LOCAL_DATE;
+    private final ThreadLocal<SimpleDateFormat> perThread = ThreadLocal.withInitial(() -> new SimpleDateFormat("yyyy"));
+    private final List<String> values = List.of();
+    void render() {
+        SimpleDateFormat methodLocal = new SimpleDateFormat("yyyy");
+    }
+    class Nested {
+        SimpleDateFormat nested;
+    }
+}
+
+@RestController
+@Scope(scopeName = ConfigurableBeanFactory.SCOPE_SINGLETON)
+class ExplicitSingleton {
+    SimpleDateFormat explicit;
+}
+
+@Service
+@Scope("prototype")
+class Prototype {
+    SimpleDateFormat prototype;
+}
+
+@Service
+@RequestScope
+class PerRequest {
+    SimpleDateFormat perRequest;
+}
+
+@Configuration
+class ConfigurationBean {
+    SimpleDateFormat inConfiguration;
+}
+
+@custom.Service
+class Unmanaged {
+    SimpleDateFormat unmanaged;
+}
+"#;
+    let project = project(source);
+    let root = project.path();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [spring-boot]\n",
+    )
+    .unwrap();
+
+    let result = report(check(root).output().unwrap(), 0);
+    assert_eq!(result["status"], "passed");
+    assert_eq!(result["complete"], true);
+    assert_eq!(result["files_scanned"], 1);
+    let diagnostics = result["diagnostics"].as_array().unwrap();
+    let reported = |rule: &str| {
+        diagnostics
+            .iter()
+            .filter(|finding| finding["rule_id"] == rule)
+            .map(|finding| {
+                let line = finding["line"].as_u64().unwrap() as usize;
+                source.lines().nth(line - 1).unwrap().trim()
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        reported("java.unnecessary-import"),
+        [
+            "import java.io.InputStream;",
+            "import java.lang.String;",
+            "import java.util.List;"
+        ],
+        "{result}"
+    );
+    assert_eq!(
+        reported("spring.shared-simple-date-format"),
+        [
+            "private final SimpleDateFormat shared = new SimpleDateFormat(\"yyyy\");",
+            "private final DateFormat indirect = new SimpleDateFormat(\"yyyy\");",
+            "private SimpleDateFormat fromConstructor;",
+            "SimpleDateFormat explicit;",
+            "SimpleDateFormat inConfiguration;",
+        ],
+        "{result}"
+    );
+    assert!(
+        diagnostics
+            .iter()
+            .all(|finding| finding["severity"] == "warning")
+    );
+}
+
+#[test]
+#[ignore = "requires the pinned Semgrep and PMD engines"]
+fn java_and_spring_profiles_review_exception_causes_resources_and_request_state() {
+    let source = r#"package example;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.sql.SQLException;
+import org.springframework.context.annotation.Scope;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.context.annotation.RequestScope;
+
+@RestController
+class Books {
+    private String lastUser;
+
+    @GetMapping("/books")
+    String handler(@RequestParam String user) {
+        this.lastUser = user;
+        return user;
+    }
+
+    String helper(String user) {
+        this.lastUser = user;
+        return user;
+    }
+
+    @custom.GetMapping
+    String customHandler(String user) {
+        this.lastUser = user;
+        return user;
+    }
+
+    @GetMapping("/local")
+    String local(String user) {
+        String copy = user;
+        this.lastUser = "constant";
+        return copy;
+    }
+
+    class Nested {
+        private String lastUser;
+        @GetMapping
+        String handler(String user) {
+            this.lastUser = user;
+            return user;
+        }
+    }
+
+    int open(Path file) throws IOException {
+        InputStream in = Files.newInputStream(file);
+        return in.read();
+    }
+
+    int closed(Path file) throws IOException {
+        try (InputStream in = Files.newInputStream(file)) {
+            return in.read();
+        }
+    }
+
+    int invalid(String value) {
+        try { return Integer.parseInt(value); }
+        catch (NumberFormatException failure) { throw new IllegalStateException(failure.getMessage()); }
+    }
+
+    int wrapped(String value) {
+        try { return Integer.parseInt(value); }
+        catch (NumberFormatException failure) { throw new IllegalStateException("Invalid", failure); }
+    }
+
+    @Transactional
+    void update() throws IOException {
+        if (lastUser == null) {
+            throw new IOException("rollback review");
+        }
+    }
+
+    @Transactional()
+    void updateSql() throws SQLException {
+        if (lastUser == null) throw new SQLException("rollback review");
+    }
+
+    @Transactional(rollbackFor = IOException.class)
+    void configured() throws IOException {
+        throw new IOException("already configured");
+    }
+
+    @Transactional
+    void caught() {
+        try { throw new IOException("caught"); }
+        catch (IOException failure) { lastUser = failure.getMessage(); }
+    }
+
+    @Transactional
+    Task deferred() {
+        return () -> { throw new IOException("deferred"); };
+    }
+
+    interface Task {
+        void run() throws IOException;
+    }
+}
+
+@RestController
+@RequestScope
+class PerRequest {
+    private String user;
+    @GetMapping
+    String save(String arg) {
+        this.user = arg;
+        return arg;
+    }
+}
+
+@RestController
+@Scope("prototype")
+class Prototype {
+    private String user;
+    @GetMapping
+    String save(String arg) {
+        this.user = arg;
+        return arg;
+    }
+}
+
+@RestController
+@Scope("singleton")
+class ExplicitSingleton {
+    private String user;
+    @GetMapping
+    String save(String arg) {
+        this.user = arg + "!";
+        this.user = arg;
+        return arg;
+    }
+}
+"#;
+    let project = project(source);
+    let root = project.path();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [spring-boot]\n",
+    )
+    .unwrap();
+
+    let asserted_findings = |outcome: &Value| {
+        assert_eq!(outcome["complete"], true);
+        let findings = outcome["diagnostics"].as_array().unwrap();
+        assert!(findings.iter().all(|item| item["severity"] == "warning"));
+        findings
+            .iter()
+            .filter(|finding| finding["rule_id"] != "java.fully-qualified-type")
+            .map(|finding| {
+                let line = finding["line"].as_u64().unwrap() as usize;
+                (
+                    finding["rule_id"].as_str().unwrap().to_owned(),
+                    source.lines().nth(line - 1).unwrap().trim(),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    let default = report(check(root).output().unwrap(), 0);
+    assert_eq!(
+        asserted_findings(&default),
+        [
+            (
+                "spring.singleton-request-state".to_owned(),
+                "this.lastUser = user;"
+            ),
+            (
+                "java.resource-not-closed".to_owned(),
+                "InputStream in = Files.newInputStream(file);"
+            ),
+            (
+                "java.preserve-stack-trace".to_owned(),
+                "catch (NumberFormatException failure) { throw new IllegalStateException(failure.getMessage()); }"
+            ),
+            (
+                "spring.singleton-request-state".to_owned(),
+                "this.user = arg;"
+            ),
+        ],
+        "{default}"
+    );
+
+    let enabled = report(
+        check(root)
+            .args(["--profile", "spring-rollback"])
+            .output()
+            .unwrap(),
+        0,
+    );
+    assert_eq!(
+        asserted_findings(&enabled)
+            .into_iter()
+            .filter(|(id, _)| id == "spring.checked-exception-rollback")
+            .map(|(_, line)| line)
+            .collect::<Vec<_>>(),
+        [
+            "throw new IOException(\"rollback review\");",
+            "if (lastUser == null) throw new SQLException(\"rollback review\");",
+        ],
+        "{enabled}"
+    );
+}
+
+#[test]
+#[ignore = "requires the pinned Semgrep engine"]
+fn java_fully_qualified_types_are_reported_in_source_code() {
+    let project = project(
+        r#"package example; import java.util.Map;
+class Example extends java.util.ArrayList<String> {
+    // java.util.Date
+    /* java.io.InputStream */
+    java.util.List<java.time.Instant> staticallyTyped() {
+        return java.util.List.of();
+    }
+    @java.lang.Deprecated
+    demo.Widget widget;
+    Class<?> entry = java.util.Map.Entry.class;
+    String string = "java.util.Date";
+    String textBlock = """
+        java.util.Date
+        """;
+    Map<?, ?> map;
+}
+"#,
+    );
+    let result = report(check(project.path()).output().unwrap(), 0);
+    assert_eq!(result["complete"], true);
+    let findings = result["diagnostics"].as_array().unwrap();
+    assert!(
+        findings
+            .iter()
+            .all(|item| item["rule_id"] == "java.fully-qualified-type")
+    );
+    assert!(findings.iter().all(|item| item["severity"] == "warning"));
+    assert_eq!(
+        findings
+            .iter()
+            .map(|item| item["line"].as_u64().unwrap())
+            .collect::<Vec<_>>(),
+        [2, 5, 5, 6, 8, 9, 10],
+        "{result}"
+    );
+}
+
+#[test]
+#[ignore = "requires the pinned Semgrep engine"]
+fn html_profile_flags_inline_javascript_and_skips_non_executable_blocks() {
+    let project = tempfile::tempdir().unwrap();
+    let root = project.path();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [html, thymeleaf]\n",
+    )
+    .unwrap();
+    const PAGE: &str = r#"<script>run()</script>
+<script type="module">run()</script>
+<script SRC="/app.js"></script>
+<script th:src="@{/app.js}"></script>
+<script type="application/ld+json">{"name":"demo"}</script>
+<script type="application/json">{"name":"demo"}</script>
+<script></script>
+<button onclick="run()">Click</button>
+<input data-th-oninput="${useHandler}">
+<span once="text">text</span>
+<input th:src="${@outsideTemplate.file()}">
+"#;
+    fs::write(root.join("index.html"), PAGE).unwrap();
+    let result = report(check(root).output().unwrap(), 0);
+    assert_eq!(result["complete"], true);
+    assert_eq!(result["files_scanned"], 1);
+    let findings = result["diagnostics"].as_array().unwrap();
+    assert_eq!(
+        findings
+            .iter()
+            .map(|item| (
+                item["rule_id"].as_str().unwrap(),
+                item["line"].as_u64().unwrap()
+            ))
+            .collect::<Vec<_>>(),
+        [
+            ("html.inline-script", 1),
+            ("html.inline-script", 2),
+            ("html.inline-event-handler", 8),
+            ("html.inline-event-handler", 9),
+        ],
+        "{result}"
+    );
 }
