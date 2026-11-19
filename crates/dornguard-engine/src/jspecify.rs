@@ -18,6 +18,7 @@ impl Engine for JSpecify {
         let mut parser = Parser::new();
         if let Err(error) = parser.set_language(&tree_sitter_java::LANGUAGE.into()) {
             fail(&mut outcome, EngineName::Builtin, error.to_string());
+            request.mark_incomplete(&mut outcome);
             return outcome;
         }
         let mut descriptors = BTreeMap::new();
@@ -29,6 +30,7 @@ impl Engine for JSpecify {
                 Err(error) => fail(&mut outcome, EngineName::Builtin, error),
             }
         }
+        request.mark_incomplete(&mut outcome);
         outcome
     }
 }
@@ -111,6 +113,7 @@ fn check_file(
             let position = name.start_position();
             let line_start = name.start_byte() - position.column;
             let column = source[line_start..name.start_byte()].encode_utf16().count();
+            let subject = text(name, &source);
             for rule in request.rules {
                 outcome.diagnostics.push(Diagnostic {
                     path: Some(display_path(file)),
@@ -118,6 +121,9 @@ fn check_file(
                     class_name: None,
                     line: Some(position.row as u32 + 1),
                     column: Some(column as u32 + 1),
+                    end_line: Some(position.row as u32 + 1),
+                    end_column: Some((column + subject.encode_utf16().count()) as u32 + 1),
+                    subject: Some(subject.to_owned()),
                     rule_id: rule.id.clone(),
                     engine: EngineName::Builtin,
                     severity: rule.severity,
@@ -211,9 +217,7 @@ struct Names<'a> {
 
 impl<'a> Names<'a> {
     fn new(unit: Node<'_>, source: &'a str) -> Self {
-        let package = child(unit, "package_declaration")
-            .and_then(declared_name)
-            .map_or_else(String::new, |name| qualified_name(name, source));
+        let package = package_name(unit, source);
         let mut imports = Vec::new();
         let mut wildcard = false;
         for import in children(unit).filter(|node| node.kind() == "import_declaration") {
@@ -273,7 +277,13 @@ impl<'a> Names<'a> {
     }
 }
 
-fn children(node: Node<'_>) -> impl Iterator<Item = Node<'_>> {
+fn package_name(unit: Node<'_>, source: &str) -> String {
+    child(unit, "package_declaration")
+        .and_then(declared_name)
+        .map_or_else(String::new, |name| qualified_name(name, source))
+}
+
+pub(super) fn children(node: Node<'_>) -> impl Iterator<Item = Node<'_>> {
     (0..node.named_child_count()).filter_map(move |index| node.named_child(index))
 }
 
@@ -300,6 +310,6 @@ fn qualified_name(node: Node<'_>, source: &str) -> String {
     parts.join(".")
 }
 
-fn text<'a>(node: Node<'_>, source: &'a str) -> &'a str {
+pub(super) fn text<'a>(node: Node<'_>, source: &'a str) -> &'a str {
     &source[node.byte_range()]
 }

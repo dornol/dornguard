@@ -31,6 +31,32 @@ Use `enabled: false` to disable an activated rule in a project or module. For
 ArchUnit, `options` replaces the rule's package selectors. A single name
 matches a package segment and a dotted name matches a package prefix.
 
+## Java resource and exception checks
+
+```yaml
+version: 1
+profiles: [java]
+java_target: 17
+allow_logged_exceptions: true
+```
+
+In build-backed checks, DornGuard reads the Java target from Maven's main
+compiler settings or Gradle's main Java compile task. A configured release
+takes precedence over a bytecode target. Set `java_target` for source-only
+checks or to override the discovered target. With a known target below 21,
+`java.resource-not-closed` excludes the JDK's `java.net.http.HttpClient`.
+With an unknown target, the rule uses PMD's runtime analysis. JDBC resources
+and project types named `HttpClient` remain subject to the rule.
+An `instanceof` resource binding is treated as closed when the matching
+branch begins with a direct call to that binding's `close()` method.
+
+`allow_logged_exceptions` defaults to `false`. Set it to `true` to allow a
+direct call to a resolved `java.util.logging.Logger` or `org.slf4j.Logger`
+throwable overload immediately before a direct `throw` in the same `catch`
+body. The log call must pass the original, unmodified catch parameter.
+Conditional logging and calls that only pass its message still produce a
+finding. Use a per-finding suppression for other intentional exceptions.
+
 ## Formatting
 
 Add `format` to the existing profiles to require consistent formatting. The

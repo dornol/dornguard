@@ -14,8 +14,9 @@ cargo run --locked -- check examples/java-single --format json
 ```
 
 For a new Java project, run `dornguard init` from its root and install both
-source engines with `dornguard engines install`. Install JDK 21 to use PMD
-and Gradle. See [engine setup](docs/engines.md) for the Gradle runner and
+source engines with `dornguard engines install`. Use JDK 21 or later for the
+ArchUnit runner and run `dornguard doctor` to see the Java executable it selects.
+See [engine setup](docs/engines.md) for build and engine requirements and
 [the multi-module example](examples/spring-boot-multimodule).
 
 For Gradle Kotlin/JVM, enable `profiles: [kotlin]` in `.dornguard.yml`. With
@@ -42,7 +43,9 @@ dornguard doctor
 
 The check exit codes are 0 for success, 1 for a policy violation, 2 for
 configuration errors, 3 for engine errors, and 4 for preparation errors.
-JSON reports identify the scan scope and whether the checks completed.
+JSON reports identify the scan scope, whether checks completed, and which
+rules were affected by each analysis failure. See the
+[report format](docs/releases.md#report-format) for location and range fields.
 
 Use `dornguard audit` for a Maven dependency vulnerability report.
 See [Maven dependency audit](docs/dependency-audit.md) for setup and scope.

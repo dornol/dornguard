@@ -13,6 +13,8 @@ pub const CONFIG_FILE: &str = ".dornguard.yml";
 pub const DEFAULT_CONFIG: &str = "version: 1\nprofiles: [java]\n";
 pub const BUILTIN_VERSION: &str = "1.1.0";
 pub const UNNECESSARY_IMPORT_RULE: &str = "java.unnecessary-import";
+pub const RESOURCE_RULE: &str = "java.resource-not-closed";
+pub const PRESERVE_STACK_TRACE_RULE: &str = "java.preserve-stack-trace";
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -30,6 +32,9 @@ pub struct ProjectConfig {
     pub ignore: Vec<Ignore>,
     #[serde(default)]
     pub format: FormatConfig,
+    pub java_target: Option<u16>,
+    #[serde(default)]
+    pub allow_logged_exceptions: bool,
     #[serde(default)]
     rules: BTreeMap<String, RuleOverride>,
 }
@@ -175,6 +180,10 @@ impl Rule {
                 .ancestors()
                 .skip(1)
                 .any(|directory| directory.ends_with("src/test/java"))
+    }
+
+    pub fn applies_to_java_tests(&self) -> bool {
+        !self.skip_java_tests && self.applies_to(SourceLanguage::Java)
     }
 
     pub fn implementation(&self) -> Result<&Implementation> {
@@ -581,6 +590,9 @@ impl Registry {
             );
         }
         config.ruleset.validate()?;
+        if config.java_target == Some(0) {
+            bail!("java_target must be a positive Java feature version");
+        }
         for (name, width) in [
             ("java_indent", config.format.java_indent),
             ("kotlin_indent", config.format.kotlin_indent),

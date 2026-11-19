@@ -4,7 +4,12 @@ use std::path::{Path, PathBuf};
 use dornguard_core::fingerprint;
 
 #[derive(Default)]
-pub struct Sources(BTreeMap<PathBuf, Option<String>>);
+pub struct Sources(BTreeMap<PathBuf, Option<Source>>);
+
+pub struct Source {
+    text: String,
+    lines: Vec<usize>,
+}
 
 impl Sources {
     pub fn offsets(
@@ -15,7 +20,7 @@ impl Sources {
         end: usize,
     ) -> Option<String> {
         let source = self.get(root, path)?;
-        fragment_fingerprint(source.get(start..end)?)
+        fragment_fingerprint(source.fragment(start, end)?)
     }
 
     pub fn lines(
@@ -37,16 +42,62 @@ impl Sources {
         inclusive: bool,
     ) -> Option<String> {
         let source = self.get(root, path)?;
-        let start = byte_offset(source, start.0, start.1, false)?;
-        let end = byte_offset(source, end.0, end.1, inclusive)?;
-        fragment_fingerprint(source.get(start..end)?)
+        let start = source.offset(start, false)?;
+        let end = source.offset(end, inclusive)?;
+        fragment_fingerprint(source.fragment(start, end)?)
     }
 
-    fn get(&mut self, root: &Path, path: &Path) -> Option<&str> {
+    pub fn get(&mut self, root: &Path, path: &Path) -> Option<&Source> {
         self.0
             .entry(path.to_path_buf())
-            .or_insert_with(|| std::fs::read_to_string(root.join(path)).ok())
-            .as_deref()
+            .or_insert_with(|| {
+                std::fs::read_to_string(root.join(path))
+                    .ok()
+                    .map(Source::new)
+            })
+            .as_ref()
+    }
+}
+
+impl Source {
+    fn new(text: String) -> Self {
+        let mut lines = vec![0];
+        lines.extend(text.match_indices('\n').map(|(offset, _)| offset + 1));
+        Self { text, lines }
+    }
+
+    pub fn fragment(&self, start: usize, end: usize) -> Option<&str> {
+        self.text.get(start..end)
+    }
+
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    pub fn position(&self, offset: usize) -> Option<(u32, u32)> {
+        let line = self.lines.partition_point(|start| *start <= offset);
+        let start = self.lines[line - 1];
+        let prefix = self.text.get(start..offset)?;
+        (!prefix.ends_with('\r')).then(|| (line as u32, prefix.encode_utf16().count() as u32 + 1))
+    }
+
+    pub fn offset(&self, (line, column): (u32, u32), inclusive: bool) -> Option<usize> {
+        let row = line.checked_sub(1)? as usize;
+        let start = *self.lines.get(row)?;
+        let end = self.lines.get(row + 1).copied().unwrap_or(self.text.len());
+        let line = self.text[start..end].trim_end_matches(['\r', '\n']);
+        let mut target = column.checked_sub(1)? as usize;
+        for (index, character) in line.char_indices() {
+            if target < character.len_utf16() {
+                return if inclusive {
+                    Some(start + index + character.len_utf8())
+                } else {
+                    (target == 0).then_some(start + index)
+                };
+            }
+            target -= character.len_utf16();
+        }
+        (!inclusive && target == 0).then_some(start + line.len())
     }
 }
 
@@ -58,22 +109,4 @@ fn fragment_fingerprint(fragment: &str) -> Option<String> {
         .collect::<Vec<_>>()
         .join("\n");
     (!normalized.is_empty()).then(|| fingerprint(&normalized))
-}
-
-fn byte_offset(source: &str, line: u32, column: u32, inclusive: bool) -> Option<usize> {
-    let mut start = 0;
-    let mut lines = source.split_inclusive('\n');
-    for text in lines.by_ref().take(line.checked_sub(1)? as usize) {
-        start += text.len();
-    }
-    let line = lines.next()?;
-    let mut target = column.checked_sub(1)? as usize;
-    let line = line.trim_end_matches(['\r', '\n']);
-    for (index, character) in line.char_indices() {
-        if target < character.len_utf16() {
-            return Some(start + index + usize::from(inclusive) * character.len_utf8());
-        }
-        target -= character.len_utf16();
-    }
-    (!inclusive && target == 0).then_some(start + line.len())
 }

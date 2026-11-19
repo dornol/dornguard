@@ -18,9 +18,14 @@ pub struct Module {
     pub name: String,
     pub project_dir: PathBuf,
     pub source_dirs: Vec<PathBuf>,
+    #[serde(default)]
+    pub test_source_dirs: Vec<PathBuf>,
+    #[serde(default)]
+    pub compile_sources: BTreeSet<PathBuf>,
     pub kotlin_source_dirs: Vec<PathBuf>,
     pub class_dirs: Vec<PathBuf>,
     pub classpath: Vec<PathBuf>,
+    pub java_target: Option<u16>,
     pub dependencies: Vec<String>,
 }
 
@@ -102,6 +107,12 @@ pub struct Diagnostic {
     pub class_name: Option<String>,
     pub line: Option<u32>,
     pub column: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_line: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_column: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subject: Option<String>,
     pub rule_id: String,
     pub engine: EngineName,
     pub severity: Severity,
@@ -134,6 +145,51 @@ pub struct Failure {
     pub kind: FailureKind,
     pub engine: Option<EngineName>,
     pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stage: Option<FailureStage>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub build_tool: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_type: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub modules: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub rule_ids: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FailureStage {
+    Engine,
+    ProjectModel,
+    ProjectCompile,
+}
+
+impl Failure {
+    pub fn new(kind: FailureKind, message: impl Into<String>) -> Self {
+        Self {
+            kind,
+            engine: None,
+            message: message.into(),
+            stage: None,
+            build_tool: None,
+            file_count: None,
+            path: None,
+            error_type: None,
+            modules: Vec::new(),
+            rule_ids: Vec::new(),
+        }
+    }
+
+    pub fn set_rules<'a>(&mut self, rules: impl IntoIterator<Item = &'a str>) {
+        self.rule_ids = rules.into_iter().map(str::to_owned).collect();
+        self.rule_ids.sort();
+        self.rule_ids.dedup();
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -161,6 +217,8 @@ pub struct Outcome {
     pub diagnostics: Vec<Diagnostic>,
     pub failures: Vec<Failure>,
     pub scanned_files: BTreeSet<PathBuf>,
+    pub requested_files: BTreeSet<PathBuf>,
+    pub incomplete_files: BTreeSet<PathBuf>,
     pub scope: Scope,
     pub no_changes: bool,
     pub fallback_reason: Option<String>,
@@ -173,7 +231,18 @@ impl Outcome {
         self.diagnostics.extend(other.diagnostics);
         self.failures.extend(other.failures);
         self.scanned_files.extend(other.scanned_files);
+        self.requested_files.extend(other.requested_files);
+        self.incomplete_files.extend(other.incomplete_files);
         self.suppressed_count += other.suppressed_count;
+    }
+
+    pub fn record_coverage<'a>(&mut self, files: impl IntoIterator<Item = &'a PathBuf>) {
+        for file in files {
+            self.requested_files.insert(file.clone());
+            if !self.scanned_files.contains(file) {
+                self.incomplete_files.insert(file.clone());
+            }
+        }
     }
 
     pub fn finish(mut self) -> CheckReport {
@@ -196,13 +265,17 @@ impl Outcome {
             None => (Status::Passed, 0),
         };
         CheckReport {
-            version: 2,
+            version: 3,
             status,
             exit_code,
             complete: self.failures.is_empty(),
             scope: self.scope,
             fallback_reason: self.fallback_reason,
-            files_scanned: self.scanned_files.len(),
+            files_requested: self.requested_files.union(&self.scanned_files).count(),
+            files_scanned: self
+                .scanned_files
+                .difference(&self.incomplete_files)
+                .count(),
             suppressed_count: self.suppressed_count,
             organization_policy_enforced: self.organization_policy_enforced,
             diagnostics: self.diagnostics,
@@ -221,6 +294,7 @@ pub struct CheckReport {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fallback_reason: Option<String>,
     pub files_scanned: usize,
+    pub files_requested: usize,
     pub suppressed_count: usize,
     pub organization_policy_enforced: bool,
     pub diagnostics: Vec<Diagnostic>,
@@ -241,11 +315,7 @@ mod tests {
         let report = Outcome {
             failures: failures
                 .into_iter()
-                .map(|kind| Failure {
-                    kind,
-                    engine: None,
-                    message: "failed".into(),
-                })
+                .map(|kind| Failure::new(kind, "failed"))
                 .collect(),
             ..Outcome::default()
         }

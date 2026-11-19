@@ -5,6 +5,19 @@ for Java 21. Java source analysis uses Java 21 syntax in PMD. Gradle project
 integration is tested with Gradle 9.9.1 and JDK 21. Java Maven integration
 is tested with Maven 3.9.9 and JDK 21.
 
+The ArchUnit runner needs Java 21 or later. DornGuard selects
+`JAVA_HOME/bin/java` when `JAVA_HOME` is set and otherwise uses `java` from
+`PATH`. `dornguard doctor` reports this runtime separately from its source
+engine checks. An unavailable optional ArchUnit runtime does not change the
+doctor exit code for the source engines.
+
+Maven and Gradle start through their usual launchers and follow the project's
+build settings, including compiler toolchains. The compiler target may be
+older than the engine runtime. A failed project model or compile operation
+is a preparation error (exit 4). A failed analysis engine is an engine error
+(exit 3). For an incomplete check, the text and agent formats show the
+failure before collected diagnostics.
+
 ```sh
 dornguard engines install
 dornguard doctor

@@ -120,7 +120,10 @@ prototype-scoped beans are outside its scope. PMD may keep imports whose
 usage it cannot resolve without a complete classpath.
 
 Unused wildcard imports, including static ones, are reported when DornGuard
-can pass the compiled module's classes and compile dependencies to PMD.
+can pass the module's compiled classes and dependencies to PMD and the file
+is included in the main compiler inputs reported by the build integration.
+Files excluded by the compiler use the source-only fallback, including
+files that still have class output from an earlier build.
 DornGuard reuses this classpath when another check already compiles the
 module. To compile Maven or Gradle sources specifically for this rule, run
 `dornguard check --resolve-imports`.
@@ -128,13 +131,14 @@ module. To compile Maven or Gradle sources specifically for this rule, run
 The option uses Maven's main compile phase or Gradle's main classes task.
 With Maven, build checks examine the full reactor even when `--changed` is
 set. Gradle supports the usual module selection. Files checked without a
-compiled classpath, including test files found by a source-only profile,
+compiled classpath, including Java test sources,
 still report unnecessary explicit imports and duplicate wildcard imports.
 
 The qualified-type checks use Java and Kotlin naming conventions to identify
-candidates in code. Import and package declarations, comments, and string
-literals are skipped. Qualifiers that distinguish types with the same name
-may be intentional.
+candidates in code. Java analysis skips qualified expressions rooted in a
+locally declared value that is visible at that position. Import and package
+declarations, comments, and string literals are skipped. Qualifiers that
+distinguish types with the same name may be intentional.
 
 The `runCatching` check recognizes selected `kotlinx.coroutines` calls such as
 `delay` and `withContext`. It also finds direct calls to sibling no-argument

@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 
-use dornguard_core::{CheckReport, Scope, Severity, Status};
+use dornguard_core::{CheckReport, FailureStage, Scope, Severity, Status};
 
 mod sarif;
 
@@ -13,10 +13,11 @@ pub fn write_json(report: &CheckReport, writer: &mut impl Write) -> io::Result<(
 
 pub fn write_text(report: &CheckReport, writer: &mut impl Write) -> io::Result<()> {
     write_summary(report, writer)?;
+    write_failures(report, writer)?;
     for diagnostic in &report.diagnostics {
         write_diagnostic(diagnostic, writer)?;
     }
-    write_failures(report, writer)
+    Ok(())
 }
 
 pub fn write_agent(report: &CheckReport, writer: &mut impl Write, limit: usize) -> io::Result<()> {
@@ -64,11 +65,15 @@ fn write_summary(report: &CheckReport, writer: &mut impl Write) -> io::Result<()
         Scope::Selected => "selected",
         Scope::Changed => "changed",
     };
-    writeln!(
+    write!(
         writer,
-        "DornGuard: {status} ({scope}, {} files scanned)",
+        "DornGuard: {status} ({scope}, {} files scanned",
         report.files_scanned
     )?;
+    if report.files_requested != report.files_scanned {
+        write!(writer, " of {} requested", report.files_requested)?;
+    }
+    writeln!(writer, ")")?;
     if let Some(reason) = &report.fallback_reason {
         writeln!(writer, "Full scan: {reason}")?;
     }
@@ -77,7 +82,48 @@ fn write_summary(report: &CheckReport, writer: &mut impl Write) -> io::Result<()
 
 fn write_failures(report: &CheckReport, writer: &mut impl Write) -> io::Result<()> {
     for failure in &report.failures {
-        writeln!(writer, "  {}", failure.message)?;
+        match failure.stage {
+            Some(FailureStage::Engine) => {
+                if let Some(engine) = failure.engine {
+                    write!(writer, "  {} analysis: ", engine.executable())?;
+                }
+            }
+            Some(FailureStage::ProjectModel) => {
+                write!(
+                    writer,
+                    "  {} project model: ",
+                    failure.build_tool.unwrap_or("Build")
+                )?;
+            }
+            Some(FailureStage::ProjectCompile) => {
+                write!(
+                    writer,
+                    "  {} compile and model export: ",
+                    failure.build_tool.unwrap_or("Build")
+                )?;
+            }
+            None => write!(writer, "  ")?,
+        }
+        if let Some(path) = &failure.path {
+            write!(writer, "{path}: ")?;
+        }
+        if let Some(kind) = &failure.error_type {
+            write!(writer, "{kind}: ")?;
+        }
+        writeln!(writer, "{}", failure.message)?;
+        if !failure.modules.is_empty() {
+            writeln!(writer, "    Modules: {}", failure.modules.join(", "))?;
+        }
+        if let Some(count) = failure.file_count {
+            writeln!(writer, "    Files in this analysis: {count}")?;
+        }
+        if !failure.rule_ids.is_empty() {
+            writeln!(
+                writer,
+                "    Rules with incomplete results: {}",
+                failure.rule_ids.join(", ")
+            )?;
+        }
     }
     Ok(())
 }

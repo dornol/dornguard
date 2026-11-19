@@ -87,6 +87,70 @@ pub(crate) fn java_executable() -> PathBuf {
     )
 }
 
+pub(crate) fn java_command(root: &Path) -> Command {
+    let mut command = Command::new(java_executable());
+    command
+        .current_dir(root)
+        .kill_on_drop(true)
+        .env_remove("JAVA_TOOL_OPTIONS")
+        .env_remove("_JAVA_OPTIONS")
+        .env_remove("JDK_JAVA_OPTIONS");
+    command
+}
+
+pub async fn inspect_java(root: &Path) -> Result<String> {
+    let executable = java_executable();
+    let output = tokio::time::timeout(
+        Duration::from_secs(15),
+        java_command(root)
+            .args(["-XshowSettings:properties", "-version"])
+            .output(),
+    )
+    .await
+    .into_diagnostic()
+    .wrap_err("Java version check timed out")?
+    .into_diagnostic()
+    .wrap_err_with(|| {
+        format!(
+            "Could not start {}; ArchUnit requires Java 21 or later",
+            executable.display()
+        )
+    })?;
+    if !output.status.success() {
+        bail!(
+            "Java version check failed for {} ({}); ArchUnit requires Java 21 or later",
+            executable.display(),
+            output.status
+        );
+    }
+    let settings = String::from_utf8_lossy(&output.stderr);
+    let property = |name| {
+        settings.lines().find_map(|line| {
+            let (key, value) = line.trim().split_once(" = ")?;
+            (key == name).then_some(value)
+        })
+    };
+    let version = property("java.version").unwrap_or("unknown");
+    let executable = property("java.home")
+        .map(|home| {
+            Path::new(home)
+                .join("bin")
+                .join(if cfg!(windows) { "java.exe" } else { "java" })
+        })
+        .unwrap_or(executable);
+    let major = version
+        .split(['.', '-', '+'])
+        .next()
+        .and_then(|part| part.parse::<u32>().ok());
+    if major.is_none_or(|major| major < 21) {
+        bail!(
+            "Java {version} at {}; ArchUnit requires Java 21 or later",
+            executable.display()
+        );
+    }
+    Ok(format!("Java {version} at {}", executable.display()))
+}
+
 fn path_lookup(name: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
     let names = if cfg!(windows) && !name.contains('.') {

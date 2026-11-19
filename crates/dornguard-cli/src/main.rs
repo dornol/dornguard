@@ -5,11 +5,12 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand, ValueEnum};
 use dornguard_config::{
-    BUILTIN_VERSION, CONFIG_FILE, DEFAULT_CONFIG, FormatConfig, Registry, UNNECESSARY_IMPORT_RULE,
+    BUILTIN_VERSION, CONFIG_FILE, DEFAULT_CONFIG, ProjectConfig, Registry, UNNECESSARY_IMPORT_RULE,
 };
 use dornguard_core::{EngineName, Failure, FailureKind, Outcome, Scope, SourceLanguage};
 use dornguard_engine::{
-    Engine, Eslint, Pmd, Request, Semgrep, check_builtin, inspect, install, supported_version,
+    Engine, Eslint, Pmd, Request, Semgrep, check_builtin, inspect, inspect_java, install,
+    supported_version,
 };
 use ignore::WalkBuilder;
 use miette::{IntoDiagnostic, Result, WrapErr, bail, miette};
@@ -312,6 +313,10 @@ async fn dispatch(action: Action) -> Result<u8> {
                     }
                 }
             }
+            match inspect_java(&root).await {
+                Ok(java) => println!("ArchUnit runtime (Java 21+): {java}"),
+                Err(error) => eprintln!("ArchUnit runtime: {error:#}"),
+            }
             Ok(exit_code)
         }
         Action::Engines {
@@ -543,7 +548,7 @@ async fn check(
     if files.is_empty() {
         return scoped_prep_error(miette!("No source files apply to this check"));
     }
-    let mut outcome = run_source_engines(root, &files, &registry, &rules, &config.format).await;
+    let mut outcome = run_source_engines(root, &files, &registry, &rules, &config).await;
     outcome.scope = scope;
     outcome.fallback_reason = fallback_reason;
     if organization.is_none() {
@@ -557,7 +562,7 @@ async fn run_source_engines(
     files: &[PathBuf],
     registry: &Registry,
     rules: &[&dornguard_config::Rule],
-    format: &FormatConfig,
+    config: &ProjectConfig,
 ) -> Outcome {
     let check_group = async |engine, files: Vec<PathBuf>| {
         let languages = files
@@ -589,9 +594,17 @@ async fn run_source_engines(
         };
         match engine {
             EngineName::Semgrep => Semgrep::default().check(request).await,
-            EngineName::Pmd => Pmd::default().check(request).await,
+            EngineName::Pmd => {
+                Pmd {
+                    java_target: config.java_target,
+                    allow_logged_exceptions: config.allow_logged_exceptions,
+                    ..Pmd::default()
+                }
+                .check(request)
+                .await
+            }
             EngineName::Eslint => Eslint.check(request).await,
-            EngineName::Builtin => check_builtin(request, format).await,
+            EngineName::Builtin => check_builtin(request, &config.format).await,
             _ => unreachable!("source runner requires a source engine"),
         }
     };
@@ -750,11 +763,7 @@ fn source_files(
 
 fn failure(kind: FailureKind, error: miette::Report) -> Outcome {
     Outcome {
-        failures: vec![Failure {
-            kind,
-            engine: None,
-            message: format!("{error:#}"),
-        }],
+        failures: vec![Failure::new(kind, format!("{error:#}"))],
         ..Outcome::default()
     }
 }

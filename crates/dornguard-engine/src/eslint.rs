@@ -11,7 +11,8 @@ use tokio::time::Instant;
 use crate::semgrep::budgeted_batch;
 use crate::source::Sources;
 use crate::{
-    Engine, Request, check_version, command, display_path, fail, relative_path, run_command,
+    Engine, Request, check_version, command, display_path, engine_failure, fail, relative_path,
+    run_command,
 };
 
 const ENGINE: EngineName = EngineName::Eslint;
@@ -24,6 +25,7 @@ impl Engine for Eslint {
         if let Err(error) = scan(request, &mut outcome).await {
             fail(&mut outcome, ENGINE, format!("{error:#}"));
         }
+        request.mark_incomplete(&mut outcome);
         outcome
     }
 }
@@ -98,11 +100,11 @@ async fn scan(request: Request<'_>, outcome: &mut Outcome) -> Result<()> {
             let mut parsed = true;
             for finding in report.messages {
                 if finding.fatal {
-                    fail(
-                        outcome,
-                        ENGINE,
-                        format!("{}: {}", display_path(&path), finding.message),
-                    );
+                    let mut failure = engine_failure(ENGINE, finding.message);
+                    failure.path = Some(display_path(&path));
+                    failure.error_type = Some("FatalError".to_owned());
+                    failure.file_count = Some(batch.len());
+                    outcome.failures.push(failure);
                     parsed = false;
                     continue;
                 }
@@ -121,12 +123,23 @@ async fn scan(request: Request<'_>, outcome: &mut Outcome) -> Result<()> {
                 if line == 0 || column == 0 {
                     bail!("ESLint returned an invalid diagnostic position");
                 }
+                let source = sources.get(request.root, &path);
+                let start = source.and_then(|source| source.offset((line, column), false));
+                let end = finding.end_line.zip(finding.end_column).filter(|end| {
+                    source
+                        .and_then(|source| source.offset(*end, false))
+                        .zip(start)
+                        .is_some_and(|(end, start)| start < end)
+                });
                 outcome.diagnostics.push(Diagnostic {
                     path: Some(display_path(&path)),
                     module: None,
                     class_name: None,
                     line: Some(line),
-                    column: Some(column),
+                    column: start.map(|_| column),
+                    end_line: end.map(|(line, _)| line),
+                    end_column: end.map(|(_, column)| column),
+                    subject: None,
                     rule_id: rule.id.clone(),
                     engine: ENGINE,
                     severity: rule.severity,

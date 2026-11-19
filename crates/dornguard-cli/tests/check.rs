@@ -247,7 +247,12 @@ fn jspecify_changed_rechecks_types_when_package_marking_is_deleted() {
 #[cfg(unix)]
 #[test]
 fn missing_engine_is_reported_as_an_incomplete_check() {
-    let project = project(CLEAN);
+    let project = project("class Example {} \n");
+    fs::write(
+        project.path().join(".dornguard.yml"),
+        "version: 1\nprofiles: [java-source, format]\n",
+    )
+    .unwrap();
     let empty_path = tempfile::tempdir().unwrap();
     let result = report(
         check(project.path())
@@ -260,6 +265,29 @@ fn missing_engine_is_reported_as_an_incomplete_check() {
     assert_eq!(result["status"], "engine_error");
     assert_eq!(result["complete"], false);
     assert_eq!(result["failures"][0]["engine"], "semgrep");
+    assert_eq!(result["failures"][0]["stage"], "engine");
+    assert_eq!(result["failures"][0]["file_count"], 1);
+    assert!(
+        result["failures"][0]["rule_ids"]
+            .as_array()
+            .unwrap()
+            .contains(&Value::from("java.stdout-usage"))
+    );
+    let text = Command::new(env!("CARGO_BIN_EXE_dornguard"))
+        .current_dir(project.path())
+        .env("PATH", empty_path.path())
+        .env("DORNGUARD_ENGINE_DIR", empty_path.path())
+        .arg("check")
+        .output()
+        .unwrap();
+    assert_eq!(text.status.code(), Some(3));
+    let text = String::from_utf8(text.stdout).unwrap();
+    assert!(text.contains("ENGINE ERROR"));
+    assert!(
+        text.find("Rules with incomplete results").unwrap()
+            < text.find("error[format.trailing-whitespace]").unwrap(),
+        "{text}"
+    );
 }
 
 #[test]
@@ -292,9 +320,51 @@ fn real_semgrep_passes_flags_violations_and_rejects_analysis_errors() {
         "public class Example { void run() { System.out.println(1); @@@ } }\n",
     )
     .unwrap();
+    fs::write(root.join("src/Additional.java"), "class Additional {}\n").unwrap();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [java]\n",
+    )
+    .unwrap();
     let result = report(check(root).output().unwrap(), 3);
     assert_eq!(result["status"], "engine_error");
     assert_eq!(result["complete"], false);
+    assert_eq!(result["files_requested"], 2);
+    assert_eq!(result["files_scanned"], 1);
+    for (engine, kind) in [("semgrep", "PartialParsing"), ("pmd", "ParseException")] {
+        assert!(
+            result["failures"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|failure| failure["engine"] == engine
+                    && failure["path"] == "src/Example.java"
+                    && failure["error_type"] == kind),
+            "{result}"
+        );
+    }
+    let output = Command::new(env!("CARGO_BIN_EXE_dornguard"))
+        .current_dir(root)
+        .args(["check", "--format", "sarif"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(3));
+    let sarif: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let run = &sarif["runs"][0];
+    assert_eq!(run["properties"]["filesRequested"], 2);
+    assert_eq!(run["properties"]["filesScanned"], 1);
+    assert!(
+        run["invocations"][0]["toolExecutionNotifications"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(
+                |notification| notification["descriptor"]["id"] == "PartialParsing"
+                    && notification["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
+                        == "src/Example.java"
+            ),
+        "{sarif}"
+    );
 }
 
 #[test]
@@ -636,16 +706,54 @@ fn gradle_project_enforces_architecture_and_keeps_module_policies_separate() {
 
     let domain_path = "api/src/main/java/example/api/domain/Book.java";
     let domain = root.join(domain_path);
-    let source = fs::read_to_string(&domain).unwrap().replace(
-        "package example.api.domain;",
-        "package example.api.domain;\nimport example.common.*;\nimport java.net.*;\n/** See {@link Titles}. */",
-    );
+    let source = r#"package example.api.domain;
+import example.common.*;
+import java.net.*;
+import static example.common.Titles.*;
+import java.net.http.HttpClient;
+/** See {@link Titles}. */
+public record Book(String title) {
+    public Titles lookup(Titles value) { normalize(title); return value; }
+    void request() {
+        var client = HttpClient.newHttpClient();
+        client.followRedirects();
+    }
+}
+"#;
     fs::write(&domain, source).unwrap();
+    let controller_path = "admin/src/main/java/example/admin/controller/AdminController.java";
+    let controller = root.join(controller_path);
+    let controller_source = fs::read_to_string(&controller).unwrap().replace(
+        "import org.springframework.web.bind.annotation.GetMapping;\nimport org.springframework.web.bind.annotation.RestController;",
+        "import org.springframework.web.bind.annotation.*;",
+    );
+    fs::write(&controller, controller_source).unwrap();
+    let build = root.join("build.gradle.kts");
+    let script = fs::read_to_string(&build).unwrap();
+    fs::write(
+        &build,
+        format!("{script}\nsubprojects {{ tasks.withType<JavaCompile>().configureEach {{ options.release.set(17) }} }}\n"),
+    )
+    .unwrap();
     let initial = report(check(root).output().unwrap(), 0);
+    assert!(
+        unnecessary_import_lines(&initial, controller_path).is_empty(),
+        "{initial}"
+    );
     assert_eq!(initial["files_scanned"], 7);
     assert_eq!(
         unnecessary_import_lines(&initial, domain_path),
         [3],
+        "{initial}"
+    );
+    assert!(
+        initial["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(
+                |item| item["rule_id"] != "java.resource-not-closed" || item["path"] != domain_path
+            ),
         "{initial}"
     );
 
@@ -693,7 +801,6 @@ fn gradle_project_enforces_architecture_and_keeps_module_policies_separate() {
             })
     );
 
-    let controller = root.join("admin/src/main/java/example/admin/controller/AdminController.java");
     let source = fs::read_to_string(&controller).unwrap();
     fs::write(
         &controller,
@@ -703,7 +810,6 @@ fn gradle_project_enforces_architecture_and_keeps_module_policies_separate() {
         ),
     )
     .unwrap();
-    let build = root.join("build.gradle.kts");
     let script = fs::read_to_string(&build).unwrap();
     fs::write(build, format!("{script}\nproject(\":api\") {{ dependencies {{ \"implementation\"(project(\":admin\")) }} }}\n")).unwrap();
 
@@ -741,10 +847,40 @@ fn gradle_project_enforces_architecture_and_keeps_module_policies_separate() {
     assert!(diagnostics.iter().all(|diagnostic| diagnostic["path"]
         == "admin/src/main/java/example/admin/controller/AdminController.java"));
 
+    let test_path = "api/src/test/java/example/api/OnlyTest.java";
+    fs::create_dir_all(root.join(test_path).parent().unwrap()).unwrap();
+    fs::write(
+        root.join(test_path),
+        "class OnlyTest { void exercise() { System.out.println(1); } }\n",
+    )
+    .unwrap();
+    let test = report(
+        check(root)
+            .args(["--module", ":api", test_path])
+            .output()
+            .unwrap(),
+        1,
+    );
+    assert_eq!(test["files_scanned"], 1, "{test}");
+    let findings = test["diagnostics"].as_array().unwrap();
+    assert!(
+        findings
+            .iter()
+            .any(|item| item["rule_id"] == "java.stdout-usage" && item["path"] == test_path),
+        "{test}"
+    );
+    assert!(
+        findings.iter().all(|item| item["engine"] != "archunit"),
+        "{test}"
+    );
+
     fs::write(domain, "package example.api.domain; public record Book( {}").unwrap();
     let build_failure = report(check(root).args(["--module", ":api"]).output().unwrap(), 4);
     assert_eq!(build_failure["complete"], false);
     assert_eq!(build_failure["status"], "preparation_error");
+    assert_eq!(build_failure["failures"][0]["stage"], "project_compile");
+    assert_eq!(build_failure["failures"][0]["build_tool"], "Gradle");
+    assert_eq!(build_failure["failures"][0]["modules"][0], ":api");
 }
 
 fn copy_gradle_fixture(source: &Path, destination: &Path) {
@@ -1369,7 +1505,7 @@ fn kotlin_mixed_sources_report_physical_and_logical_locations() {
     fs::write(root.join(java), "package example.service.adapter; public class LabelAdapter { public String map(String value) { System.out.println(value); try { throw new IllegalArgumentException(); } catch (IllegalArgumentException e) {} return value; } }\n").unwrap();
 
     let flagged = report(check(root).output().unwrap(), 1);
-    assert_eq!(flagged["version"], 2);
+    assert_eq!(flagged["version"], 3);
     assert_eq!(flagged["files_scanned"], 5);
     let findings = flagged["diagnostics"].as_array().unwrap();
     for (id, path) in [
@@ -1559,7 +1695,7 @@ fn maven_reactor_enforces_layered_and_hexagonal_profiles() {
     fs::write(root.join("storage/pom.xml"), child("storage", "")).unwrap();
     fs::write(
         storage.join("repository/BookRepository.java"),
-        "package example.repository; public class BookRepository {}",
+        "package example.repository; public class BookRepository { public @interface Route {} public static int count() { return 0; } }",
     )
     .unwrap();
     fs::write(
@@ -1582,6 +1718,12 @@ fn maven_reactor_enforces_layered_and_hexagonal_profiles() {
             <build>
               <sourceDirectory>custom sources</sourceDirectory>
               <outputDirectory>${project.build.directory}/custom classes</outputDirectory>
+              <plugins><plugin><artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                  <release>17</release>
+                  <excludes><exclude>**/Excluded.java</exclude></excludes>
+                </configuration>
+              </plugin></plugins>
             </build>"#,
         ),
     )
@@ -1715,6 +1857,8 @@ fn maven_reactor_enforces_layered_and_hexagonal_profiles() {
     let result = report(check(&root).output().unwrap(), 4);
     assert_eq!(result["status"], "preparation_error");
     assert_eq!(result["complete"], false);
+    assert_eq!(result["failures"][0]["stage"], "project_compile");
+    assert_eq!(result["failures"][0]["build_tool"], "Maven");
 
     fs::write(
         root.join(".dornguard.yml"),
@@ -1724,7 +1868,22 @@ fn maven_reactor_enforces_layered_and_hexagonal_profiles() {
     let domain_path = "web/custom sources/example/domain/Book.java";
     fs::write(
         root.join(domain_path),
-        "package example.domain;\nimport example.repository.*;\nimport java.net.*;\n/** See {@link BookRepository}. */\npublic class Book {}\n",
+        r#"package example.domain;
+import example.repository.*;
+import java.net.*;
+import static example.repository.BookRepository.*;
+import java.net.http.HttpClient;
+import example.infrastructure.*;
+/** See {@link BookRepository}. */
+public record Book(BookRepository repository) {
+    @Route
+    public BookRepository route() { count(); return repository; }
+    void request() {
+        HttpClient client = HttpClient.newHttpClient();
+        client.followRedirects();
+    }
+}
+"#,
     )
     .unwrap();
     let test_path = "web/src/test/java/example/domain/BookTest.java";
@@ -1734,15 +1893,36 @@ fn maven_reactor_enforces_layered_and_hexagonal_profiles() {
         "package example.domain;\nimport java.net.*;\nimport java.io.InputStream;\nclass BookTest {}\n",
     )
     .unwrap();
+    let excluded_path = "web/custom sources/example/domain/Excluded.java";
+    fs::write(
+        root.join(excluded_path),
+        "package example.domain;\nimport absent.types.*;\nimport java.io.InputStream;\nrecord Excluded(Missing type) {}\n",
+    )
+    .unwrap();
     let resolved = report(check(&root).arg("--resolve-imports").output().unwrap(), 0);
-    assert_eq!(resolved["files_scanned"], 5, "{resolved}");
+    assert_eq!(resolved["files_scanned"], 6, "{resolved}");
     assert_eq!(
         unnecessary_import_lines(&resolved, domain_path),
-        [3],
+        [3, 6],
+        "{resolved}"
+    );
+    assert!(
+        resolved["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(
+                |item| item["rule_id"] != "java.resource-not-closed" || item["path"] != domain_path
+            ),
         "{resolved}"
     );
     assert_eq!(
         unnecessary_import_lines(&resolved, test_path),
+        [3],
+        "{resolved}"
+    );
+    assert_eq!(
+        unnecessary_import_lines(&resolved, excluded_path),
         [3],
         "{resolved}"
     );
@@ -2118,6 +2298,365 @@ fn unnecessary_import_lines(report: &Value, path: &str) -> Vec<u64> {
 }
 
 #[test]
+#[ignore = "requires Maven 3, JDK 21, both source engines and the bundled JVM artifacts"]
+fn maven_tracks_effective_compile_inputs_and_checks_custom_test_sources() {
+    let project = tempfile::tempdir().unwrap();
+    let root = project.path();
+    let main = root.join("src/main/java/example");
+    let test = root.join("custom tests/example");
+    fs::create_dir_all(&main).unwrap();
+    fs::create_dir_all(&test).unwrap();
+    let pom = r#"<project>
+        <modelVersion>4.0.0</modelVersion>
+        <groupId>example</groupId><artifactId>scope</artifactId><version>1</version>
+        <properties><maven.compiler.release>17</maven.compiler.release></properties>
+        <build><testSourceDirectory>custom tests</testSourceDirectory>
+          <plugins><plugin><artifactId>maven-compiler-plugin</artifactId><version>3.13.0</version>
+            <configuration><useIncrementalCompilation>false</useIncrementalCompilation>OPTIONS</configuration>
+          </plugin></plugins>
+        </build>
+    </project>"#;
+    fs::write(root.join("pom.xml"), pom.replace("OPTIONS", "")).unwrap();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [spring-boot, layered]\n",
+    )
+    .unwrap();
+    fs::write(
+        main.join("Example.java"),
+        "package example; import java.net.*; public record Example(String name) {}\n",
+    )
+    .unwrap();
+    fs::write(
+        main.join("Other.java"),
+        "package example; public class Other {}\n",
+    )
+    .unwrap();
+    fs::write(
+        test.join("BrokenTest.java"),
+        "package example; import org.springframework.beans.factory.annotation.Autowired; class BrokenTest { @Autowired Object dependency; void example() { try { operation(); } catch (Exception ex) {} } void operation() throws Exception {} }\n",
+    ).unwrap();
+
+    let first = report(check(root).output().unwrap(), 1);
+    assert_eq!(first["files_scanned"], 3, "{first}");
+    assert_eq!(
+        unnecessary_import_lines(&first, "src/main/java/example/Example.java"),
+        [1],
+        "{first}"
+    );
+    let test_path = "custom tests/example/BrokenTest.java";
+    let findings = first["diagnostics"].as_array().unwrap();
+    assert!(
+        findings
+            .iter()
+            .any(|item| item["path"] == test_path && item["rule_id"] == "java.empty-catch"),
+        "{first}"
+    );
+    assert!(
+        findings
+            .iter()
+            .all(|item| item["rule_id"] != "spring.field-injection"),
+        "{first}"
+    );
+
+    fs::write(
+        root.join("pom.xml"),
+        pom.replace(
+            "OPTIONS",
+            "<excludes><exclude>**/Example.java</exclude></excludes>",
+        ),
+    )
+    .unwrap();
+    fs::write(
+        main.join("Example.java"),
+        "package example; import missing.types.*; public record Example(Needed name) {}\n",
+    )
+    .unwrap();
+    let resolved = report(
+        check(root)
+            .args(["--resolve-imports", "--module", "example:scope"])
+            .output()
+            .unwrap(),
+        1,
+    );
+    assert!(root.join("target/classes/example/Example.class").is_file());
+    assert!(
+        unnecessary_import_lines(&resolved, "src/main/java/example/Example.java").is_empty(),
+        "{resolved}"
+    );
+    assert_eq!(resolved["files_scanned"], 3, "{resolved}");
+}
+
+#[test]
+#[ignore = "requires the pinned Semgrep and PMD engines"]
+fn source_diagnostics_report_utf16_ranges_and_subjects() {
+    let source = concat!(
+        "import\n    java.io.InputStream;\n",
+        "class Example {\n",
+        "\tObject run() { /* 한😀 */ return java.util.\n",
+        "\t    stream.Collectors.toList(); }\n",
+        "\tvoid wrap() { try {} catch (Exception e) { /* 한😀 */ throw new IllegalArgumentException(); } }\n",
+        "}\n",
+    );
+    let project = project(&source.replace('\n', "\r\n"));
+    let root = project.path();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [java]\n",
+    )
+    .unwrap();
+    let report = report(check(root).output().unwrap(), 0);
+    let sarif = Command::new(env!("CARGO_BIN_EXE_dornguard"))
+        .current_dir(root)
+        .args(["check", "--format", "sarif"])
+        .output()
+        .unwrap();
+    assert!(sarif.status.success());
+    let sarif: Value = serde_json::from_slice(&sarif.stdout).unwrap();
+    let run = &sarif["runs"][0];
+    assert_eq!(run["columnKind"], "utf16CodeUnits");
+    assert_eq!(report["version"], 3);
+    let lines = source
+        .lines()
+        .map(|line| line.encode_utf16().collect::<Vec<_>>())
+        .collect::<Vec<_>>();
+    for (id, subject, span) in [
+        (
+            "java.unnecessary-import",
+            "java.io.InputStream",
+            "import\n    java.io.InputStream;",
+        ),
+        (
+            "java.fully-qualified-type",
+            "java.util.stream.Collectors",
+            "java.util.\n\t    stream.Collectors",
+        ),
+        (
+            "java.preserve-stack-trace",
+            "e",
+            "new IllegalArgumentException()",
+        ),
+    ] {
+        let item = report["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["rule_id"] == id)
+            .unwrap();
+        assert_eq!(item["subject"], subject);
+        assert!(item["message"].as_str().unwrap().contains(subject));
+        let number = |name: &str| item[name].as_u64().unwrap() as usize;
+        let first = number("line") - 1;
+        let last = number("end_line") - 1;
+        let sliced = lines[first..=last]
+            .iter()
+            .enumerate()
+            .map(|(index, line)| {
+                let start = if index == 0 { number("column") - 1 } else { 0 };
+                let end = if first + index == last {
+                    number("end_column") - 1
+                } else {
+                    line.len()
+                };
+                String::from_utf16(&line[start..end]).unwrap()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(sliced, span, "{item}");
+        assert!(item["fingerprint"].is_string());
+        let sarif_item = run["results"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["ruleId"] == id)
+            .unwrap();
+        assert_eq!(sarif_item["properties"]["subject"], subject);
+        let region = &sarif_item["locations"][0]["physicalLocation"]["region"];
+        for (json, sarif) in [
+            ("line", "startLine"),
+            ("column", "startColumn"),
+            ("end_line", "endLine"),
+            ("end_column", "endColumn"),
+        ] {
+            assert_eq!(region[sarif], item[json]);
+        }
+    }
+}
+
+#[test]
+#[ignore = "requires the pinned Semgrep and PMD engines and a JDK 21 runtime"]
+fn java_resource_targets_and_optional_exception_logging_are_conservative() {
+    let source = r#"import java.io.IOException;
+import java.net.http.HttpClient;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
+class Example {
+    void http() {
+        var client = HttpClient.newHttpClient();
+        client.followRedirects();
+    }
+
+    record Lease(Connection connection) implements AutoCloseable {
+        public void close() throws SQLException { connection.close(); }
+    }
+
+    Lease open() throws SQLException {
+        Connection managed = DriverManager.getConnection("jdbc:example");
+        return new Lease(managed);
+    }
+
+    void caller() throws SQLException {
+        Lease lease = open();
+        try { lease.connection().isValid(1); }
+        finally { lease.close(); }
+    }
+
+    void leak() throws SQLException {
+        Connection leaked = DriverManager.getConnection("jdbc:example");
+        leaked.isValid(1);
+    }
+
+    static final class Workbook implements AutoCloseable {
+        void write() throws IOException { throw new IOException(); }
+        public void close() {}
+    }
+
+    void exportWithUnsafeHelper() throws IOException {
+        Workbook unsafe = new Workbook();
+        writeAndClose(unsafe);
+    }
+
+    void writeAndClose(Workbook workbook) throws IOException {
+        workbook.write();
+        workbook.close();
+    }
+
+    void exportWithResourceScope() throws IOException {
+        try (Workbook workbook = new Workbook()) {
+            workbook.write();
+        }
+    }
+
+    void closesPattern(Object resource) throws Exception {
+        if (resource instanceof AutoCloseable handled) {
+            handled.close();
+        }
+    }
+
+    void closesConditionally(Object resource, boolean close) throws Exception {
+        if (resource instanceof AutoCloseable unhandled) {
+            if (close) unhandled.close();
+        }
+    }
+
+    void logged() {
+        try { fail(); }
+        catch (IOException logged) {
+            Logger.getGlobal().log(Level.WARNING, "request failed", logged);
+            throw new IllegalArgumentException();
+        }
+    }
+
+    void sometimesLogged(boolean log) {
+        try { fail(); }
+        catch (IOException conditional) {
+            if (log) Logger.getGlobal().log(Level.WARNING, "request failed", conditional);
+            throw new IllegalArgumentException();
+        }
+    }
+
+    void logsMessageOnly() {
+        try { fail(); }
+        catch (IOException original) {
+            Logger.getGlobal().log(Level.WARNING, original.getMessage());
+            throw new IllegalArgumentException();
+        }
+    }
+
+    void reassigned() {
+        try { fail(); }
+        catch (IOException reassigned) {
+            reassigned = new IOException();
+            Logger.getGlobal().log(Level.WARNING, "request failed", reassigned);
+            throw new IllegalArgumentException();
+        }
+    }
+
+    void preserves() {
+        try { fail(); }
+        catch (IOException original) {
+            throw new IllegalArgumentException(original);
+        }
+    }
+
+    void fail() throws IOException {}
+}
+
+class Other {
+    static class HttpClient implements AutoCloseable {
+        void used() {}
+        public void close() {}
+    }
+    void custom() {
+        HttpClient custom = new HttpClient();
+        custom.used();
+    }
+}
+"#;
+    let project = project(source);
+    let root = project.path();
+    let findings = |release, allow_logged| {
+        fs::write(root.join(".dornguard.yml"), format!("version: 1\nprofiles: [java]\njava_target: {release}\nallow_logged_exceptions: {allow_logged}\n")).unwrap();
+        let result = report(check(root).output().unwrap(), 0);
+        let diagnostics = result["diagnostics"].as_array().unwrap();
+        let resources = diagnostics
+            .iter()
+            .filter(|item| item["rule_id"] == "java.resource-not-closed")
+            .map(|item| {
+                let line = item["line"].as_u64().unwrap() as usize;
+                source.lines().nth(line - 1).unwrap().trim()
+            })
+            .collect::<Vec<_>>();
+        let exceptions = diagnostics
+            .iter()
+            .filter(|item| item["rule_id"] == "java.preserve-stack-trace")
+            .map(|item| item["subject"].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
+        (resources, exceptions)
+    };
+    let (resources, exceptions) = findings(21, false);
+    assert_eq!(
+        resources,
+        [
+            "var client = HttpClient.newHttpClient();",
+            "Connection leaked = DriverManager.getConnection(\"jdbc:example\");",
+            "Workbook unsafe = new Workbook();",
+            "if (resource instanceof AutoCloseable unhandled) {",
+            "HttpClient custom = new HttpClient();"
+        ]
+    );
+    assert_eq!(
+        exceptions,
+        ["logged", "conditional", "original", "reassigned"]
+    );
+    let (resources, exceptions) = findings(17, true);
+    assert_eq!(
+        resources,
+        [
+            "Connection leaked = DriverManager.getConnection(\"jdbc:example\");",
+            "Workbook unsafe = new Workbook();",
+            "if (resource instanceof AutoCloseable unhandled) {",
+            "HttpClient custom = new HttpClient();"
+        ]
+    );
+    assert_eq!(exceptions, ["conditional", "original", "reassigned"]);
+}
+
+#[test]
 #[ignore = "requires the pinned Semgrep and PMD engines"]
 fn spring_profile_warns_about_unnecessary_imports_and_shared_formatters() {
     let source = r#"package example;
@@ -2460,6 +2999,18 @@ class Example extends java.util.ArrayList<String> {
         java.util.Date
         """;
     Map<?, ?> map;
+    record Payment(int DEFAULT_TIMEOUT) {}
+    record Config(Payment payment) {}
+    int timeout(Config config) {
+        return config.payment.DEFAULT_TIMEOUT;
+    }
+    int localTimeout() {
+        Config config = new Config(new Payment(30));
+        return config.payment.DEFAULT_TIMEOUT;
+    }
+    void namespaces(Config java) {
+        java.util.Map<?, ?> map = null;
+    }
 }
 "#,
     );
@@ -2477,7 +3028,7 @@ class Example extends java.util.ArrayList<String> {
             .iter()
             .map(|item| item["line"].as_u64().unwrap())
             .collect::<Vec<_>>(),
-        [2, 5, 5, 6, 8, 9, 10],
+        [2, 5, 5, 6, 8, 9, 10, 26],
         "{result}"
     );
 }

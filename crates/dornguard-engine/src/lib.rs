@@ -4,7 +4,7 @@ use std::process::{Output, Stdio};
 use std::time::Duration;
 
 use dornguard_config::{FormatConfig, Registry, Rule};
-use dornguard_core::{EngineName, Failure, FailureKind, Outcome, SourceLanguage};
+use dornguard_core::{EngineName, Failure, FailureKind, FailureStage, Outcome, SourceLanguage};
 use miette::{IntoDiagnostic, Result, WrapErr, bail};
 use tokio::process::Command;
 use tokio::time::{Instant, timeout_at};
@@ -13,6 +13,7 @@ mod archunit;
 mod eslint;
 mod format;
 mod install;
+mod java_names;
 mod jspecify;
 mod pmd;
 mod semgrep;
@@ -20,18 +21,31 @@ mod source;
 
 pub use archunit::{ArchModule, check_architecture, maven_model_path};
 pub use eslint::Eslint;
-pub use install::install;
+pub use install::{inspect_java, install};
 pub use pmd::Pmd;
 pub use semgrep::Semgrep;
 
 pub const SEMGREP_VERSION: &str = "1.182.0";
 pub const PMD_VERSION: &str = "7.29.0";
 
+#[derive(Clone, Copy)]
 pub struct Request<'a> {
     pub root: &'a Path,
     pub files: &'a [PathBuf],
     pub rules: &'a [&'a Rule],
     pub registry: &'a Registry,
+}
+
+impl Request<'_> {
+    fn mark_incomplete(&self, outcome: &mut Outcome) {
+        for failure in &mut outcome.failures {
+            failure.file_count.get_or_insert(self.files.len());
+            if failure.rule_ids.is_empty() {
+                failure.set_rules(self.rules.iter().map(|rule| rule.id.as_str()));
+            }
+        }
+        outcome.record_coverage(self.files);
+    }
 }
 
 pub trait Engine {
@@ -63,13 +77,13 @@ pub async fn check_builtin(request: Request<'_>, settings: &FormatConfig) -> Out
         );
     }
     if !format_rules.is_empty() {
-        outcome.merge(format::check(
-            Request {
-                rules: &format_rules,
-                ..request
-            },
-            settings,
-        ));
+        let format_request = Request {
+            rules: &format_rules,
+            ..request
+        };
+        let mut result = format::check(format_request, settings);
+        format_request.mark_incomplete(&mut result);
+        outcome.merge(result);
     }
     outcome
 }
@@ -234,12 +248,22 @@ fn display_path(path: &Path) -> String {
         .join("/")
 }
 
+fn diagnostic_message(description: &str, subject: Option<&str>) -> String {
+    subject.map_or_else(
+        || description.to_owned(),
+        |subject| format!("{} (`{subject}`).", description.trim_end_matches('.')),
+    )
+}
+
 fn fail(outcome: &mut Outcome, engine: EngineName, message: impl Into<String>) {
-    outcome.failures.push(Failure {
-        kind: FailureKind::EngineError,
-        engine: Some(engine),
-        message: message.into(),
-    });
+    outcome.failures.push(engine_failure(engine, message));
+}
+
+fn engine_failure(engine: EngineName, message: impl Into<String>) -> Failure {
+    let mut failure = Failure::new(FailureKind::EngineError, message);
+    failure.engine = Some(engine);
+    failure.stage = Some(FailureStage::Engine);
+    failure
 }
 
 #[cfg(all(test, unix))]

@@ -7,7 +7,6 @@ use dornguard_config::Rule;
 use dornguard_core::{Diagnostic, EngineName, Module, Outcome, fingerprint};
 use miette::{IntoDiagnostic, Result, WrapErr, bail, miette};
 use serde::{Deserialize, Serialize};
-use tokio::process::Command;
 use tokio::time::Instant;
 
 use crate::{display_path, fail, relative_path, run_command};
@@ -29,6 +28,25 @@ pub async fn check_architecture(root: &Path, modules: &[ArchModule<'_>]) -> Outc
     {
         fail(&mut outcome, ENGINE, format!("{error:#}"));
     }
+    for failure in &mut outcome.failures {
+        let affected = modules
+            .iter()
+            .filter(|candidate| {
+                failure.modules.is_empty() || failure.modules.contains(&candidate.module.path)
+            })
+            .collect::<Vec<_>>();
+        failure.modules = affected
+            .iter()
+            .map(|candidate| candidate.module.path.clone())
+            .collect();
+        failure.modules.sort();
+        failure.set_rules(
+            affected
+                .iter()
+                .flat_map(|candidate| candidate.rules.iter().map(|rule| rule.id.as_str())),
+        );
+    }
+    outcome.record_coverage(modules.iter().flat_map(|candidate| &candidate.files));
     outcome
 }
 
@@ -70,15 +88,10 @@ async fn run(root: &Path, modules: &[ArchModule<'_>], outcome: &mut Outcome) -> 
         serde_json::to_vec(&request).into_diagnostic()?,
     )
     .into_diagnostic()?;
+    crate::inspect_java(root).await?;
     let runner = runner_path()?;
-    let java = crate::install::java_executable();
-    let mut command = Command::new(java);
+    let mut command = crate::install::java_command(root);
     command
-        .current_dir(root)
-        .kill_on_drop(true)
-        .env_remove("JAVA_TOOL_OPTIONS")
-        .env_remove("_JAVA_OPTIONS")
-        .env_remove("JDK_JAVA_OPTIONS")
         .arg("-jar")
         .arg(runner)
         .arg("--config")
@@ -92,10 +105,7 @@ async fn run(root: &Path, modules: &[ArchModule<'_>], outcome: &mut Outcome) -> 
     )
     .await?;
     if !output.status.success() {
-        bail!(
-            "ArchUnit runner failed ({}); check that Java 21 and the matching runner are installed",
-            output.status
-        );
+        bail!("ArchUnit runner failed ({})", output.status);
     }
     let contents = fs::read(result_path)
         .into_diagnostic()
@@ -118,6 +128,9 @@ async fn run(root: &Path, modules: &[ArchModule<'_>], outcome: &mut Outcome) -> 
                 error.module, error.reason
             ),
         );
+        if let Some(failure) = outcome.failures.last_mut() {
+            failure.modules.push(error.module);
+        }
     }
     let analyzed = result
         .analyzed
@@ -131,6 +144,9 @@ async fn run(root: &Path, modules: &[ArchModule<'_>], outcome: &mut Outcome) -> 
                 ENGINE,
                 format!("ArchUnit skipped module {}", candidate.module.path),
             );
+            if let Some(failure) = outcome.failures.last_mut() {
+                failure.modules.push(candidate.module.path.clone());
+            }
         } else {
             outcome
                 .scanned_files
@@ -194,6 +210,9 @@ async fn run(root: &Path, modules: &[ArchModule<'_>], outcome: &mut Outcome) -> 
             class_name: Some(finding.origin.clone()),
             line,
             column: None,
+            end_line: None,
+            end_column: None,
+            subject: None,
             rule_id: rule.id.clone(),
             engine: ENGINE,
             severity: rule.severity,

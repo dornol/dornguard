@@ -6,6 +6,8 @@ The Gradle integration runs the project's Wrapper with a DornGuard init
 script for Java and opted-in Kotlin/JVM `main` source sets. It collects project paths, source
 directories, compiler outputs, classpaths and direct project dependencies.
 When architecture rules apply, Gradle compiles the selected modules.
+ArchUnit inspects main classes. Ordinary Java source rules also check the
+Java directories in the Gradle `test` source set.
 
 The ArchUnit runner receives a versioned JSON request with the classes to
 inspect and the classpath to use for resolution. A dependency can refer to a
@@ -36,9 +38,13 @@ root, DornGuard selects Gradle.
 DornGuard runs Maven's `compile` phase for architecture checks and collects
 the production source roots, class output directory and compile classpath
 of each reactor module. The build uses the project's regular Maven profiles
-and settings. Source rules run against the reported Java production sources
-when build integration is active. Maven integration has been tested with
-Maven 3.9.9 and JDK 21.
+and settings. Source rules check the reported Java production and test
+source roots, including custom test directories. Maven integration has
+been tested with Maven 3.9.9 and JDK 21.
+
+Java test sources use source-only analysis for import checks. Rules with
+Java test exceptions, such as `spring.field-injection`, recognize the test
+directories reported by the build.
 
 Maven module keys in reports, `modules` settings and `--module` use
 `groupId:artifactId`. A module check limits the report to that module

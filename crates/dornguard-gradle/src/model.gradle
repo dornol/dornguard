@@ -23,6 +23,8 @@ gradle.projectsEvaluated {
         doLast {
             def modules = root.allprojects.collect { project ->
                 def main = project.extensions.findByType(SourceSetContainer)?.findByName('main')
+                def test = project.extensions.findByType(SourceSetContainer)?.findByName('test')
+                def compile = main == null ? null : project.tasks.named(main.compileJavaTaskName).get()
                 def kotlinMain = project.plugins.hasPlugin('org.jetbrains.kotlin.jvm') ?
                     project.extensions.getByName('kotlin').sourceSets.getByName('main') : null
                 def dependencies = ['api', 'implementation', 'compileOnly', 'compileOnlyApi', 'runtimeOnly'].collectMany { name ->
@@ -34,13 +36,38 @@ gradle.projectsEvaluated {
                     name: project.name,
                     projectDir: project.projectDir.canonicalPath,
                     sourceDirs: main == null ? [] : main.java.srcDirs*.canonicalPath.sort(),
+                    testSourceDirs: test == null ? [] : test.java.srcDirs*.canonicalPath.sort(),
+                    compileSources: compile != null && project in compileProjects && compile.enabled &&
+                        compile.state.executed && !compile.state.noSource &&
+                        (!compile.state.skipped || compile.state.skipMessage in ['UP-TO-DATE', 'FROM-CACHE']) ?
+                        compile.source.files*.canonicalPath.sort() : [],
                     kotlinSourceDirs: kotlinMain == null ? [] : kotlinMain.kotlin.srcDirs*.canonicalPath.sort(),
                     classDirs: main == null ? [] : main.output.classesDirs.files*.canonicalPath.sort(),
                     classpath: main != null && project in compileProjects ? main.compileClasspath.files*.canonicalPath : [],
+                    javaTarget: compile == null ? null : javaTarget(compile),
                     dependencies: dependencies,
                 ]
             }.sort { it.path }
             new File(request.output).setText(JsonOutput.toJson([schemaVersion: 1, modules: modules]), 'UTF-8')
         }
     }
+}
+
+Integer javaTarget(compile) {
+    if (compile.options.release.present) {
+        return compile.options.release.get()
+    }
+    def args = compile.options.compilerArgs
+    int release = args.indexOf('--release')
+    if (release >= 0) {
+        def value = args.getAt(release + 1)
+        return value?.isInteger() ? value.toInteger() : null
+    }
+    def assignment = args.find { it.startsWith('--release=') }
+    if (assignment != null) {
+        def value = assignment.substring('--release='.length())
+        return value.isInteger() ? value.toInteger() : null
+    }
+    def target = compile.targetCompatibility?.replaceFirst('^1\\.', '')
+    return target?.isInteger() ? target.toInteger() : null
 }

@@ -32,13 +32,26 @@ For local installation from source, use
 `cargo install --locked --path crates/dornguard-cli`. See
 [engine setup](engines.md) for the corresponding runner build.
 
-Project configuration remains version 1. JSON reports use version 2.
-Existing file diagnostics keep their relative path and position fields.
-ArchUnit adds `module` and `class_name`, and `path` and `line` can be
-`null` when the source is unresolved. An identified source can also have
-a null line when its debug mapping is ambiguous. The matching ArchUnit
-runner uses protocol 3. JSON consumers should accept report version 2
-and handle logical-only findings. Exit codes retain their documented meanings.
+## Report format
+
+The current source tree emits JSON check report version 3. The published
+v0.0.2 archive emits version 2. Project configuration remains version 1.
+
+Version 3 uses one-based lines and UTF-16 columns in text, JSON, and SARIF.
+JSON adds optional `end_line`, `end_column`, and `subject`. The end position
+is exclusive. SARIF declares `columnKind: utf16CodeUnits` and records the
+same ranges. ArchUnit can report a logical location with `module` and
+`class_name` when the source is unresolved, or a path with a null line
+when the debug mapping is ambiguous. The runner uses protocol 3.
+
+Check reports still expose `complete` and `exit_code`. Failures can include
+`stage`, `build_tool`, `file_count`, `modules`, `rule_ids` and the
+file's `path` and `error_type` when supplied by the engine. `files_requested`
+counts unique files sent for analysis. `files_scanned` counts the files
+that completed every requested analysis for the file. A failed invocation
+can contain diagnostics from the
+engines that produced results. Exit codes retain their documented meanings.
+
 For reproducible CI, pin the CLI archive,
 the built-in Ruleset version or external Ruleset commit, and the engine versions.
 
