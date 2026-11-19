@@ -2,14 +2,60 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use dornguard_config::{ProjectConfig, Registry, Rule};
-use dornguard_core::{Diagnostic, EngineName, FailureKind, Outcome, SourceLanguage, fingerprint};
+use dornguard_core::{
+    Diagnostic, EngineName, FailureKind, Module, Outcome, ProjectModel, SourceLanguage, fingerprint,
+};
 use dornguard_engine::{ArchModule, check_architecture};
-use dornguard_gradle::{CompileModules, Module, collect};
+use dornguard_gradle::CompileModules;
 use miette::{Result, bail, miette};
 
 use crate::{changed::Changes, failure, run_source_engines, source_files};
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum BuildSystem {
+    Gradle,
+    Maven,
+}
+
+impl BuildSystem {
+    pub fn detect(root: &Path) -> Self {
+        let gradle_files = [
+            "gradlew",
+            "gradlew.bat",
+            "settings.gradle",
+            "settings.gradle.kts",
+            "build.gradle",
+            "build.gradle.kts",
+        ];
+        if root.join("pom.xml").is_file()
+            && !gradle_files.iter().any(|file| root.join(file).is_file())
+        {
+            Self::Maven
+        } else {
+            Self::Gradle
+        }
+    }
+
+    async fn collect(self, root: &Path, compile: CompileModules<'_>) -> Result<ProjectModel> {
+        match self {
+            Self::Gradle => dornguard_gradle::collect(root, compile).await,
+            Self::Maven => {
+                let compile = !matches!(compile, CompileModules::Selected([]));
+                crate::maven::collect(root, compile).await
+            }
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Gradle => "Gradle",
+            Self::Maven => "Maven",
+        }
+    }
+}
+
 pub struct Check<'a> {
+    pub build: BuildSystem,
     pub root: &'a Path,
     pub target: &'a Path,
     pub filter: Option<&'a str>,
@@ -24,6 +70,7 @@ pub struct Check<'a> {
 
 pub async fn check(check: Check<'_>) -> Outcome {
     let Check {
+        build,
         root,
         target,
         filter,
@@ -61,6 +108,14 @@ pub async fn check(check: Check<'_>) -> Outcome {
         }
     }
 
+    if build == BuildSystem::Maven {
+        if global_kotlin || !kotlin_modules.is_empty() {
+            return config_error(miette!("Kotlin build integration requires Gradle"));
+        }
+        if !config.module_dependencies.forbid.is_empty() {
+            return config_error(miette!("module_dependencies.forbid requires Gradle"));
+        }
+    }
     let overrides = overrides
         .iter()
         .map(|(&name, rules)| (name, rules.iter().collect::<Vec<_>>()))
@@ -69,7 +124,7 @@ pub async fn check(check: Check<'_>) -> Outcome {
     let kotlin_for = |name: &str| global_kotlin || kotlin_modules.contains(name);
     let has_arch = |rules: &[&Rule]| rules.iter().any(|rule| rule.engine == EngineName::Archunit);
     let (discovery, affected, fallback_reason) = if let Some(changes_found) = changes {
-        let model = match collect(root, CompileModules::Selected(&[])).await {
+        let model = match build.collect(root, CompileModules::Selected(&[])).await {
             Ok(model) => model,
             Err(error) => return preparation_error(error),
         };
@@ -115,7 +170,7 @@ pub async fn check(check: Check<'_>) -> Outcome {
             } else {
                 CompileModules::Selected(&compile_names)
             };
-            match collect(root, compile).await {
+            match build.collect(root, compile).await {
                 Ok(model) => model,
                 Err(error) => {
                     let mut outcome = preparation_error(error);
@@ -126,6 +181,7 @@ pub async fn check(check: Check<'_>) -> Outcome {
         }
     };
 
+    let build_name = build.name();
     let known = model
         .modules
         .iter()
@@ -143,7 +199,7 @@ pub async fn check(check: Check<'_>) -> Outcome {
         .chain(dependency_paths)
     {
         if !known.contains(name) {
-            return config_error(miette!("Unknown Gradle module: {name}"));
+            return config_error(miette!("Unknown {build_name} module: {name}"));
         }
     }
 
@@ -179,7 +235,7 @@ pub async fn check(check: Check<'_>) -> Outcome {
     for module in selected {
         let rules = rules_for(&module.path);
         let kotlin = kotlin_for(&module.path);
-        let mut files = match module_files(root, target, module, required, kotlin) {
+        let mut files = match module_files(build_name, root, target, module, required, kotlin) {
             Ok(files) => files,
             Err(error) => return preparation_error(error),
         };
@@ -189,7 +245,7 @@ pub async fn check(check: Check<'_>) -> Outcome {
             .filter(|rule| rule.engine == EngineName::Archunit)
             .collect::<Vec<_>>();
         if !arch_rules.is_empty() && (affected.is_some() || !files.is_empty()) {
-            let all_files = match module_files(root, root, module, required, kotlin) {
+            let all_files = match module_files(build_name, root, root, module, required, kotlin) {
                 Ok(files) => files,
                 Err(error) => return preparation_error(error),
             };
@@ -242,7 +298,7 @@ pub async fn check(check: Check<'_>) -> Outcome {
             return outcome;
         }
         outcome.merge(preparation_error(miette!(
-            "No Gradle module targets apply to this check"
+            "No {build_name} module targets apply to this check"
         )));
         return outcome;
     }
@@ -354,6 +410,7 @@ fn affected_modules(
 }
 
 fn module_files(
+    build_name: &str,
     root: &Path,
     target: &Path,
     module: &Module,
@@ -368,7 +425,7 @@ fn module_files(
         for dir in source_dirs(module, language) {
             if !dir.starts_with(root) {
                 bail!(
-                    "Gradle source directory is outside the project: {}",
+                    "{build_name} source directory is outside the project: {}",
                     dir.display()
                 );
             }

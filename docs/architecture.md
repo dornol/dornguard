@@ -1,5 +1,7 @@
 # Architecture checks
 
+## Gradle
+
 The Gradle integration runs the project's Wrapper with a DornGuard init
 script for Java and opted-in Kotlin/JVM `main` source sets. It collects project paths, source
 directories, compiler outputs, classpaths and direct project dependencies.
@@ -22,6 +24,27 @@ index, working tree and untracked changes. Fetch the base ref and enough
 history to resolve its merge base. DornGuard reports the reason and runs a
 full check if the base ref or a unique merge base is unavailable. CI uses a
 full check as its quality gate.
+
+## Maven
+
+For a Java Maven project, place `.dornguard.yml` beside the root `pom.xml`
+and enable an architecture profile such as `layered` or `hexagonal`.
+DornGuard uses `mvnw` (`mvnw.cmd` on Windows) when available and otherwise runs
+Maven 3 from PATH. If both Gradle and Maven build files are present at the
+root, DornGuard selects Gradle.
+
+DornGuard runs Maven's `compile` phase for architecture checks and collects
+the production source roots, class output directory and compile classpath
+of each reactor module. The build uses the project's regular Maven profiles
+and settings. Source rules run against the reported Java production sources
+when build integration is active. Maven integration has been tested with
+Maven 3.9.9 and JDK 21.
+
+Maven module keys in reports, `modules` settings and `--module` use
+`groupId:artifactId`. A module check limits the report to that module
+while the full reactor compiles. With `--changed`, Maven build checks fall
+back to a full scan. Kotlin/JVM and `module_dependencies.forbid` use Gradle
+integration.
 
 ## Kotlin/JVM
 

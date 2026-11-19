@@ -15,7 +15,7 @@ mod pmd;
 mod semgrep;
 mod source;
 
-pub use archunit::{ArchModule, check_architecture};
+pub use archunit::{ArchModule, check_architecture, maven_model_path};
 pub use install::install;
 pub use pmd::Pmd;
 pub use semgrep::Semgrep;

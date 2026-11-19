@@ -2,7 +2,8 @@
 
 DornGuard supports Semgrep 1.182.0, PMD 7.29.0 and an ArchUnit runner built
 for Java 21. Java source analysis uses Java 21 syntax in PMD. Gradle project
-integration is tested with Gradle 9.9.1 and JDK 21.
+integration is tested with Gradle 9.9.1 and JDK 21. Java Maven integration
+is tested with Maven 3.9.9 and JDK 21.
 
 ```sh
 dornguard engines install
@@ -24,6 +25,7 @@ release with Intel Mac wheels.
 
 Release archives bundle the matching ArchUnit runner JAR. When building
 DornGuard from source, point `DORNGUARD_ARCHUNIT_RUNNER` to a local JAR.
+The same build creates the companion `maven-model.jar` alongside the runner.
 
 ```sh
 examples/spring-boot-multimodule/gradlew -p runners/archunit-runner jar

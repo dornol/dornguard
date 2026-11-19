@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bundle the matching ArchUnit runner with a release build."""
+"""Bundle the matching JVM artifacts with a release build."""
 
 import argparse
 import hashlib
@@ -55,7 +55,8 @@ def main():
     name = f"dornguard-v{version}-{args.platform}"
     archive_path = args.output / f"{name}.zip"
     with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
-        for asset in (ROOT / "target/release" / executable, RUNNER, ROOT / "README.md", ROOT / "LICENSE",
+        for asset in (ROOT / "target/release" / executable, RUNNER, RUNNER.with_name("maven-model.jar"),
+                      ROOT / "README.md", ROOT / "LICENSE",
                       ROOT / "THIRD_PARTY_NOTICES.md", ROOT / "licenses/Apache-2.0.txt"):
             archive.write(asset, f"{name}/{asset.name}")
     with archive_path.open("rb") as archive:

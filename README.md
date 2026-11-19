@@ -24,6 +24,10 @@ JDK 21 and Semgrep installed, run
 See the [Kotlin/JVM guide](docs/architecture.md#kotlinjvm) for mixed modules
 and architecture checks.
 
+For Java projects that use Maven, place `.dornguard.yml` beside the root
+`pom.xml` and add `layered` or `hexagonal` to its profiles for bytecode checks.
+See [Maven architecture checks](docs/architecture.md#maven).
+
 ## Common commands
 
 ```sh
@@ -47,8 +51,8 @@ cargo test --workspace --locked
 ```
 
 To run the real-engine integration tests, build the ArchUnit runner, set
-`DORNGUARD_ARCHUNIT_RUNNER`, install the pinned source engines, then run
-`cargo test --workspace --locked -- --include-ignored`.
+`DORNGUARD_ARCHUNIT_RUNNER`, install the pinned source engines and make Maven 3
+available on PATH. Then run `cargo test --workspace --locked -- --include-ignored`.
 
 See [configuration](docs/configuration.md), [policy bundles](docs/profiles.md),
 [CI integrations](docs/ci.md), [release policy](docs/releases.md) and

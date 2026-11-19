@@ -27,3 +27,29 @@ tasks.jar {
     from(configurations.runtimeClasspath.get().map { zipTree(it) })
     exclude("META-INF/*.SF", "META-INF/*.RSA", "META-INF/*.DSA", "**/module-info.class")
 }
+
+val mavenModel = sourceSets.create("mavenModel")
+
+dependencies {
+    add(mavenModel.compileOnlyConfigurationName, "org.apache.maven:maven-core:3.9.9")
+    add(mavenModel.implementationConfigurationName, "com.google.code.gson:gson:2.13.2")
+}
+
+tasks.named<JavaCompile>(mavenModel.compileJavaTaskName) {
+    options.release.set(8)
+    options.compilerArgs.add("-Xlint:-options")
+}
+
+val mavenModelJar = tasks.register<Jar>("mavenModelJar") {
+    archiveFileName.set("maven-model.jar")
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    isPreserveFileTimestamps = false
+    isReproducibleFileOrder = true
+    from(mavenModel.output)
+    from(configurations[mavenModel.runtimeClasspathConfigurationName].map { zipTree(it) })
+    exclude("META-INF/*.SF", "META-INF/*.RSA", "META-INF/*.DSA", "**/module-info.class")
+}
+
+tasks.jar {
+    dependsOn(mavenModelJar)
+}

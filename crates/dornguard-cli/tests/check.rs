@@ -953,3 +953,145 @@ fn kotlin_changed_base_keeps_old_module_ownership_and_checks_dependents() {
             .contains("Outside.kt")
     );
 }
+
+#[test]
+#[ignore = "requires Git, Maven 3, JDK 21 and the bundled JVM artifacts"]
+fn maven_reactor_enforces_layered_and_hexagonal_profiles() {
+    let parent = tempfile::tempdir().unwrap();
+    let root = parent.path().join("maven reactor");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [layered, hexagonal]\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("pom.xml"),
+        r#"<project>
+          <modelVersion>4.0.0</modelVersion>
+          <groupId>example</groupId><artifactId>root</artifactId><version>1</version>
+          <packaging>pom</packaging>
+          <modules><module>web</module><module>storage</module></modules>
+          <properties><maven.compiler.release>21</maven.compiler.release></properties>
+          <build><pluginManagement><plugins><plugin>
+            <artifactId>maven-compiler-plugin</artifactId><version>3.13.0</version>
+          </plugin></plugins></pluginManagement></build>
+        </project>"#,
+    )
+    .unwrap();
+
+    let child = |artifact, extra| {
+        format!(
+            r#"<project>
+              <modelVersion>4.0.0</modelVersion>
+              <parent><groupId>example</groupId><artifactId>root</artifactId><version>1</version></parent>
+              <artifactId>{artifact}</artifactId>
+              {extra}
+            </project>"#
+        )
+    };
+    let storage = root.join("storage/src/main/java/example");
+    fs::create_dir_all(storage.join("repository")).unwrap();
+    fs::create_dir_all(storage.join("infrastructure")).unwrap();
+    fs::write(root.join("storage/pom.xml"), child("storage", "")).unwrap();
+    fs::write(
+        storage.join("repository/BookRepository.java"),
+        "package example.repository; public class BookRepository {}",
+    )
+    .unwrap();
+    fs::write(
+        storage.join("infrastructure/BookStorage.java"),
+        "package example.infrastructure; public class BookStorage {}",
+    )
+    .unwrap();
+
+    let web = root.join("web/custom sources/example");
+    fs::create_dir_all(web.join("controller")).unwrap();
+    fs::create_dir_all(web.join("domain")).unwrap();
+    fs::write(
+        root.join("web/pom.xml"),
+        child(
+            "web",
+            r#"<dependencies><dependency>
+              <groupId>example</groupId><artifactId>storage</artifactId><version>1</version>
+              <scope>provided</scope>
+            </dependency></dependencies>
+            <build>
+              <sourceDirectory>custom sources</sourceDirectory>
+              <outputDirectory>${project.build.directory}/custom classes</outputDirectory>
+            </build>"#,
+        ),
+    )
+    .unwrap();
+    let controller = web.join("controller/BookController.java");
+    let domain = web.join("domain/Book.java");
+    fs::write(
+        &controller,
+        "package example.controller; public class BookController { example.repository.BookRepository repository; }",
+    )
+    .unwrap();
+    fs::write(
+        &domain,
+        "package example.domain; public class Book { example.infrastructure.BookStorage storage; }",
+    )
+    .unwrap();
+
+    fs::write(root.join(".gitignore"), "target/\n").unwrap();
+    commit_fixture(&root);
+    let result = report(check(&root).arg("--changed").output().unwrap(), 1);
+    assert_eq!(result["scope"], "full");
+    assert_eq!(
+        result["fallback_reason"],
+        "Maven build checks scan the full reactor"
+    );
+    assert_eq!(result["complete"], true);
+    assert_eq!(result["files_scanned"], 4);
+    for (rule, path) in [
+        (
+            "architecture.controller-repository",
+            "web/custom sources/example/controller/BookController.java",
+        ),
+        (
+            "architecture.domain-independence",
+            "web/custom sources/example/domain/Book.java",
+        ),
+    ] {
+        assert!(
+            result["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|finding| {
+                    finding["rule_id"] == rule
+                        && finding["module"] == "example:web"
+                        && finding["path"] == path
+                }),
+            "{result}"
+        );
+    }
+    assert!(
+        root.join("web/target/custom classes/example/domain/Book.class")
+            .is_file()
+    );
+
+    fs::write(
+        controller,
+        "package example.controller; public class BookController {}",
+    )
+    .unwrap();
+    fs::write(domain, "package example.domain; public class Book {}").unwrap();
+    let mut selected = check(&root);
+    selected.args(["--module", "example:web"]);
+    let result = report(selected.output().unwrap(), 0);
+    assert_eq!(result["complete"], true);
+    assert_eq!(result["files_scanned"], 2);
+
+    fs::write(
+        web.join("domain/Book.java"),
+        "package example.domain; invalid Java",
+    )
+    .unwrap();
+    let result = report(check(&root).output().unwrap(), 4);
+    assert_eq!(result["status"], "preparation_error");
+    assert_eq!(result["complete"], false);
+}

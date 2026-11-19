@@ -11,8 +11,9 @@ use ignore::WalkBuilder;
 use miette::{IntoDiagnostic, Result, WrapErr, bail, miette};
 
 mod baseline;
+mod build_check;
 mod changed;
-mod gradle_check;
+mod maven;
 
 #[derive(Parser)]
 #[command(
@@ -37,7 +38,7 @@ enum Action {
         format: Format,
         #[arg(long, value_name = "PATH")]
         config: Option<PathBuf>,
-        #[arg(long, value_name = "GRADLE_PROJECT_PATH")]
+        #[arg(long, value_name = "MODULE")]
         module: Option<String>,
         /// Limit the check to changes in the index and working tree
         #[arg(long, conflicts_with = "module")]
@@ -415,7 +416,10 @@ async fn check(
         || !config.module_dependencies.forbid.is_empty()
         || rules.iter().any(|rule| rule.engine == EngineName::Archunit)
     {
-        let mut outcome = gradle_check::check(gradle_check::Check {
+        let build = build_check::BuildSystem::detect(root);
+        let maven_full = build == build_check::BuildSystem::Maven && changes.is_some();
+        let mut outcome = build_check::check(build_check::Check {
+            build,
             root,
             target,
             filter: module,
@@ -424,13 +428,17 @@ async fn check(
             profiles,
             global: &rules,
             global_kotlin,
-            changes: changes.as_ref(),
+            changes: if maven_full { None } else { changes.as_ref() },
             required: organization.is_some(),
         })
         .await;
         if outcome.fallback_reason.is_none() {
-            outcome.scope = scope;
-            outcome.fallback_reason = fallback_reason;
+            outcome.scope = if maven_full { Scope::Full } else { scope };
+            outcome.fallback_reason = if maven_full {
+                Some("Maven build checks scan the full reactor".to_owned())
+            } else {
+                fallback_reason
+            };
         }
         return outcome;
     }

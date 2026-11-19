@@ -4,8 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use dornguard_config::Rule;
-use dornguard_core::{Diagnostic, EngineName, Outcome, fingerprint};
-use dornguard_gradle::Module;
+use dornguard_core::{Diagnostic, EngineName, Module, Outcome, fingerprint};
 use miette::{IntoDiagnostic, Result, WrapErr, bail, miette};
 use serde::{Deserialize, Serialize};
 use tokio::process::Command;
@@ -225,6 +224,26 @@ fn runner_path() -> Result<PathBuf> {
     if let Some(checksum) = option_env!("DORNGUARD_ARCHUNIT_SHA256") {
         crate::install::verify_checksum(&path, checksum)
             .wrap_err("ArchUnit runner verification failed")?;
+    }
+    Ok(path)
+}
+
+pub fn maven_model_path() -> Result<PathBuf> {
+    let path = match std::env::var_os("DORNGUARD_ARCHUNIT_RUNNER") {
+        Some(runner) => PathBuf::from(runner).with_file_name("maven-model.jar"),
+        None => std::env::current_exe()
+            .into_diagnostic()?
+            .with_file_name("maven-model.jar"),
+    };
+    let path = dunce::canonicalize(&path).into_diagnostic().wrap_err_with(|| {
+        format!(
+            "Could not find the Maven extension at {}; use a matching release bundle or build the runner",
+            path.display()
+        )
+    })?;
+    if let Some(checksum) = option_env!("DORNGUARD_MAVEN_MODEL_SHA256") {
+        crate::install::verify_checksum(&path, checksum)
+            .wrap_err("Maven extension verification failed")?;
     }
     Ok(path)
 }

@@ -12,4 +12,5 @@ Java libraries.
 | SLF4J API | MIT | https://github.com/qos-ch/slf4j |
 
 Apache License 2.0 is included in `Apache-2.0.txt` in the release archive.
+The Maven model extension also bundles Gson and Error Prone annotations.
 The dependency archives retain their META-INF notices as available.

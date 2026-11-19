@@ -1,0 +1,9 @@
+<component-set>
+  <components>
+    <component>
+      <role>org.apache.maven.eventspy.EventSpy</role>
+      <role-hint>dornguard-model</role-hint>
+      <implementation>io.dornguard.maven.ModelSpy</implementation>
+    </component>
+  </components>
+</component-set>

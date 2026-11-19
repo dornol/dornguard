@@ -1,31 +1,12 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 
+pub use dornguard_core::{Module, ProjectModel};
 use miette::{IntoDiagnostic, Result, WrapErr, bail};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tokio::process::Command;
 
 const MODEL_SCRIPT: &str = include_str!("model.gradle");
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ProjectModel {
-    schema_version: u32,
-    pub modules: Vec<Module>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Module {
-    pub path: String,
-    pub name: String,
-    pub project_dir: PathBuf,
-    pub source_dirs: Vec<PathBuf>,
-    pub kotlin_source_dirs: Vec<PathBuf>,
-    pub class_dirs: Vec<PathBuf>,
-    pub classpath: Vec<PathBuf>,
-    pub dependencies: Vec<String>,
-}
 
 pub enum CompileModules<'a> {
     Selected(&'a [String]),

@@ -281,7 +281,6 @@ version = "0.0.1"
 dependencies = [
  "dornguard-config",
  "dornguard-core",
- "dornguard-gradle",
  "dunce",
  "miette",
  "rustix",
@@ -297,6 +296,7 @@ dependencies = [
 name = "dornguard-gradle"
 version = "0.0.1"
 dependencies = [
+ "dornguard-core",
  "dunce",
  "miette",
  "serde",

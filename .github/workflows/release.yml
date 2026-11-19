@@ -34,10 +34,17 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
-      - name: Build matching ArchUnit runner
+      - name: Build matching JVM artifacts
         run: |
           examples/spring-boot-multimodule/gradlew --no-daemon --console=plain -p runners/archunit-runner jar
-          python -c 'import hashlib,pathlib; p=pathlib.Path("runners/archunit-runner/build/libs/archunit-runner.jar"); print("DORNGUARD_ARCHUNIT_SHA256="+hashlib.sha256(p.read_bytes()).hexdigest())' >> "$GITHUB_ENV"
+          python - <<'PY' >> "$GITHUB_ENV"
+          import hashlib
+          from pathlib import Path
+
+          jars = Path("runners/archunit-runner/build/libs")
+          for name, jar in (("ARCHUNIT", "archunit-runner.jar"), ("MAVEN_MODEL", "maven-model.jar")):
+              print(f"DORNGUARD_{name}_SHA256={hashlib.sha256((jars / jar).read_bytes()).hexdigest()}")
+          PY
       - name: Build and test CLI
         run: |
           cargo test --workspace --locked

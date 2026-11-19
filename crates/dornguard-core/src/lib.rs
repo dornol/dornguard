@@ -4,6 +4,26 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectModel {
+    pub schema_version: u32,
+    pub modules: Vec<Module>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Module {
+    pub path: String,
+    pub name: String,
+    pub project_dir: PathBuf,
+    pub source_dirs: Vec<PathBuf>,
+    pub kotlin_source_dirs: Vec<PathBuf>,
+    pub class_dirs: Vec<PathBuf>,
+    pub classpath: Vec<PathBuf>,
+    pub dependencies: Vec<String>,
+}
+
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum SourceLanguage {
     Java,
