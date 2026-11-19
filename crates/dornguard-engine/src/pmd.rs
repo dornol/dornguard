@@ -53,7 +53,7 @@ async fn scan(request: Request<'_>, outcome: &mut Outcome) -> Result<()> {
         let path = request.root.join(file);
         let path = path.to_str().filter(|path| !path.contains(['\r', '\n']));
         let Some(path) = path else {
-            bail!("PMD file lists require UTF-8 paths without line breaks")
+            bail!("PMD file lists require UTF-8 paths without line breaks");
         };
         writeln!(list, "{path}").into_diagnostic()?;
     }
