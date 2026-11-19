@@ -130,17 +130,24 @@ pub async fn check(check: Check<'_>) -> Outcome {
         .map(|(&name, rules)| (name, rules.iter().collect::<Vec<_>>()))
         .collect::<BTreeMap<_, _>>();
     let rules_for = |name: &str| overrides.get(name).map_or(global, Vec::as_slice);
+    let rule_needs_compile = |rule: &Rule| {
+        rule.engine == EngineName::Archunit || resolve_imports && rule.id == UNNECESSARY_IMPORT_RULE
+    };
     let build_failure = |error, stage, modules: &[String]| {
         let mut outcome = preparation_error(error);
         let failure = &mut outcome.failures[0];
         failure.stage = Some(stage);
         failure.build_tool = Some(build.name());
         failure.modules = modules.to_vec();
+        let affected_rule =
+            |rule: &&Rule| stage != FailureStage::ProjectCompile || rule_needs_compile(rule);
         if modules.is_empty() {
             failure.set_rules(
                 global
                     .iter()
                     .chain(overrides.values().flatten())
+                    .copied()
+                    .filter(affected_rule)
                     .map(|rule| rule.id.as_str()),
             );
         } else {
@@ -148,6 +155,8 @@ pub async fn check(check: Check<'_>) -> Outcome {
                 modules
                     .iter()
                     .flat_map(|name| rules_for(name).iter())
+                    .copied()
+                    .filter(affected_rule)
                     .map(|rule| rule.id.as_str()),
             );
         }
@@ -160,12 +169,7 @@ pub async fn check(check: Check<'_>) -> Outcome {
     let web_for = |name: &str, language: SourceLanguage| {
         rules_for(name).iter().any(|rule| rule.applies_to(language))
     };
-    let needs_compile = |rules: &[&Rule]| {
-        rules.iter().any(|rule| {
-            rule.engine == EngineName::Archunit
-                || resolve_imports && rule.id == UNNECESSARY_IMPORT_RULE
-        })
-    };
+    let needs_compile = |rules: &[&Rule]| rules.iter().copied().any(rule_needs_compile);
     let (discovery, affected, fallback_reason) = if let Some(changes_found) = changes {
         let model = match build.collect(root, CompileModules::Selected(&[])).await {
             Ok(model) => model,
@@ -210,10 +214,15 @@ pub async fn check(check: Check<'_>) -> Outcome {
         }
     };
     let compile_all = affected.is_none() && filter.is_none() && needs_compile(global);
-    let maven_compiled = build == BuildSystem::Maven && (compile_all || !compile_names.is_empty());
-    let model = match discovery {
-        Some(model) if compile_names.is_empty() && !compile_all => model,
-        _ => {
+    let compile_requested = compile_all || !compile_names.is_empty();
+    let mut compile_failed = false;
+    let mut outcome = Outcome {
+        fallback_reason,
+        ..Outcome::default()
+    };
+    let model = match (compile_requested, discovery) {
+        (false, Some(model)) => model,
+        (_, discovered) => {
             let compile = if compile_all {
                 CompileModules::AllJava
             } else {
@@ -221,20 +230,43 @@ pub async fn check(check: Check<'_>) -> Outcome {
             };
             match build.collect(root, compile).await {
                 Ok(model) => model,
-                Err(error) => {
-                    let stage = if compile_all || !compile_names.is_empty() {
-                        FailureStage::ProjectCompile
+                Err(error) if compile_requested => {
+                    compile_failed = true;
+                    let requested = if compile_all {
+                        &[]
                     } else {
-                        FailureStage::ProjectModel
+                        compile_names.as_slice()
                     };
+                    outcome.merge(build_failure(
+                        error,
+                        FailureStage::ProjectCompile,
+                        requested,
+                    ));
+                    if let Some(model) = discovered {
+                        model
+                    } else {
+                        match build.collect(root, CompileModules::Selected(&[])).await {
+                            Ok(model) => model,
+                            Err(error) => {
+                                outcome.merge(build_failure(
+                                    error,
+                                    FailureStage::ProjectModel,
+                                    requested,
+                                ));
+                                return outcome;
+                            }
+                        }
+                    }
+                }
+                Err(error) => {
                     let requested = filter.map(str::to_owned).into_iter().collect::<Vec<_>>();
-                    let mut outcome = build_failure(error, stage, &requested);
-                    outcome.fallback_reason = fallback_reason;
+                    outcome.merge(build_failure(error, FailureStage::ProjectModel, &requested));
                     return outcome;
                 }
             }
         }
     };
+    let maven_compiled = build == BuildSystem::Maven && compile_requested && !compile_failed;
 
     let build_name = build.name();
     let known = model
@@ -326,12 +358,16 @@ pub async fn check(check: Check<'_>) -> Outcome {
                 Err(error) => return preparation_error(error),
             };
             if !all_files.is_empty() {
-                architecture.push(ArchModule {
-                    module,
-                    rules: arch_rules,
-                    files: all_files,
-                    kotlin,
-                });
+                if compile_failed && needs_compile(rules) {
+                    outcome.record_coverage(&all_files);
+                } else {
+                    architecture.push(ArchModule {
+                        module,
+                        rules: arch_rules,
+                        files: all_files,
+                        kotlin,
+                    });
+                }
             }
         }
         match module_files(
@@ -394,7 +430,12 @@ pub async fn check(check: Check<'_>) -> Outcome {
             if include_other_sources {
                 mapped_files.extend(tests.iter().cloned());
             }
-            add_source_group(&mut source_groups, test_rules, tests);
+            add_source_group(
+                &mut source_groups,
+                test_rules,
+                tests,
+                module.java_test_source.or(module.java_source),
+            );
         }
         if include_other_sources {
             mapped_files.extend(files.iter().cloned());
@@ -403,10 +444,23 @@ pub async fn check(check: Check<'_>) -> Outcome {
             rule.id == UNNECESSARY_IMPORT_RULE
                 || config.allow_logged_exceptions && rule.id == PRESERVE_STACK_TRACE_RULE
         });
-        let classpath = (uses_classpath
+        let classpath = (!compile_failed
+            && uses_classpath
             && (maven_compiled || compile_all || compile_names.contains(&module.path)))
         .then(|| compiled_classpath(module))
         .flatten();
+        if compile_failed
+            && resolve_imports
+            && source_rules
+                .iter()
+                .any(|rule| rule.id == UNNECESSARY_IMPORT_RULE)
+        {
+            outcome.record_coverage(
+                files
+                    .iter()
+                    .filter(|path| SourceLanguage::of(path) == Some(SourceLanguage::Java)),
+            );
+        }
         let java_target = config.java_target.or(module.java_target);
         let needs_target = config.java_target.is_none()
             && module.java_target.is_some_and(|target| target < 21)
@@ -424,7 +478,7 @@ pub async fn check(check: Check<'_>) -> Outcome {
                 pmd_modules.push((module, java_files, pmd_rules, classpath, java_target));
             }
         }
-        add_source_group(&mut source_groups, source_rules, files);
+        add_source_group(&mut source_groups, source_rules, files, module.java_source);
     }
     if include_other_sources {
         let files = match source_files(root, target, required, |language| {
@@ -436,13 +490,9 @@ pub async fn check(check: Check<'_>) -> Outcome {
         let files = files.into_iter().filter(|path| {
             !mapped_files.contains(path) && changes.is_none_or(|changes| changes.matches(path))
         });
-        add_source_group(&mut source_groups, global.to_vec(), files);
+        add_source_group(&mut source_groups, global.to_vec(), files, None);
     }
 
-    let mut outcome = Outcome {
-        fallback_reason,
-        ..Outcome::default()
-    };
     let dependency_checks = config
         .module_dependencies
         .forbid
@@ -454,6 +504,9 @@ pub async fn check(check: Check<'_>) -> Outcome {
         && architecture.is_empty()
         && dependency_checks.is_empty()
     {
+        if !outcome.failures.is_empty() {
+            return outcome;
+        }
         if changes.is_some() {
             outcome.no_changes = true;
             return outcome;
@@ -494,6 +547,7 @@ pub async fn check(check: Check<'_>) -> Outcome {
                         rule.description, dependency.from, dependency.to
                     ),
                     fix: rule.fix.clone(),
+                    legacy_fingerprints: Vec::new(),
                     fingerprint: Some(fingerprint(&format!(
                         "{}:{}",
                         dependency.from, dependency.to
@@ -505,7 +559,7 @@ pub async fn check(check: Check<'_>) -> Outcome {
 
     let source_checks = async {
         let mut outcome = Outcome::default();
-        for (rules, files) in source_groups.into_values() {
+        for ((_, java_source), (rules, files)) in source_groups {
             outcome.merge(
                 run_source_engines(
                     root,
@@ -513,6 +567,7 @@ pub async fn check(check: Check<'_>) -> Outcome {
                     registry,
                     &rules,
                     config,
+                    java_source,
                 )
                 .await,
             );
@@ -526,6 +581,7 @@ pub async fn check(check: Check<'_>) -> Outcome {
                 classpath: classpath.as_deref(),
                 compile_sources: Some(&module.compile_sources),
                 java_target,
+                java_source: config.java_source.or(module.java_source),
                 allow_logged_exceptions: config.allow_logged_exceptions,
             }
             .check(Request {
@@ -553,13 +609,16 @@ pub async fn check(check: Check<'_>) -> Outcome {
     outcome
 }
 
-type SourceGroups<'a> =
-    BTreeMap<Vec<(&'a str, dornguard_core::Severity)>, (Vec<&'a Rule>, BTreeSet<PathBuf>)>;
+type SourceGroups<'a> = BTreeMap<
+    (Vec<(&'a str, dornguard_core::Severity)>, Option<u16>),
+    (Vec<&'a Rule>, BTreeSet<PathBuf>),
+>;
 
 fn add_source_group<'a>(
     groups: &mut SourceGroups<'a>,
     rules: Vec<&'a Rule>,
     files: impl IntoIterator<Item = PathBuf>,
+    java_source: Option<u16>,
 ) {
     let mut files = files.into_iter().peekable();
     if rules.is_empty() || files.peek().is_none() {
@@ -569,8 +628,10 @@ fn add_source_group<'a>(
         .iter()
         .map(|rule| (rule.id.as_str(), rule.severity))
         .collect();
+    let java_source =
+        java_source.filter(|_| rules.iter().any(|rule| rule.engine == EngineName::Pmd));
     groups
-        .entry(ids)
+        .entry((ids, java_source))
         .or_insert_with(|| (rules, BTreeSet::new()))
         .1
         .extend(files);

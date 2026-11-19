@@ -142,6 +142,9 @@ enum BaselineAction {
         output: PathBuf,
         #[arg(long)]
         profile: Vec<String>,
+        /// Record violations using the compiled main Java classpath
+        #[arg(long)]
+        resolve_imports: bool,
         /// Replace an existing baseline
         #[arg(long)]
         force: bool,
@@ -277,10 +280,20 @@ async fn dispatch(action: Action) -> Result<u8> {
                 BaselineAction::Create {
                     output,
                     profile,
+                    resolve_imports,
                     force,
                 },
         } => {
-            let outcome = check(Path::new("."), &profile, None, None, None, None, false).await;
+            let outcome = check(
+                Path::new("."),
+                &profile,
+                None,
+                None,
+                None,
+                None,
+                resolve_imports,
+            )
+            .await;
             let report = outcome.finish();
             if !report.complete {
                 dornguard_report::write_text(&report, &mut io::stderr().lock())
@@ -548,7 +561,7 @@ async fn check(
     if files.is_empty() {
         return scoped_prep_error(miette!("No source files apply to this check"));
     }
-    let mut outcome = run_source_engines(root, &files, &registry, &rules, &config).await;
+    let mut outcome = run_source_engines(root, &files, &registry, &rules, &config, None).await;
     outcome.scope = scope;
     outcome.fallback_reason = fallback_reason;
     if organization.is_none() {
@@ -563,6 +576,7 @@ async fn run_source_engines(
     registry: &Registry,
     rules: &[&dornguard_config::Rule],
     config: &ProjectConfig,
+    java_source: Option<u16>,
 ) -> Outcome {
     let check_group = async |engine, files: Vec<PathBuf>| {
         let languages = files
@@ -597,6 +611,7 @@ async fn run_source_engines(
             EngineName::Pmd => {
                 Pmd {
                     java_target: config.java_target,
+                    java_source: config.java_source.or(java_source),
                     allow_logged_exceptions: config.allow_logged_exceptions,
                     ..Pmd::default()
                 }

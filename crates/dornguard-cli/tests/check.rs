@@ -732,7 +732,7 @@ public record Book(String title) {
     let script = fs::read_to_string(&build).unwrap();
     fs::write(
         &build,
-        format!("{script}\nsubprojects {{ tasks.withType<JavaCompile>().configureEach {{ options.release.set(17) }} }}\n"),
+        format!("{script}\nsubprojects {{ tasks.withType<JavaCompile>().configureEach {{ options.release.set(17) }} }}\nproject(\":api\") {{ tasks.named<JavaCompile>(\"compileTestJava\") {{ options.release.set(25) }} }}\n"),
     )
     .unwrap();
     let initial = report(check(root).output().unwrap(), 0);
@@ -851,7 +851,7 @@ public record Book(String title) {
     fs::create_dir_all(root.join(test_path).parent().unwrap()).unwrap();
     fs::write(
         root.join(test_path),
-        "class OnlyTest { void exercise() { System.out.println(1); } }\n",
+        "class OnlyTest { void exercise() { System.out.println(1); try { Integer.parseInt(\"42\"); } catch (NumberFormatException _) {} } }\n",
     )
     .unwrap();
     let test = report(
@@ -874,13 +874,39 @@ public record Book(String title) {
         "{test}"
     );
 
-    fs::write(domain, "package example.api.domain; public record Book( {}").unwrap();
+    assert!(
+        findings
+            .iter()
+            .any(|item| item["rule_id"] == "java.empty-catch"),
+        "{test}"
+    );
+
+    fs::write(
+        domain,
+        "package example.api.domain; public record Book(Missing value) {}",
+    )
+    .unwrap();
     let build_failure = report(check(root).args(["--module", ":api"]).output().unwrap(), 4);
     assert_eq!(build_failure["complete"], false);
     assert_eq!(build_failure["status"], "preparation_error");
     assert_eq!(build_failure["failures"][0]["stage"], "project_compile");
     assert_eq!(build_failure["failures"][0]["build_tool"], "Gradle");
     assert_eq!(build_failure["failures"][0]["modules"][0], ":api");
+    assert!(
+        build_failure["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["rule_id"] == "java.stdout-usage" && item["path"] == test_path),
+        "{build_failure}"
+    );
+    assert!(
+        build_failure["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|item| item["engine"] != "archunit")
+    );
 }
 
 fn copy_gradle_fixture(source: &Path, destination: &Path) {
@@ -1851,14 +1877,33 @@ fn maven_reactor_enforces_layered_and_hexagonal_profiles() {
 
     fs::write(
         web.join("domain/Book.java"),
-        "package example.domain; invalid Java",
+        "package example.domain; public class Book { Missing missing; }",
     )
     .unwrap();
-    let result = report(check(&root).output().unwrap(), 4);
+    fs::write(web.join("controller/BookController.java"), "package example.controller; public class BookController { void print() { System.out.println(1); } }\n").unwrap();
+    let result = report(
+        check(&root).args(["--profile", "java"]).output().unwrap(),
+        4,
+    );
     assert_eq!(result["status"], "preparation_error");
     assert_eq!(result["complete"], false);
     assert_eq!(result["failures"][0]["stage"], "project_compile");
     assert_eq!(result["failures"][0]["build_tool"], "Maven");
+    assert!(
+        result["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["rule_id"] == "java.stdout-usage"
+                && item["path"] == "web/custom sources/example/controller/BookController.java"),
+        "{result}"
+    );
+    assert!(result["files_requested"].as_u64().unwrap() > 0);
+    fs::write(
+        web.join("controller/BookController.java"),
+        "package example.controller; public class BookController {}",
+    )
+    .unwrap();
 
     fs::write(
         root.join(".dornguard.yml"),
@@ -2309,7 +2354,7 @@ fn maven_tracks_effective_compile_inputs_and_checks_custom_test_sources() {
     let pom = r#"<project>
         <modelVersion>4.0.0</modelVersion>
         <groupId>example</groupId><artifactId>scope</artifactId><version>1</version>
-        <properties><maven.compiler.release>17</maven.compiler.release></properties>
+        <properties><maven.compiler.release>17</maven.compiler.release><maven.compiler.testRelease>25</maven.compiler.testRelease></properties>
         <build><testSourceDirectory>custom tests</testSourceDirectory>
           <plugins><plugin><artifactId>maven-compiler-plugin</artifactId><version>3.13.0</version>
             <configuration><useIncrementalCompilation>false</useIncrementalCompilation>OPTIONS</configuration>
@@ -2334,7 +2379,7 @@ fn maven_tracks_effective_compile_inputs_and_checks_custom_test_sources() {
     .unwrap();
     fs::write(
         test.join("BrokenTest.java"),
-        "package example; import org.springframework.beans.factory.annotation.Autowired; class BrokenTest { @Autowired Object dependency; void example() { try { operation(); } catch (Exception ex) {} } void operation() throws Exception {} }\n",
+        "package example; import org.springframework.beans.factory.annotation.Autowired; class BrokenTest { @Autowired Object dependency; void example() { try { operation(); } catch (Exception _) {} } void operation() throws Exception {} }\n",
     ).unwrap();
 
     let first = report(check(root).output().unwrap(), 1);
@@ -2385,6 +2430,146 @@ fn maven_tracks_effective_compile_inputs_and_checks_custom_test_sources() {
         "{resolved}"
     );
     assert_eq!(resolved["files_scanned"], 3, "{resolved}");
+
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [java]\n",
+    )
+    .unwrap();
+    fs::write(
+        main.join("Other.java"),
+        "package example; import java.net.*; public class Other {}\n",
+    )
+    .unwrap();
+    let baseline = root.join(".dornguard-baseline.json");
+    let create = || {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_dornguard"));
+        command
+            .current_dir(root)
+            .args(["baseline", "create", "--resolve-imports"]);
+        command
+    };
+    let output = create().output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let saved = fs::read(&baseline).unwrap();
+    let baseline_json: Value = serde_json::from_slice(&saved).unwrap();
+    assert!(
+        baseline_json["violations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["path"] == "src/main/java/example/Other.java"
+                && item["rule_id"] == "java.unnecessary-import"),
+        "{baseline_json}"
+    );
+    let matched = report(
+        check(root)
+            .args(["--resolve-imports", "--baseline"])
+            .arg(&baseline)
+            .output()
+            .unwrap(),
+        0,
+    );
+    assert!(
+        matched["diagnostics"].as_array().unwrap().is_empty(),
+        "{matched}"
+    );
+
+    fs::write(
+        main.join("Other.java"),
+        "package example; public class Other { Missing missing; }\n",
+    )
+    .unwrap();
+    let failed = create().arg("--force").output().unwrap();
+    assert_eq!(failed.status.code(), Some(4));
+    assert_eq!(fs::read(&baseline).unwrap(), saved);
+}
+
+#[test]
+#[ignore = "requires the pinned Semgrep and PMD engines"]
+fn source_only_can_select_java_25_syntax() {
+    let project = project(
+        "class Example { void parse() { try { Integer.parseInt(\"42\"); } catch (NumberFormatException _) {} } }\n",
+    );
+    let root = project.path();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [java]\n",
+    )
+    .unwrap();
+    let failed = report(check(root).output().unwrap(), 3);
+    assert_eq!(failed["failures"][0]["error_type"], "ParseException");
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [java]\njava_source: 25\n",
+    )
+    .unwrap();
+    let result = report(check(root).output().unwrap(), 1);
+    assert_eq!(result["diagnostics"][0]["rule_id"], "java.empty-catch");
+    assert_eq!(result["complete"], true);
+    assert_eq!(result["files_scanned"], 1);
+}
+
+#[test]
+#[ignore = "requires the pinned Semgrep and PMD engines"]
+fn pmd_baseline_uses_exclusive_fingerprint_and_matches_legacy_entries() {
+    let source = r#"import java.io.InputStream;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+class Example {
+    void read(Path path) throws IOException {
+        InputStream stream=Files.newInputStream(path);
+        stream.available();
+    }
+}
+"#;
+    let project = project(source);
+    let root = project.path();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [java]\nrules:\n  java.resource-not-closed: {severity: error}\n",
+    )
+    .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_dornguard"))
+        .current_dir(root)
+        .args(["baseline", "create"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let baseline = root.join(".dornguard-baseline.json");
+    let mut existing: Value = serde_json::from_slice(&fs::read(&baseline).unwrap()).unwrap();
+    assert_eq!(
+        existing["violations"][0]["fingerprint"],
+        dornguard_core::fingerprint("stream")
+    );
+    fs::write(
+        root.join("src/Example.java"),
+        source.replace("stream=", "stream = "),
+    )
+    .unwrap();
+    let matched = || {
+        report(
+            check(root)
+                .arg("--baseline")
+                .arg(&baseline)
+                .output()
+                .unwrap(),
+            0,
+        )
+    };
+    assert_eq!(matched()["suppressed_count"], 1);
+    existing["violations"][0]["fingerprint"] = Value::from(dornguard_core::fingerprint("stream="));
+    fs::write(&baseline, serde_json::to_vec(&existing).unwrap()).unwrap();
+    assert_eq!(matched()["suppressed_count"], 1);
 }
 
 #[test]

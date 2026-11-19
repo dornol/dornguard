@@ -25,6 +25,7 @@ gradle.projectsEvaluated {
                 def main = project.extensions.findByType(SourceSetContainer)?.findByName('main')
                 def test = project.extensions.findByType(SourceSetContainer)?.findByName('test')
                 def compile = main == null ? null : project.tasks.named(main.compileJavaTaskName).get()
+                def compileTest = test == null ? null : project.tasks.named(test.compileJavaTaskName).get()
                 def kotlinMain = project.plugins.hasPlugin('org.jetbrains.kotlin.jvm') ?
                     project.extensions.getByName('kotlin').sourceSets.getByName('main') : null
                 def dependencies = ['api', 'implementation', 'compileOnly', 'compileOnlyApi', 'runtimeOnly'].collectMany { name ->
@@ -44,7 +45,9 @@ gradle.projectsEvaluated {
                     kotlinSourceDirs: kotlinMain == null ? [] : kotlinMain.kotlin.srcDirs*.canonicalPath.sort(),
                     classDirs: main == null ? [] : main.output.classesDirs.files*.canonicalPath.sort(),
                     classpath: main != null && project in compileProjects ? main.compileClasspath.files*.canonicalPath : [],
-                    javaTarget: compile == null ? null : javaTarget(compile),
+                    javaTarget: compile == null ? null : javaVersion(compile, 'target', compile.targetCompatibility),
+                    javaSource: compile == null ? null : javaVersion(compile, 'source', compile.sourceCompatibility),
+                    javaTestSource: compileTest == null ? null : javaVersion(compileTest, 'source', compileTest.sourceCompatibility),
                     dependencies: dependencies,
                 ]
             }.sort { it.path }
@@ -53,21 +56,25 @@ gradle.projectsEvaluated {
     }
 }
 
-Integer javaTarget(compile) {
+Integer javaVersion(compile, String option, String compatibility) {
     if (compile.options.release.present) {
         return compile.options.release.get()
     }
     def args = compile.options.compilerArgs
-    int release = args.indexOf('--release')
-    if (release >= 0) {
-        def value = args.getAt(release + 1)
-        return value?.isInteger() ? value.toInteger() : null
+    for (String flag : ['--release', "--${option}".toString(), "-${option}".toString()]) {
+        int index = args.indexOf(flag)
+        if (index >= 0) {
+            return parseJavaVersion(args.getAt(index + 1))
+        }
+        def assignment = args.find { it.startsWith(flag + '=') }
+        if (assignment != null) {
+            return parseJavaVersion(assignment.substring(flag.length() + 1))
+        }
     }
-    def assignment = args.find { it.startsWith('--release=') }
-    if (assignment != null) {
-        def value = assignment.substring('--release='.length())
-        return value.isInteger() ? value.toInteger() : null
-    }
-    def target = compile.targetCompatibility?.replaceFirst('^1\\.', '')
-    return target?.isInteger() ? target.toInteger() : null
+    return parseJavaVersion(compatibility)
+}
+
+Integer parseJavaVersion(String value) {
+    def version = value?.replaceFirst('^1\\.', '')
+    return version?.isInteger() ? version.toInteger() : null
 }

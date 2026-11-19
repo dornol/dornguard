@@ -128,6 +128,7 @@ fn check_layout(
                 severity: rule.severity,
                 message: detail.unwrap_or_else(|| rule.description.clone()),
                 fix: rule.fix.clone(),
+                legacy_fingerprints: Vec::new(),
                 fingerprint: Some(fingerprint(line.text.trim())),
             });
         }

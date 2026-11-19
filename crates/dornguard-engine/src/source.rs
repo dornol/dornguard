@@ -23,27 +23,16 @@ impl Sources {
         fragment_fingerprint(source.fragment(start, end)?)
     }
 
-    pub fn lines(
-        &mut self,
-        root: &Path,
-        path: &Path,
-        start: (u32, u32),
-        end: (u32, u32),
-    ) -> Option<String> {
-        self.span(root, path, start, end, true)
-    }
-
     pub fn span(
         &mut self,
         root: &Path,
         path: &Path,
         start: (u32, u32),
         end: (u32, u32),
-        inclusive: bool,
     ) -> Option<String> {
         let source = self.get(root, path)?;
-        let start = source.offset(start, false)?;
-        let end = source.offset(end, inclusive)?;
+        let start = source.offset(start)?;
+        let end = source.offset(end)?;
         fragment_fingerprint(source.fragment(start, end)?)
     }
 
@@ -74,6 +63,37 @@ impl Source {
         &self.text
     }
 
+    pub fn pmd_fingerprints(&self, start: usize, end: usize) -> (Option<String>, Vec<String>) {
+        let Some(fragment) = self.fragment(start, end) else {
+            return (None, Vec::new());
+        };
+        let current = fragment_fingerprint(fragment);
+        let following = self.text[end..]
+            .split(['\r', '\n'])
+            .next()
+            .unwrap_or_default();
+
+        // PMD reports an exclusive end column. The legacy implementation
+        // included the next character, which may have been adjacent punctuation.
+        let mut legacy = Vec::new();
+        if let Some(next) = following.chars().next()
+            && let Some(hash) = fragment_fingerprint(&self.text[start..end + next.len_utf8()])
+            && Some(&hash) != current.as_ref()
+        {
+            legacy.push(hash);
+        }
+        if following.starts_with([' ', '\t'])
+            && let Some(delimiter) = following.trim_start_matches([' ', '\t']).chars().next()
+            && "=;,.)]{}".contains(delimiter)
+            && let Some(hash) = fragment_fingerprint(&format!("{fragment}{delimiter}"))
+            && Some(&hash) != current.as_ref()
+            && !legacy.contains(&hash)
+        {
+            legacy.push(hash);
+        }
+        (current, legacy)
+    }
+
     pub fn position(&self, offset: usize) -> Option<(u32, u32)> {
         let line = self.lines.partition_point(|start| *start <= offset);
         let start = self.lines[line - 1];
@@ -81,7 +101,7 @@ impl Source {
         (!prefix.ends_with('\r')).then(|| (line as u32, prefix.encode_utf16().count() as u32 + 1))
     }
 
-    pub fn offset(&self, (line, column): (u32, u32), inclusive: bool) -> Option<usize> {
+    pub fn offset(&self, (line, column): (u32, u32)) -> Option<usize> {
         let row = line.checked_sub(1)? as usize;
         let start = *self.lines.get(row)?;
         let end = self.lines.get(row + 1).copied().unwrap_or(self.text.len());
@@ -89,15 +109,11 @@ impl Source {
         let mut target = column.checked_sub(1)? as usize;
         for (index, character) in line.char_indices() {
             if target < character.len_utf16() {
-                return if inclusive {
-                    Some(start + index + character.len_utf8())
-                } else {
-                    (target == 0).then_some(start + index)
-                };
+                return (target == 0).then_some(start + index);
             }
             target -= character.len_utf16();
         }
-        (!inclusive && target == 0).then_some(start + line.len())
+        (target == 0).then_some(start + line.len())
     }
 }
 

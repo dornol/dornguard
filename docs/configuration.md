@@ -31,7 +31,7 @@ Use `enabled: false` to disable an activated rule in a project or module. For
 ArchUnit, `options` replaces the rule's package selectors. A single name
 matches a package segment and a dotted name matches a package prefix.
 
-## Java resource and exception checks
+## Java source, resource and exception checks
 
 ```yaml
 version: 1
@@ -39,6 +39,12 @@ profiles: [java]
 java_target: 17
 allow_logged_exceptions: true
 ```
+
+PMD uses the Java source version reported by the Maven or Gradle compiler
+configuration, including separate settings for main and test sources. Java
+21 is the fallback when the version is unknown, including source-only checks.
+Set `java_source` to choose another Java feature version (3 through 27).
+For example, `java_source: 25` selects Java 25 syntax in a source-only scan.
 
 In build-backed checks, DornGuard reads the Java target from Maven's main
 compiler settings or Gradle's main Java compile task. A configured release
@@ -119,6 +125,10 @@ the rule, relative file path and finding fingerprint. Findings with a
 logical location use the Gradle module and JVM class instead of a file path.
 The CLI reads version 1 file baselines and writes version 2. Running
 `baseline create --force` replaces the file after the scan completes.
+Use `baseline create --resolve-imports` when your check uses
+`--resolve-imports` so both commands use the compiled classpath.
+New PMD fingerprints use the displayed finding range. DornGuard also
+matches earlier PMD fingerprints for existing baseline and ignore entries.
 With `--changed`, DornGuard runs a full scan if the selected baseline changed
 or Git cannot verify it as a tracked project file.
 

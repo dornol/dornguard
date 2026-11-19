@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use crate::source::Sources;
 use dornguard_config::{PRESERVE_STACK_TRACE_RULE, RESOURCE_RULE, UNNECESSARY_IMPORT_RULE};
-use dornguard_core::{Diagnostic, EngineName, Outcome};
+use dornguard_core::{Diagnostic, EngineName, Outcome, PMD_JAVA_DEFAULT, PMD_JAVA_VERSIONS};
 use miette::{IntoDiagnostic, Result, WrapErr, bail};
 use serde::Deserialize;
 use tokio::time::Instant;
@@ -51,6 +51,7 @@ pub struct Pmd<'a> {
     pub classpath: Option<&'a [PathBuf]>,
     pub compile_sources: Option<&'a BTreeSet<PathBuf>>,
     pub java_target: Option<u16>,
+    pub java_source: Option<u16>,
     pub allow_logged_exceptions: bool,
 }
 
@@ -66,6 +67,17 @@ impl Engine for Pmd<'_> {
 }
 
 async fn scan(request: Request<'_>, settings: &Pmd<'_>, outcome: &mut Outcome) -> Result<()> {
+    let version = settings.java_source.unwrap_or(PMD_JAVA_DEFAULT);
+    if !PMD_JAVA_VERSIONS.contains(&version) {
+        bail!(
+            "PMD {PMD_VERSION} cannot parse Java {version}; set java_source to a supported version if the sources are compatible"
+        );
+    }
+    let language = if version < 5 {
+        format!("java-1.{version}")
+    } else {
+        format!("java-{version}")
+    };
     let deadline = Instant::now() + Duration::from_secs(120);
     check_version(ENGINE, request.root, deadline).await?;
     let temp = tempfile::tempdir()
@@ -137,7 +149,7 @@ async fn scan(request: Request<'_>, settings: &Pmd<'_>, outcome: &mut Outcome) -
             "--encoding",
             "UTF-8",
             "--use-version",
-            "java-21",
+            &language,
             "--file-list",
         ])
         .arg(file_list)
@@ -265,13 +277,16 @@ async fn scan(request: Request<'_>, settings: &Pmd<'_>, outcome: &mut Outcome) -
                 continue;
             }
             let source = sources.get(request.root, &path);
-            let start = source
-                .and_then(|source| source.offset((finding.beginline, finding.begincolumn), false));
-            let end = source.and_then(|source| {
-                // PMD 7.29 emits an exclusive end column, including at end of line.
-                let end = source.offset((finding.endline, finding.endcolumn), false)?;
-                (start? < end).then(|| source.position(end)).flatten()
-            });
+            let start =
+                source.and_then(|source| source.offset((finding.beginline, finding.begincolumn)));
+            // PMD 7.29 emits an exclusive end column, including at end of line.
+            let end_offset = source
+                .and_then(|source| source.offset((finding.endline, finding.endcolumn)))
+                .filter(|end| start.is_some_and(|start| start < *end));
+            let end = source.and_then(|source| source.position(end_offset?));
+            let (fingerprint, legacy_fingerprints) = source
+                .and_then(|source| Some(source.pmd_fingerprints(start?, end_offset?)))
+                .unwrap_or_default();
             let subject = finding.subject(&rule.id).map(str::to_owned);
             outcome.diagnostics.push(Diagnostic {
                 path: Some(display_path(&path)),
@@ -287,24 +302,8 @@ async fn scan(request: Request<'_>, settings: &Pmd<'_>, outcome: &mut Outcome) -
                 engine: rule.engine,
                 severity: rule.severity,
                 fix: rule.fix.clone(),
-                // Older baselines used an inclusive end. Keep those fingerprints
-                // where they existed and use the actual span when it ended at EOL.
-                fingerprint: sources
-                    .lines(
-                        request.root,
-                        &path,
-                        (finding.beginline, finding.begincolumn),
-                        (finding.endline, finding.endcolumn),
-                    )
-                    .or_else(|| {
-                        sources.span(
-                            request.root,
-                            &path,
-                            (finding.beginline, finding.begincolumn),
-                            end?,
-                            false,
-                        )
-                    }),
+                fingerprint,
+                legacy_fingerprints,
             });
         }
     }

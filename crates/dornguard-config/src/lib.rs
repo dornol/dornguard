@@ -33,6 +33,7 @@ pub struct ProjectConfig {
     #[serde(default)]
     pub format: FormatConfig,
     pub java_target: Option<u16>,
+    pub java_source: Option<u16>,
     #[serde(default)]
     pub allow_logged_exceptions: bool,
     #[serde(default)]
@@ -592,6 +593,11 @@ impl Registry {
         config.ruleset.validate()?;
         if config.java_target == Some(0) {
             bail!("java_target must be a positive Java feature version");
+        }
+        if let Some(version) = config.java_source
+            && !dornguard_core::PMD_JAVA_VERSIONS.contains(&version)
+        {
+            bail!("java_source must be a Java feature version from 3 to 27");
         }
         for (name, width) in [
             ("java_indent", config.format.java_indent),

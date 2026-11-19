@@ -102,20 +102,33 @@ impl Baseline {
         }
         outcome.diagnostics.sort();
         outcome.diagnostics.dedup();
-        outcome.diagnostics.retain(|diagnostic| {
-            let Some(entry) = Entry::from_diagnostic(diagnostic) else {
-                return true;
-            };
-            let Some(count) = self.0.get_mut(&entry) else {
-                return true;
-            };
-            if *count == 0 {
-                return true;
-            }
-            *count -= 1;
-            outcome.suppressed_count += 1;
-            false
-        });
+        // Match current identities first. A compatibility alias must not
+        // spend a recorded occurrence belonging to another exact match.
+        for legacy in [false, true] {
+            outcome.diagnostics.retain(|diagnostic| {
+                let Some(mut entry) = Entry::from_diagnostic(diagnostic) else {
+                    return true;
+                };
+                let matched = if legacy {
+                    diagnostic.legacy_fingerprints.iter().any(|hash| {
+                        entry.fingerprint.clone_from(hash);
+                        self.consume(&entry)
+                    })
+                } else {
+                    self.consume(&entry)
+                };
+                outcome.suppressed_count += usize::from(matched);
+                !matched
+            });
+        }
+    }
+
+    fn consume(&mut self, entry: &Entry) -> bool {
+        let Some(count) = self.0.get_mut(entry).filter(|count| **count > 0) else {
+            return false;
+        };
+        *count -= 1;
+        true
     }
 
     pub fn create(path: &Path, diagnostics: &[Diagnostic], overwrite: bool) -> Result<usize> {

@@ -3,6 +3,7 @@ package io.dornguard.maven;
 import com.google.gson.Gson;
 import org.apache.maven.eventspy.AbstractEventSpy;
 import org.apache.maven.execution.ExecutionEvent;
+import org.apache.maven.execution.MavenSession;
 import org.apache.maven.project.MavenProject;
 import org.apache.maven.plugin.PluginParameterExpressionEvaluator;
 import org.codehaus.plexus.util.DirectoryScanner;
@@ -54,7 +55,9 @@ public final class ModelSpy extends AbstractEventSpy {
                     ? absolutePaths(Collections.singletonList(project.getBuild().getOutputDirectory()))
                     : Collections.emptyList());
             module.put("classpath", sources ? absolutePaths(project.getCompileClasspathElements()) : Collections.emptyList());
-            module.put("javaTarget", sources ? javaTarget(execution, project) : null);
+            if (sources) {
+                exportJavaVersions(module, execution, project);
+            }
             module.put("dependencies", Collections.emptyList());
             modules.put(project.getId(), module);
         } else if (execution.getType() == ExecutionEvent.Type.SessionEnded
@@ -140,25 +143,51 @@ public final class ModelSpy extends AbstractEventSpy {
         return values;
     }
 
-    private static Integer javaTarget(ExecutionEvent event, MavenProject project) {
-        Xpp3Dom config = project.getGoalConfiguration(
+    private static void exportJavaVersions(Map<String, Object> module, ExecutionEvent event, MavenProject project) {
+        Xpp3Dom main = project.getGoalConfiguration(
                 "org.apache.maven.plugins", "maven-compiler-plugin", "default-compile", "compile");
-        PluginParameterExpressionEvaluator evaluator = new PluginParameterExpressionEvaluator(event.getSession());
-        String release = compilerParameter(config, evaluator, "release");
-        String target = release != null ? release : compilerParameter(config, evaluator, "target");
-        if (target == null || !target.matches("(?:1\\.)?[0-9]{1,4}")) {
-            return null;
-        }
-        return Integer.valueOf(target.replaceFirst("^1\\.", ""));
+        Xpp3Dom test = project.getGoalConfiguration(
+                "org.apache.maven.plugins", "maven-compiler-plugin", "default-testCompile", "testCompile");
+        // ProjectSucceeded may fire after Maven restores the current project.
+        // Resolve expressions against the exported module without mutating the build session.
+        MavenSession session = event.getSession().clone();
+        session.setCurrentProject(project);
+        PluginParameterExpressionEvaluator evaluator = new PluginParameterExpressionEvaluator(session);
+        module.put("javaTarget", javaVersion(main, session, evaluator, "release", "target"));
+        module.put("javaSource", javaVersion(main, session, evaluator, "release", "source"));
+        module.put("javaTestSource", javaVersion(test, session, evaluator, "testRelease", "release", "testSource", "source"));
     }
 
-    private static String compilerParameter(Xpp3Dom config, PluginParameterExpressionEvaluator evaluator, String name) {
+    private static Integer javaVersion(Xpp3Dom config, MavenSession session, PluginParameterExpressionEvaluator evaluator, String... names) {
+        for (String name : names) {
+            String configured = compilerParameter(config, session, evaluator, name);
+            if (configured == null) {
+                continue;
+            }
+            if (!configured.matches("(?:1\\.)?[0-9]{1,4}")) {
+                return null;
+            }
+            return Integer.valueOf(configured.replaceFirst("^1\\.", ""));
+        }
+        return null;
+    }
+
+    private static String compilerParameter(Xpp3Dom config, MavenSession session, PluginParameterExpressionEvaluator evaluator, String name) {
         Xpp3Dom child = config == null ? null : config.getChild(name);
-        String value = child == null ? "${maven.compiler." + name + "}" : child.getValue();
+        String property = "maven.compiler." + name;
+        String value = child == null ? null : child.getValue();
+        if (value == null || value.trim().isEmpty()) {
+            value = session.getUserProperties().getProperty(property,
+                    session.getSystemProperties().getProperty(property,
+                            session.getCurrentProject().getProperties().getProperty(property)));
+        }
+        if (value == null) {
+            return null;
+        }
         try {
             Object evaluated = evaluator.evaluate(value);
             String result = evaluated == null ? null : evaluated.toString().trim();
-            return result == null || result.isEmpty() || result.equals("${maven.compiler." + name + "}") ? null : result;
+            return result == null || result.isEmpty() ? null : result;
         } catch (Exception ignored) {
             return "";
         }

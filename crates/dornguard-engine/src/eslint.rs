@@ -124,10 +124,10 @@ async fn scan(request: Request<'_>, outcome: &mut Outcome) -> Result<()> {
                     bail!("ESLint returned an invalid diagnostic position");
                 }
                 let source = sources.get(request.root, &path);
-                let start = source.and_then(|source| source.offset((line, column), false));
+                let start = source.and_then(|source| source.offset((line, column)));
                 let end = finding.end_line.zip(finding.end_column).filter(|end| {
                     source
-                        .and_then(|source| source.offset(*end, false))
+                        .and_then(|source| source.offset(*end))
                         .zip(start)
                         .is_some_and(|(end, start)| start < end)
                 });
@@ -145,9 +145,11 @@ async fn scan(request: Request<'_>, outcome: &mut Outcome) -> Result<()> {
                     severity: rule.severity,
                     message: rule.description.clone(),
                     fix: rule.fix.clone(),
-                    fingerprint: finding.end_line.zip(finding.end_column).and_then(|end| {
-                        sources.span(request.root, &path, (line, column), end, false)
-                    }),
+                    legacy_fingerprints: Vec::new(),
+                    fingerprint: finding
+                        .end_line
+                        .zip(finding.end_column)
+                        .and_then(|end| sources.span(request.root, &path, (line, column), end)),
                 });
             }
             if parsed {

@@ -26,6 +26,8 @@ pub struct Module {
     pub class_dirs: Vec<PathBuf>,
     pub classpath: Vec<PathBuf>,
     pub java_target: Option<u16>,
+    pub java_source: Option<u16>,
+    pub java_test_source: Option<u16>,
     pub dependencies: Vec<String>,
 }
 
@@ -119,7 +121,12 @@ pub struct Diagnostic {
     pub message: String,
     pub fix: String,
     pub fingerprint: Option<String>,
+    #[serde(skip)]
+    pub legacy_fingerprints: Vec<String>,
 }
+
+pub const PMD_JAVA_DEFAULT: u16 = 21;
+pub const PMD_JAVA_VERSIONS: std::ops::RangeInclusive<u16> = 3..=27;
 
 pub fn fingerprint(identity: &str) -> String {
     format!("{:x}", Sha256::digest(identity.as_bytes()))

@@ -1,7 +1,8 @@
 # Engine installation
 
 DornGuard supports Semgrep 1.182.0, PMD 7.29.0 and an ArchUnit runner built
-for Java 21. Java source analysis uses Java 21 syntax in PMD. Gradle project
+for Java 21. PMD uses the Java syntax level from the project build model or
+`java_source` in the configuration, with Java 21 as the fallback. Gradle project
 integration is tested with Gradle 9.9.1 and JDK 21. Java Maven integration
 is tested with Maven 3.9.9 and JDK 21.
 
@@ -17,6 +18,8 @@ older than the engine runtime. A failed project model or compile operation
 is a preparation error (exit 4). A failed analysis engine is an engine error
 (exit 3). For an incomplete check, the text and agent formats show the
 failure before collected diagnostics.
+After a failed compile, DornGuard uses the discovery model to run available
+source checks without the compile classpath. The report remains incomplete.
 
 ```sh
 dornguard engines install
