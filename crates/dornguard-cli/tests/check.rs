@@ -1,12 +1,17 @@
 use std::fs;
 use std::path::Path;
 use std::process::{Command, Output};
+use std::sync::{Mutex, PoisonError};
 
 use serde_json::Value;
 use tempfile::TempDir;
 
 const CLEAN: &str =
     include_str!("../../../examples/java-single/src/main/java/example/Example.java");
+
+// These fixtures use the same Maven local repository. Concurrent downloads can
+// collide on Windows when Maven replaces repository update markers.
+static MAVEN_TEST_LOCK: Mutex<()> = Mutex::new(());
 
 fn project(source: &str) -> TempDir {
     let project = tempfile::tempdir().unwrap();
@@ -1682,6 +1687,9 @@ fn kotlin_changed_base_keeps_old_module_ownership_and_checks_dependents() {
 #[test]
 #[ignore = "requires Git, Maven 3, JDK 21, Semgrep and the bundled JVM artifacts"]
 fn maven_reactor_enforces_layered_and_hexagonal_profiles() {
+    let _maven = MAVEN_TEST_LOCK
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
     let parent = tempfile::tempdir().unwrap();
     let root = parent.path().join("maven reactor");
     fs::create_dir_all(&root).unwrap();
@@ -2374,6 +2382,9 @@ fn unnecessary_import_lines(report: &Value, path: &str) -> Vec<u64> {
 #[test]
 #[ignore = "requires Maven 3, JDK 21, both source engines and the bundled JVM artifacts"]
 fn maven_tracks_effective_compile_inputs_and_checks_custom_test_sources() {
+    let _maven = MAVEN_TEST_LOCK
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
     let project = tempfile::tempdir().unwrap();
     let root = project.path();
     let main = root.join("src/main/java/example");
