@@ -557,7 +557,7 @@ fn find_config(target: &Path, config: Option<&Path>) -> Result<PathBuf> {
             }
         }
     }
-    bail!("No {CONFIG_FILE} found; run dornguard init at the project root")
+    bail!("No {CONFIG_FILE} found; run dornguard init at the project root");
 }
 
 fn current_registry() -> Result<Registry> {
