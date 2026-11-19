@@ -11,7 +11,6 @@ case "$(uname -s):$(uname -m)" in
     Linux:x86_64) target=linux-x86_64 ;;
     Linux:aarch64) target=linux-arm64 ;;
     Darwin:arm64) target=macos-arm64 ;;
-    Darwin:x86_64) target=macos-x86_64 ;;
     *) printf 'Unsupported DornGuard distribution target\n' >&2; exit 2 ;;
 esac
 

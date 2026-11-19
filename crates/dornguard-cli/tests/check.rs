@@ -482,7 +482,7 @@ fn changed_scans_unchanged_sources_when_the_selected_baseline_changes() {
             .unwrap()
     };
     let unchanged = report(check_changed(), 0);
-    assert_eq!(unchanged["status"], "no_changes");
+    assert_eq!(unchanged["status"], "no_changes", "{unchanged}");
     fs::write(root.join(baseline), r#"{"version":1,"violations":[]}"#).unwrap();
 
     let result = report(check_changed(), 1);
@@ -618,7 +618,11 @@ fn local_and_git_rulesets_resolve_custom_profiles_and_reuse_cached_tag_commits()
         .args(["rules", "explain", "custom.stderr"])
         .output()
         .unwrap();
-    assert!(explained.status.success());
+    assert!(
+        explained.status.success(),
+        "{}",
+        String::from_utf8_lossy(&explained.stderr)
+    );
 
     let remote = tempfile::tempdir().unwrap();
     write_custom_ruleset(remote.path());

@@ -124,7 +124,16 @@ async fn diff(root: &Path, comparison: &[&str]) -> Result<Vec<u8>> {
 }
 
 async fn tracked_baseline(root: &Path, path: &Path) -> Result<PathBuf> {
-    let absolute = std::path::absolute(path)
+    // Use the same current directory spelling as project discovery, including on Windows.
+    let path_from_cwd = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        dunce::canonicalize(".")
+            .into_diagnostic()
+            .wrap_err("Could not resolve the current directory")?
+            .join(path)
+    };
+    let absolute = std::path::absolute(path_from_cwd)
         .into_diagnostic()
         .wrap_err("Could not locate the selected baseline")?;
     let canonical = dunce::canonicalize(&absolute)
@@ -142,7 +151,9 @@ async fn tracked_baseline(root: &Path, path: &Path) -> Result<PathBuf> {
         .wrap_err("The selected baseline is outside the project")?;
     let relative_text = relative
         .to_str()
-        .ok_or_else(|| miette::miette!("The selected baseline has a non-UTF-8 path"))?;
+        .ok_or_else(|| miette!("The selected baseline has a non-UTF-8 path"))?;
+    #[cfg(windows)]
+    let relative_text = &relative_text.replace('\\', "/");
     git(root, &["ls-files", "--error-unmatch", "--", relative_text])
         .await
         .wrap_err_with(|| {

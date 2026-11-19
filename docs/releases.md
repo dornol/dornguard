@@ -1,14 +1,14 @@
 # Releases
 
 The [release workflow](../.github/workflows/release.yml) builds archives for
-Linux x86-64 and ARM64, macOS ARM64 and Intel, and Windows x86-64. Each
+Linux x86-64 and ARM64, macOS ARM64, and Windows x86-64. Each
 archive includes the native CLI, the matching ArchUnit runner, and an
 archive SHA-256 file. Each job extracts its archive and runs the bundled
 CLI against the Gradle multi-module example using the packaged runner.
 The workflow checks that a release tag matches
 `workspace.package.version` in Cargo.toml.
 
-The archive can be extracted to a directory on PATH. On Linux and macOS,
+The archive can be extracted to a directory on PATH. On Linux and Apple silicon Macs,
 `scripts/install.sh vVERSION` installs a specific release to the user's
 data directory and links the executable from the local bin directory.
 On Windows, compare the archive digest with its accompanying SHA-256 file

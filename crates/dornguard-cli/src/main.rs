@@ -561,7 +561,9 @@ fn find_config(target: &Path, config: Option<&Path>) -> Result<PathBuf> {
 }
 
 fn current_registry() -> Result<Registry> {
-    let cwd = std::env::current_dir().into_diagnostic()?;
+    let cwd = dunce::canonicalize(".")
+        .into_diagnostic()
+        .wrap_err("Could not resolve the current directory")?;
     if let Some(path) = cwd
         .ancestors()
         .map(|ancestor| ancestor.join(CONFIG_FILE))
