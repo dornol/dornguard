@@ -8,6 +8,7 @@ Use `dornguard rules explain ID` for the reason and guidance for a rule.
 | --- | --- |
 | `java-source` | Semgrep Java source rules |
 | `java` | Semgrep and PMD Java source rules |
+| `format` | Java, Kotlin, and JavaScript source formatting |
 | `jspecify` | Requires all checked Java types to be in a JSpecify `@NullMarked` scope |
 | `kotlin` | Semgrep output and coroutine checks for Gradle Kotlin/JVM production sources |
 | `spring-boot` | Java and Spring injection, transaction, and singleton-state checks |
@@ -27,6 +28,27 @@ Use `dornguard rules explain ID` for the reason and guidance for a rule.
 The `spring.field-injection` rule skips Java test sources under
 `src/test/java` in every module. Other rules still check those files when
 they are included in the scan.
+
+## Source formatting
+
+Add `format` to your profiles or run `dornguard check --profile format`.
+The profile works with `.java`, `.kt`, `.js`, `.mjs`, and `.cjs` sources and
+uses the bundled parsers. It reports the following as errors.
+
+| Rule | Default |
+| --- | --- |
+| `format.indentation` | Spaces only. Indent blocks by four spaces in Java and Kotlin and two in JavaScript. |
+| `format.line-ending` | LF throughout the file. |
+| `format.final-newline` | A newline at the end of every nonempty file. |
+| `format.trailing-whitespace` | No spaces or tabs at the end of a line. |
+| `format.blank-lines` | At most one consecutive blank line. |
+| `format.control-spacing` | A single space before a control keyword's opening parenthesis, as in `if (ready)`. |
+
+Indentation width is checked at block boundaries and for direct block
+members. Continuation lines may align with surrounding expressions.
+Whitespace inside string literals, text blocks, and template literals is
+preserved by the spacing, blank-line, and indentation rules.
+See [formatting configuration](configuration.md#formatting) for overrides.
 
 ## JSpecify coverage
 
@@ -96,6 +118,18 @@ with default singleton scope or an explicit singleton declaration.
 Method-local formatters and request-, session-, application-, and
 prototype-scoped beans are outside its scope. PMD may keep imports whose
 usage it cannot resolve without a complete classpath.
+
+Unused wildcard imports, including static ones, are reported when DornGuard
+can pass the compiled module's classes and compile dependencies to PMD.
+DornGuard reuses this classpath when another check already compiles the
+module. To compile Maven or Gradle sources specifically for this rule, run
+`dornguard check --resolve-imports`.
+
+The option uses Maven's main compile phase or Gradle's main classes task.
+With Maven, build checks examine the full reactor even when `--changed` is
+set. Gradle supports the usual module selection. Files checked without a
+compiled classpath, including test files found by a source-only profile,
+still report unnecessary explicit imports and duplicate wildcard imports.
 
 The qualified-type checks use Java and Kotlin naming conventions to identify
 candidates in code. Import and package declarations, comments, and string

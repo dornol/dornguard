@@ -55,6 +55,83 @@ fn invalid_config_and_missing_targets_have_distinct_statuses() {
 }
 
 #[test]
+fn format_defaults_check_java_kotlin_and_javascript_without_a_build() {
+    let project = project("class Example {\r\n  void f() {\r\n    if(true) {}  \r\n  }\r\n}");
+    let root = project.path();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [format]\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("src/sample.kt"),
+        "fun example() {\n  if(true) {\n        println(\"if(false)\")\n  }\n}\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("src/sample.js"),
+        "function example() {\n\tif(true) {\n    console.log(`if(false)\n  \n\n\n text`);\n  }\n}\n\n\n",
+    )
+    .unwrap();
+    let result = report(check(root).output().unwrap(), 1);
+    assert_eq!(result["files_scanned"], 3);
+    let findings = result["diagnostics"].as_array().unwrap();
+    for (path, rule, line) in [
+        ("src/Example.java", "line-ending", 1),
+        ("src/Example.java", "indentation", 2),
+        ("src/Example.java", "control-spacing", 3),
+        ("src/Example.java", "trailing-whitespace", 3),
+        ("src/Example.java", "final-newline", 5),
+        ("src/sample.kt", "indentation", 2),
+        ("src/sample.kt", "control-spacing", 2),
+        ("src/sample.js", "indentation", 2),
+        ("src/sample.js", "control-spacing", 2),
+        ("src/sample.js", "blank-lines", 11),
+    ] {
+        assert!(
+            findings.iter().any(|finding| {
+                finding["path"] == path
+                    && finding["rule_id"] == format!("format.{rule}")
+                    && finding["line"] == line
+            }),
+            "{path}:{line} {rule}\n{result}"
+        );
+    }
+    assert!(findings.iter().all(|finding| {
+        finding["path"] != "src/sample.js" || !(3..=7).contains(&finding["line"].as_u64().unwrap())
+    }));
+}
+
+#[test]
+fn format_accepts_overrides_and_ignores_program_text_inside_literals() {
+    let project = project(
+        "class Example {\r\n  String sample = \"\"\"\r\n        if(x)   \r\n  \"\"\";\r\n  void f() {\r\n    if (true) {}\r\n  }\r\n}\r\n",
+    );
+    let root = project.path();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [format]\nformat: {java_indent: 2, line_ending: crlf}\n",
+    )
+    .unwrap();
+    let result = report(check(root).output().unwrap(), 0);
+    assert_eq!(result["files_scanned"], 1);
+    assert!(result["diagnostics"].as_array().unwrap().is_empty());
+
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [format]\nformat: {kotlin_indent: 0}\n",
+    )
+    .unwrap();
+    let invalid = report(check(root).output().unwrap(), 2);
+    assert!(
+        invalid["failures"][0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("format.kotlin_indent")
+    );
+}
+
+#[test]
 fn jspecify_checks_effective_java_scopes_without_external_engines() {
     let project = project(CLEAN);
     let root = project.path();
@@ -557,10 +634,21 @@ fn gradle_project_enforces_architecture_and_keeps_module_policies_separate() {
     copy_gradle_fixture(&fixture, project.path());
     let root = project.path();
 
+    let domain_path = "api/src/main/java/example/api/domain/Book.java";
+    let domain = root.join(domain_path);
+    let source = fs::read_to_string(&domain).unwrap().replace(
+        "package example.api.domain;",
+        "package example.api.domain;\nimport example.common.*;\nimport java.net.*;\n/** See {@link Titles}. */",
+    );
+    fs::write(&domain, source).unwrap();
     let initial = report(check(root).output().unwrap(), 0);
     assert_eq!(initial["files_scanned"], 7);
+    assert_eq!(
+        unnecessary_import_lines(&initial, domain_path),
+        [3],
+        "{initial}"
+    );
 
-    let domain = root.join("api/src/main/java/example/api/domain/Book.java");
     fs::write(&domain, "package example.api.domain; public record Book(String title) { public Class<?> type() { return example.api.adapter.BookAdapter.class; } }").unwrap();
     let moved = "common/src/main/java/example/common/Moved.java";
     let moved_to = "batch/src/main/java/example/batch/Moved.java";
@@ -1517,12 +1605,15 @@ fn maven_reactor_enforces_layered_and_hexagonal_profiles() {
     let jsp = root.join("web/src/main/webapp/books.jsp");
     fs::create_dir_all(jsp.parent().unwrap()).unwrap();
     fs::write(&jsp, "<%= books.size() %>").unwrap();
+    let kotlin = root.join("web/src/main/kotlin/Book.kt");
+    fs::create_dir_all(kotlin.parent().unwrap()).unwrap();
+    fs::write(&kotlin, "fun sample() {\n  println(42)\n}\n").unwrap();
 
     fs::write(root.join(".gitignore"), "target/\n").unwrap();
     commit_fixture(&root);
     let result = report(
         check(&root)
-            .args(["--changed", "--profile", "jspecify"])
+            .args(["--changed", "--profile", "jspecify", "--profile", "format"])
             .output()
             .unwrap(),
         1,
@@ -1533,7 +1624,17 @@ fn maven_reactor_enforces_layered_and_hexagonal_profiles() {
         "Maven build checks scan the full reactor"
     );
     assert_eq!(result["complete"], true);
-    assert_eq!(result["files_scanned"], 6);
+    assert_eq!(result["files_scanned"], 7);
+    assert!(
+        result["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|finding| {
+                finding["rule_id"] == "format.indentation"
+                    && finding["path"] == "web/src/main/kotlin/Book.kt"
+            })
+    );
     assert!(
         result["diagnostics"]
             .as_array()
@@ -1614,6 +1715,37 @@ fn maven_reactor_enforces_layered_and_hexagonal_profiles() {
     let result = report(check(&root).output().unwrap(), 4);
     assert_eq!(result["status"], "preparation_error");
     assert_eq!(result["complete"], false);
+
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [java]\n",
+    )
+    .unwrap();
+    let domain_path = "web/custom sources/example/domain/Book.java";
+    fs::write(
+        root.join(domain_path),
+        "package example.domain;\nimport example.repository.*;\nimport java.net.*;\n/** See {@link BookRepository}. */\npublic class Book {}\n",
+    )
+    .unwrap();
+    let test_path = "web/src/test/java/example/domain/BookTest.java";
+    fs::create_dir_all(root.join(test_path).parent().unwrap()).unwrap();
+    fs::write(
+        root.join(test_path),
+        "package example.domain;\nimport java.net.*;\nimport java.io.InputStream;\nclass BookTest {}\n",
+    )
+    .unwrap();
+    let resolved = report(check(&root).arg("--resolve-imports").output().unwrap(), 0);
+    assert_eq!(resolved["files_scanned"], 5, "{resolved}");
+    assert_eq!(
+        unnecessary_import_lines(&resolved, domain_path),
+        [3],
+        "{resolved}"
+    );
+    assert_eq!(
+        unnecessary_import_lines(&resolved, test_path),
+        [3],
+        "{resolved}"
+    );
 }
 
 #[test]
@@ -1945,6 +2077,44 @@ profiles: [spring-boot]
             .iter()
             .all(|finding| finding["severity"] == "warning")
     );
+}
+
+#[test]
+#[ignore = "requires the pinned Semgrep and PMD engines"]
+fn unnecessary_import_skips_unused_wildcards_but_reports_duplicates_and_explicit_imports() {
+    let project = project(
+        "import example.docs.\n    /* use in Javadoc */ *;\n\
+         import static java.util.Objects.*;\n\
+         import static java.util.Objects.*;\n\
+         import java.io.InputStream;\n\
+         /** See {@link DocType}. */\n\
+         class Example {}\n",
+    );
+    let root = project.path();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [java]\n",
+    )
+    .unwrap();
+
+    let result = report(check(root).output().unwrap(), 0);
+    assert_eq!(
+        unnecessary_import_lines(&result, "src/Example.java"),
+        [4, 5],
+        "{result}"
+    );
+}
+
+fn unnecessary_import_lines(report: &Value, path: &str) -> Vec<u64> {
+    report["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|finding| {
+            finding["rule_id"] == "java.unnecessary-import" && finding["path"] == path
+        })
+        .map(|finding| finding["line"].as_u64().unwrap())
+        .collect()
 }
 
 #[test]

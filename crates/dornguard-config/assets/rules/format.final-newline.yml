@@ -1,0 +1,5 @@
+id: format.final-newline
+engine: builtin
+severity: error
+description: End nonempty files with a newline.
+fix: Add a line break after the last line.

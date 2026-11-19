@@ -1,10 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::{BufWriter, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::source::Sources;
+use dornguard_config::UNNECESSARY_IMPORT_RULE;
 use dornguard_core::{Diagnostic, EngineName, Outcome};
 use miette::{IntoDiagnostic, Result, WrapErr, bail};
 use serde::Deserialize;
@@ -18,19 +19,25 @@ use crate::{
 const ENGINE: EngineName = EngineName::Pmd;
 
 #[derive(Default)]
-pub struct Pmd;
+pub struct Pmd<'a> {
+    pub classpath: Option<&'a [PathBuf]>,
+}
 
-impl Engine for Pmd {
+impl Engine for Pmd<'_> {
     async fn check(&self, request: Request<'_>) -> Outcome {
         let mut outcome = Outcome::default();
-        if let Err(error) = scan(request, &mut outcome).await {
+        if let Err(error) = scan(request, self.classpath, &mut outcome).await {
             fail(&mut outcome, ENGINE, format!("{error:#}"));
         }
         outcome
     }
 }
 
-async fn scan(request: Request<'_>, outcome: &mut Outcome) -> Result<()> {
+async fn scan(
+    request: Request<'_>,
+    classpath: Option<&[PathBuf]>,
+    outcome: &mut Outcome,
+) -> Result<()> {
     let deadline = Instant::now() + Duration::from_secs(120);
     check_version(ENGINE, request.root, deadline).await?;
     let temp = tempfile::tempdir()
@@ -78,6 +85,19 @@ async fn scan(request: Request<'_>, outcome: &mut Outcome) -> Result<()> {
         .arg(file_list)
         .arg("--rulesets")
         .arg(refs.join(","));
+    if let Some(classpath) = classpath {
+        let path = temp.path().join("classpath.txt");
+        let mut list = BufWriter::new(File::create(&path).into_diagnostic()?);
+        for entry in classpath {
+            let entry = entry
+                .to_str()
+                .filter(|entry| !entry.contains(['\r', '\n']) && *entry == entry.trim_end())
+                .ok_or_else(|| miette::miette!("PMD cannot represent a classpath entry"))?;
+            writeln!(list, "{entry}").into_diagnostic()?;
+        }
+        list.flush().into_diagnostic()?;
+        check.arg("--aux-classpath").arg(classpath_argument(&path)?);
+    }
     let output = run_command(ENGINE, &mut check, deadline).await?;
     if !output.status.success() {
         fail(
@@ -143,6 +163,12 @@ async fn scan(request: Request<'_>, outcome: &mut Outcome) -> Result<()> {
                 );
                 continue;
             }
+            if classpath.is_none()
+                && rule.id == UNNECESSARY_IMPORT_RULE
+                && finding.is_unused_wildcard_import()
+            {
+                continue;
+            }
             outcome.diagnostics.push(Diagnostic {
                 path: Some(display_path(&path)),
                 module: None,
@@ -166,6 +192,28 @@ async fn scan(request: Request<'_>, outcome: &mut Outcome) -> Result<()> {
     Ok(())
 }
 
+fn classpath_argument(path: &Path) -> Result<String> {
+    let path = path
+        .to_str()
+        .ok_or_else(|| miette::miette!("PMD classpath file path must be UTF-8"))?;
+    let mut argument = String::from("file:");
+    // PMD parses a leading slash after "file:" as a URI. Windows paths
+    // start with a drive letter or backslash and are read as native paths.
+    if path.starts_with('/') {
+        use std::fmt::Write as _;
+        for byte in path.bytes() {
+            if byte.is_ascii_alphanumeric() || b"/-._~".contains(&byte) {
+                argument.push(char::from(byte));
+            } else {
+                write!(argument, "%{byte:02X}").expect("writing to a String cannot fail");
+            }
+        }
+    } else {
+        argument.push_str(path);
+    }
+    Ok(argument)
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Scan {
@@ -186,8 +234,20 @@ struct FileResults {
 #[derive(Deserialize)]
 struct Finding {
     rule: String,
+    #[serde(default)]
+    description: String,
     beginline: u32,
     begincolumn: u32,
     endline: u32,
     endcolumn: u32,
+}
+
+impl Finding {
+    fn is_unused_wildcard_import(&self) -> bool {
+        // PMD 7.29 reports unused and duplicate imports with distinct messages.
+        // Its pretty-printed import names are independent of source layout.
+        self.description.ends_with(".*'")
+            && (self.description.starts_with("Unused import '")
+                || self.description.starts_with("Unused static import '"))
+    }
 }

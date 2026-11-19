@@ -1,0 +1,5 @@
+id: format.blank-lines
+engine: builtin
+severity: error
+description: This source has too many consecutive blank lines.
+fix: Remove excess blank lines.

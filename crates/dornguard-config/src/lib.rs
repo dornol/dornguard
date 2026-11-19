@@ -12,6 +12,7 @@ use ruleset::{PolicySource, Ruleset, Source};
 pub const CONFIG_FILE: &str = ".dornguard.yml";
 pub const DEFAULT_CONFIG: &str = "version: 1\nprofiles: [java]\n";
 pub const BUILTIN_VERSION: &str = "1.1.0";
+pub const UNNECESSARY_IMPORT_RULE: &str = "java.unnecessary-import";
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -28,7 +29,39 @@ pub struct ProjectConfig {
     #[serde(default)]
     pub ignore: Vec<Ignore>,
     #[serde(default)]
+    pub format: FormatConfig,
+    #[serde(default)]
     rules: BTreeMap<String, RuleOverride>,
+}
+
+#[derive(Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct FormatConfig {
+    pub java_indent: u8,
+    pub kotlin_indent: u8,
+    pub javascript_indent: u8,
+    pub line_ending: LineEnding,
+    pub max_blank_lines: u8,
+}
+
+#[derive(Clone, Copy, Default, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LineEnding {
+    #[default]
+    Lf,
+    Crlf,
+}
+
+impl Default for FormatConfig {
+    fn default() -> Self {
+        Self {
+            java_indent: 4,
+            kotlin_indent: 4,
+            javascript_indent: 2,
+            line_ending: LineEnding::Lf,
+            max_blank_lines: 1,
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -114,6 +147,10 @@ impl Rule {
         }
         match self.engine {
             EngineName::Eslint => language == SourceLanguage::Javascript,
+            EngineName::Builtin if self.is_format_rule() => matches!(
+                language,
+                SourceLanguage::Java | SourceLanguage::Kotlin | SourceLanguage::Javascript
+            ),
             EngineName::Pmd | EngineName::Builtin => language == SourceLanguage::Java,
             EngineName::Semgrep => self.semgrep_languages.iter().any(|name| {
                 name == language.semgrep_name()
@@ -122,6 +159,10 @@ impl Rule {
             }),
             _ => false,
         }
+    }
+
+    pub fn is_format_rule(&self) -> bool {
+        self.engine == EngineName::Builtin && self.id.starts_with("format.")
     }
 
     pub fn enables_kotlin(&self) -> bool {
@@ -170,6 +211,7 @@ impl Registry {
         let profile_sources = [
             include_str!("../assets/profiles/java-source.yml"),
             include_str!("../assets/profiles/java.yml"),
+            include_str!("../assets/profiles/format.yml"),
             include_str!("../assets/profiles/jspecify.yml"),
             include_str!("../assets/profiles/kotlin.yml"),
             include_str!("../assets/profiles/security.yml"),
@@ -187,6 +229,12 @@ impl Registry {
             include_str!("../assets/profiles/jsp.yml"),
         ];
         let rule_sources = [
+            include_str!("../assets/rules/format.indentation.yml"),
+            include_str!("../assets/rules/format.line-ending.yml"),
+            include_str!("../assets/rules/format.final-newline.yml"),
+            include_str!("../assets/rules/format.trailing-whitespace.yml"),
+            include_str!("../assets/rules/format.blank-lines.yml"),
+            include_str!("../assets/rules/format.control-spacing.yml"),
             include_str!("../assets/rules/java.stdout-usage.yml"),
             include_str!("../assets/rules/java.empty-catch.yml"),
             include_str!("../assets/rules/java.jspecify-null-marked.yml"),
@@ -533,6 +581,15 @@ impl Registry {
             );
         }
         config.ruleset.validate()?;
+        for (name, width) in [
+            ("java_indent", config.format.java_indent),
+            ("kotlin_indent", config.format.kotlin_indent),
+            ("javascript_indent", config.format.javascript_indent),
+        ] {
+            if !(1..=16).contains(&width) {
+                bail!("format.{name} must be between 1 and 16");
+            }
+        }
         for entry in &config.ignore {
             let path = &entry.path;
             if path.contains(['\\', ':'])

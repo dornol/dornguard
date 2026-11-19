@@ -3,14 +3,15 @@ use std::path::{Component, Path, PathBuf};
 use std::process::{Output, Stdio};
 use std::time::Duration;
 
-use dornguard_config::{Registry, Rule};
-use dornguard_core::{EngineName, Failure, FailureKind, Outcome};
+use dornguard_config::{FormatConfig, Registry, Rule};
+use dornguard_core::{EngineName, Failure, FailureKind, Outcome, SourceLanguage};
 use miette::{IntoDiagnostic, Result, WrapErr, bail};
 use tokio::process::Command;
 use tokio::time::{Instant, timeout_at};
 
 mod archunit;
 mod eslint;
+mod format;
 mod install;
 mod jspecify;
 mod pmd;
@@ -20,7 +21,6 @@ mod source;
 pub use archunit::{ArchModule, check_architecture, maven_model_path};
 pub use eslint::Eslint;
 pub use install::install;
-pub use jspecify::JSpecify;
 pub use pmd::Pmd;
 pub use semgrep::Semgrep;
 
@@ -36,6 +36,42 @@ pub struct Request<'a> {
 
 pub trait Engine {
     fn check(&self, request: Request<'_>) -> impl Future<Output = Outcome> + Send;
+}
+
+pub async fn check_builtin(request: Request<'_>, settings: &FormatConfig) -> Outcome {
+    let (format_rules, jspecify_rules): (Vec<_>, Vec<_>) = request
+        .rules
+        .iter()
+        .copied()
+        .partition(|rule| rule.is_format_rule());
+    let mut outcome = Outcome::default();
+    if !jspecify_rules.is_empty() {
+        let java_files = request
+            .files
+            .iter()
+            .filter(|path| SourceLanguage::of(path) == Some(SourceLanguage::Java))
+            .cloned()
+            .collect::<Vec<_>>();
+        outcome.merge(
+            jspecify::JSpecify
+                .check(Request {
+                    files: &java_files,
+                    rules: &jspecify_rules,
+                    ..request
+                })
+                .await,
+        );
+    }
+    if !format_rules.is_empty() {
+        outcome.merge(format::check(
+            Request {
+                rules: &format_rules,
+                ..request
+            },
+            settings,
+        ));
+    }
+    outcome
 }
 
 pub fn supported_version(engine: EngineName) -> &'static str {

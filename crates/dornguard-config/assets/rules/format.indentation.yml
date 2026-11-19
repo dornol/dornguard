@@ -1,0 +1,5 @@
+id: format.indentation
+engine: builtin
+severity: error
+description: Use spaces and the configured indentation for this language.
+fix: Indent each block level by the configured number of spaces.

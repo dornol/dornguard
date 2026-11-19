@@ -1,0 +1,9 @@
+name: format
+description: Formatting checks for Java, Kotlin, and JavaScript
+rules:
+  - format.indentation
+  - format.line-ending
+  - format.final-newline
+  - format.trailing-whitespace
+  - format.blank-lines
+  - format.control-spacing

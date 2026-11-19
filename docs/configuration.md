@@ -31,6 +31,27 @@ Use `enabled: false` to disable an activated rule in a project or module. For
 ArchUnit, `options` replaces the rule's package selectors. A single name
 matches a package segment and a dotted name matches a package prefix.
 
+## Formatting
+
+Add `format` to the existing profiles to require consistent formatting. The
+settings below show the defaults. Include only the format fields you want to
+override. Use `crlf` to require Windows line endings and set `max_blank_lines` to zero to
+disallow blank lines.
+
+```yaml
+version: 1
+profiles: [spring-boot, format]
+format:
+  java_indent: 4
+  kotlin_indent: 4
+  javascript_indent: 2
+  line_ending: lf
+  max_blank_lines: 1
+```
+
+Use the existing `rules` section to change the severity or disable individual
+[formatting rules](profiles.md#source-formatting).
+
 ## Intentional exceptions
 
 To exempt a Java source finding at a specific statement, put a standalone

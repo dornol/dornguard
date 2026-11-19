@@ -2,12 +2,12 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use dornguard_config::{ProjectConfig, Registry, Rule};
+use dornguard_config::{ProjectConfig, Registry, Rule, UNNECESSARY_IMPORT_RULE};
 use dornguard_core::{
     Diagnostic, EngineName, FailureKind, Module, Outcome, ProjectModel, SourceLanguage,
     TEMPLATE_DIR, fingerprint,
 };
-use dornguard_engine::{ArchModule, check_architecture};
+use dornguard_engine::{ArchModule, Engine, Pmd, Request, check_architecture};
 use dornguard_gradle::CompileModules;
 use miette::{Result, bail, miette};
 
@@ -66,6 +66,8 @@ pub struct Check<'a> {
     pub profiles: &'a [String],
     pub global: &'a [&'a Rule],
     pub global_kotlin: bool,
+    pub resolve_imports: bool,
+    pub include_other_sources: bool,
     pub changes: Option<&'a Changes>,
     pub required: bool,
 }
@@ -81,6 +83,8 @@ pub async fn check(check: Check<'_>) -> Outcome {
         profiles,
         global,
         global_kotlin,
+        resolve_imports,
+        include_other_sources,
         mut changes,
         required,
     } = check;
@@ -124,10 +128,18 @@ pub async fn check(check: Check<'_>) -> Outcome {
         .collect::<BTreeMap<_, _>>();
     let rules_for = |name: &str| overrides.get(name).map_or(global, Vec::as_slice);
     let kotlin_for = |name: &str| global_kotlin || kotlin_modules.contains(name);
+    let format_kotlin =
+        |name: &str| !kotlin_for(name) && rules_for(name).iter().any(|rule| rule.is_format_rule());
+    let kotlin_sources = |name: &str| kotlin_for(name) || format_kotlin(name);
     let web_for = |name: &str, language: SourceLanguage| {
         rules_for(name).iter().any(|rule| rule.applies_to(language))
     };
-    let has_arch = |rules: &[&Rule]| rules.iter().any(|rule| rule.engine == EngineName::Archunit);
+    let needs_compile = |rules: &[&Rule]| {
+        rules.iter().any(|rule| {
+            rule.engine == EngineName::Archunit
+                || resolve_imports && rule.id == UNNECESSARY_IMPORT_RULE
+        })
+    };
     let (discovery, affected, fallback_reason) = if let Some(changes_found) = changes {
         let model = match build.collect(root, CompileModules::Selected(&[])).await {
             Ok(model) => model,
@@ -137,8 +149,12 @@ pub async fn check(check: Check<'_>) -> Outcome {
             root,
             &model.modules,
             changes_found,
-            kotlin_for,
-            global_kotlin || !kotlin_modules.is_empty(),
+            kotlin_sources,
+            model
+                .modules
+                .iter()
+                .any(|module| kotlin_sources(&module.path)),
+            format_kotlin,
             web_for,
         ) {
             Ok(affected) => (Some(model), Some(affected), None),
@@ -153,21 +169,22 @@ pub async fn check(check: Check<'_>) -> Outcome {
     let compile_names = if let Some(affected) = &affected {
         affected
             .iter()
-            .filter(|name| has_arch(rules_for(name)))
+            .filter(|name| needs_compile(rules_for(name)))
             .cloned()
             .collect()
     } else {
         match filter {
-            Some(name) if has_arch(rules_for(name)) => vec![name.to_owned()],
+            Some(name) if needs_compile(rules_for(name)) => vec![name.to_owned()],
             Some(_) => Vec::new(),
             None => overrides
                 .iter()
-                .filter(|(_, rules)| has_arch(rules))
+                .filter(|(_, rules)| needs_compile(rules))
                 .map(|(&name, _)| name.to_owned())
                 .collect(),
         }
     };
-    let compile_all = affected.is_none() && filter.is_none() && has_arch(global);
+    let compile_all = affected.is_none() && filter.is_none() && needs_compile(global);
+    let maven_compiled = build == BuildSystem::Maven && (compile_all || !compile_names.is_empty());
     let model = match discovery {
         Some(model) if compile_names.is_empty() && !compile_all => model,
         _ => {
@@ -223,13 +240,11 @@ pub async fn check(check: Check<'_>) -> Outcome {
                     || module
                         .source_dirs
                         .iter()
-                        .chain(
-                            kotlin_for(&module.path)
-                                .then_some(&module.kotlin_source_dirs)
-                                .into_iter()
-                                .flatten(),
-                        )
-                        .any(|dir| target.starts_with(dir) || dir.starts_with(target)))
+                        .any(|dir| target.starts_with(dir) || dir.starts_with(target))
+                    || kotlin_sources(&module.path)
+                        && source_dirs(module, SourceLanguage::Kotlin, format_kotlin(&module.path))
+                            .iter()
+                            .any(|dir| target.starts_with(dir) || dir.starts_with(target)))
         })
         .collect::<Vec<_>>();
     let selected_names = selected
@@ -237,6 +252,8 @@ pub async fn check(check: Check<'_>) -> Outcome {
         .map(|module| module.path.as_str())
         .collect::<BTreeSet<_>>();
     let mut source_groups = BTreeMap::new();
+    let mut pmd_modules = Vec::new();
+    let mut mapped_files = BTreeSet::new();
     let mut architecture = Vec::new();
     for module in selected {
         let rules = rules_for(&module.path);
@@ -244,7 +261,18 @@ pub async fn check(check: Check<'_>) -> Outcome {
         let jvm = |language| {
             language == SourceLanguage::Java || (language == SourceLanguage::Kotlin && kotlin)
         };
-        let mut files = match module_files(build_name, root, target, module, required, jvm) {
+        let format_kotlin = format_kotlin(&module.path);
+        let source_jvm =
+            |language| jvm(language) || (language == SourceLanguage::Kotlin && format_kotlin);
+        let mut files = match module_files(
+            build_name,
+            root,
+            target,
+            module,
+            required,
+            format_kotlin,
+            source_jvm,
+        ) {
             Ok(files) => files,
             Err(error) => return preparation_error(error),
         };
@@ -253,8 +281,14 @@ pub async fn check(check: Check<'_>) -> Outcome {
             .copied()
             .filter(|rule| rule.engine == EngineName::Archunit)
             .collect::<Vec<_>>();
-        if !arch_rules.is_empty() && (affected.is_some() || !files.is_empty()) {
-            let all_files = match module_files(build_name, root, root, module, required, jvm) {
+        if !arch_rules.is_empty()
+            && (affected.is_some()
+                || files
+                    .iter()
+                    .any(|path| SourceLanguage::of(path).is_some_and(jvm)))
+        {
+            let all_files = match module_files(build_name, root, root, module, required, false, jvm)
+            {
                 Ok(files) => files,
                 Err(error) => return preparation_error(error),
             };
@@ -267,17 +301,25 @@ pub async fn check(check: Check<'_>) -> Outcome {
                 });
             }
         }
-        match module_files(build_name, root, target, module, required, |language| {
-            !matches!(language, SourceLanguage::Java | SourceLanguage::Kotlin)
-                && web_for(&module.path, language)
-        }) {
+        match module_files(
+            build_name,
+            root,
+            target,
+            module,
+            required,
+            false,
+            |language| {
+                !matches!(language, SourceLanguage::Java | SourceLanguage::Kotlin)
+                    && web_for(&module.path, language)
+            },
+        ) {
             Ok(web_files) => files.extend(web_files),
             Err(error) => return preparation_error(error),
         }
         if let Some(changes) = changes {
             files.retain(|file| changes.matches(file));
         }
-        let source_rules = rules
+        let mut source_rules = rules
             .iter()
             .copied()
             .filter(|rule| {
@@ -294,16 +336,40 @@ pub async fn check(check: Check<'_>) -> Outcome {
             SourceLanguage::of(file)
                 .is_some_and(|language| source_rules.iter().any(|rule| rule.applies_to(language)))
         });
-        if !files.is_empty() && !source_rules.is_empty() {
-            let ids = source_rules
-                .iter()
-                .map(|rule| (rule.id.as_str(), rule.severity))
-                .collect::<Vec<_>>();
-            let (_, group) = source_groups
-                .entry(ids)
-                .or_insert_with(|| (source_rules, BTreeSet::new()));
-            group.extend(files);
+        if include_other_sources {
+            mapped_files.extend(files.iter().cloned());
         }
+        if (maven_compiled || compile_all || compile_names.contains(&module.path))
+            && source_rules
+                .iter()
+                .any(|rule| rule.id == UNNECESSARY_IMPORT_RULE)
+            && let Some(classpath) = compiled_classpath(module)
+        {
+            let java_files = files
+                .iter()
+                .filter(|path| SourceLanguage::of(path) == Some(SourceLanguage::Java))
+                .cloned()
+                .collect::<Vec<_>>();
+            if !java_files.is_empty() {
+                let pmd_rules = source_rules
+                    .extract_if(.., |rule| rule.engine == EngineName::Pmd)
+                    .collect::<Vec<_>>();
+                pmd_modules.push((java_files, pmd_rules, classpath));
+            }
+        }
+        add_source_group(&mut source_groups, source_rules, files);
+    }
+    if include_other_sources {
+        let files = match source_files(root, target, required, |language| {
+            global.iter().any(|rule| rule.applies_to(language))
+        }) {
+            Ok(files) => files,
+            Err(error) => return preparation_error(error),
+        };
+        let files = files.into_iter().filter(|path| {
+            !mapped_files.contains(path) && changes.is_none_or(|changes| changes.matches(path))
+        });
+        add_source_group(&mut source_groups, global.to_vec(), files);
     }
 
     let mut outcome = Outcome {
@@ -316,7 +382,11 @@ pub async fn check(check: Check<'_>) -> Outcome {
         .iter()
         .filter(|dependency| selected_names.contains(dependency.from.as_str()))
         .collect::<Vec<_>>();
-    if source_groups.is_empty() && architecture.is_empty() && dependency_checks.is_empty() {
+    if source_groups.is_empty()
+        && pmd_modules.is_empty()
+        && architecture.is_empty()
+        && dependency_checks.is_empty()
+    {
         if changes.is_some() {
             outcome.no_changes = true;
             return outcome;
@@ -372,17 +442,85 @@ pub async fn check(check: Check<'_>) -> Outcome {
                     &files.into_iter().collect::<Vec<_>>(),
                     registry,
                     &rules,
+                    &config.format,
                 )
                 .await,
             );
         }
         outcome
     };
-    let (source_result, architecture_result) =
-        tokio::join!(source_checks, check_architecture(root, &architecture));
+    let pmd_checks = async {
+        let mut outcome = Outcome::default();
+        for (files, rules, classpath) in pmd_modules {
+            outcome.merge(
+                Pmd {
+                    classpath: Some(&classpath),
+                }
+                .check(Request {
+                    root,
+                    files: &files,
+                    rules: &rules,
+                    registry,
+                })
+                .await,
+            );
+        }
+        outcome
+    };
+    let (source_result, architecture_result, pmd_result) = tokio::join!(
+        source_checks,
+        check_architecture(root, &architecture),
+        pmd_checks
+    );
     outcome.merge(source_result);
     outcome.merge(architecture_result);
+    outcome.merge(pmd_result);
     outcome
+}
+
+type SourceGroups<'a> =
+    BTreeMap<Vec<(&'a str, dornguard_core::Severity)>, (Vec<&'a Rule>, BTreeSet<PathBuf>)>;
+
+fn add_source_group<'a>(
+    groups: &mut SourceGroups<'a>,
+    rules: Vec<&'a Rule>,
+    files: impl IntoIterator<Item = PathBuf>,
+) {
+    let mut files = files.into_iter().peekable();
+    if rules.is_empty() || files.peek().is_none() {
+        return;
+    }
+    let ids = rules
+        .iter()
+        .map(|rule| (rule.id.as_str(), rule.severity))
+        .collect();
+    groups
+        .entry(ids)
+        .or_insert_with(|| (rules, BTreeSet::new()))
+        .1
+        .extend(files);
+}
+
+fn compiled_classpath(module: &Module) -> Option<Vec<PathBuf>> {
+    let output = module.class_dirs.iter().filter(|path| path.is_dir());
+    let mut classpath = output.cloned().collect::<Vec<_>>();
+    if classpath.is_empty()
+        || module
+            .classpath
+            .iter()
+            .any(|entry| !(entry.is_file() || entry.is_dir()))
+    {
+        return None;
+    }
+    let mut seen = classpath.iter().cloned().collect::<BTreeSet<_>>();
+    classpath.extend(
+        module
+            .classpath
+            .iter()
+            .filter(|path| seen.insert((*path).clone()))
+            .cloned(),
+    );
+    Some(classpath)
 }
 
 fn affected_modules(
@@ -391,6 +529,7 @@ fn affected_modules(
     changes: &Changes,
     kotlin_for: impl Fn(&str) -> bool,
     any_kotlin: bool,
+    format_kotlin: impl Fn(&str) -> bool,
     web_for: impl Fn(&str, SourceLanguage) -> bool,
 ) -> Result<BTreeSet<String>> {
     let mut affected = BTreeSet::new();
@@ -404,7 +543,7 @@ fn affected_modules(
         let full = root.join(path);
         let mut matched = false;
         for module in modules.iter().filter(|module| {
-            source_dirs(module, language)
+            source_dirs(module, language, format_kotlin(&module.path))
                 .iter()
                 .any(|dir| full.starts_with(dir))
         }) {
@@ -445,6 +584,7 @@ fn module_files(
     target: &Path,
     module: &Module,
     required: bool,
+    format_kotlin: bool,
     accepts: impl Fn(SourceLanguage) -> bool,
 ) -> Result<Vec<PathBuf>> {
     let mut files = BTreeSet::new();
@@ -459,7 +599,7 @@ fn module_files(
     .into_iter()
     .filter(|&language| accepts(language))
     {
-        let dirs = source_dirs(module, language);
+        let dirs = source_dirs(module, language, format_kotlin);
         for dir in dirs.iter() {
             if !dir.starts_with(root) {
                 bail!(
@@ -482,9 +622,22 @@ fn module_files(
     Ok(files.into_iter().collect())
 }
 
-fn source_dirs(module: &Module, language: SourceLanguage) -> Cow<'_, [PathBuf]> {
+fn source_dirs(
+    module: &Module,
+    language: SourceLanguage,
+    format_kotlin: bool,
+) -> Cow<'_, [PathBuf]> {
     match language {
         SourceLanguage::Java => Cow::Borrowed(&module.source_dirs),
+        SourceLanguage::Kotlin if format_kotlin => Cow::Owned(
+            module
+                .kotlin_source_dirs
+                .iter()
+                .chain(&module.source_dirs)
+                .cloned()
+                .chain([module.project_dir.join("src/main/kotlin")])
+                .collect(),
+        ),
         SourceLanguage::Kotlin => Cow::Borrowed(&module.kotlin_source_dirs),
         SourceLanguage::Template => Cow::Owned(vec![module.project_dir.join(TEMPLATE_DIR)]),
         SourceLanguage::Jsp => Cow::Owned(vec![module.project_dir.join("src/main/webapp")]),

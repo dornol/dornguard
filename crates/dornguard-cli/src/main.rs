@@ -4,10 +4,12 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand, ValueEnum};
-use dornguard_config::{BUILTIN_VERSION, CONFIG_FILE, DEFAULT_CONFIG, Registry};
+use dornguard_config::{
+    BUILTIN_VERSION, CONFIG_FILE, DEFAULT_CONFIG, FormatConfig, Registry, UNNECESSARY_IMPORT_RULE,
+};
 use dornguard_core::{EngineName, Failure, FailureKind, Outcome, Scope, SourceLanguage};
 use dornguard_engine::{
-    Engine, Eslint, JSpecify, Pmd, Request, Semgrep, inspect, install, supported_version,
+    Engine, Eslint, Pmd, Request, Semgrep, check_builtin, inspect, install, supported_version,
 };
 use ignore::WalkBuilder;
 use miette::{IntoDiagnostic, Result, WrapErr, bail, miette};
@@ -45,6 +47,9 @@ enum Action {
         config: Option<PathBuf>,
         #[arg(long, value_name = "MODULE")]
         module: Option<String>,
+        /// Compile build modules to resolve unused Java wildcard imports
+        #[arg(long)]
+        resolve_imports: bool,
         /// Limit the check to changes in the index and working tree
         #[arg(long, conflicts_with = "module")]
         changed: bool,
@@ -180,6 +185,7 @@ async fn dispatch(action: Action) -> Result<u8> {
             format,
             config,
             module,
+            resolve_imports,
             changed,
             base,
             baseline,
@@ -204,6 +210,7 @@ async fn dispatch(action: Action) -> Result<u8> {
                         baseline: baseline.as_deref(),
                     }),
                     None,
+                    resolve_imports,
                 )
                 .await;
                 if let Some(baseline) = loaded_baseline {
@@ -213,8 +220,16 @@ async fn dispatch(action: Action) -> Result<u8> {
             }
             .await;
             if let Some(policy) = &organization_policy {
-                let mut required =
-                    check(&target, &[], config.as_deref(), None, None, Some(policy)).await;
+                let mut required = check(
+                    &target,
+                    &[],
+                    config.as_deref(),
+                    None,
+                    None,
+                    Some(policy),
+                    resolve_imports,
+                )
+                .await;
                 outcome.organization_policy_enforced = required.failures.is_empty();
                 for diagnostic in &mut required.diagnostics {
                     diagnostic.severity = dornguard_core::Severity::Error;
@@ -264,7 +279,7 @@ async fn dispatch(action: Action) -> Result<u8> {
                     force,
                 },
         } => {
-            let outcome = check(Path::new("."), &profile, None, None, None, None).await;
+            let outcome = check(Path::new("."), &profile, None, None, None, None, false).await;
             let report = outcome.finish();
             if !report.complete {
                 dornguard_report::write_text(&report, &mut io::stderr().lock())
@@ -382,6 +397,7 @@ async fn check(
     module: Option<&str>,
     changed: Option<changed::Request<'_>>,
     organization: Option<&Path>,
+    resolve_imports: bool,
 ) -> Outcome {
     let config_error = |error| failure(FailureKind::ConfigurationError, error);
     let prep_error = |error| failure(FailureKind::PreparationError, error);
@@ -425,11 +441,12 @@ async fn check(
         Err(error) => return config_error(error),
     };
     let mut fallback_reason = None;
-    let jspecify_enabled = rules.iter().any(|rule| rule.engine == EngineName::Builtin)
+    let jspecify_rule = |rule: &dornguard_config::Rule| rule.id == "java.jspecify-null-marked";
+    let jspecify_enabled = rules.iter().copied().any(jspecify_rule)
         || config.modules.keys().any(|name| {
             registry
                 .resolve(&config, Some(name), profiles)
-                .is_ok_and(|rules| rules.iter().any(|rule| rule.engine == EngineName::Builtin))
+                .is_ok_and(|rules| rules.iter().any(jspecify_rule))
         });
     let changes = if let Some(request) = changed {
         match changed::discover(root, &project, config.local_ruleset_path(), request).await {
@@ -458,11 +475,12 @@ async fn check(
     } else {
         &target
     };
-    if global_kotlin
+    let uses_build = global_kotlin
         || module.is_some()
         || !config.modules.is_empty()
         || !config.module_dependencies.forbid.is_empty()
-        || rules.iter().any(|rule| rule.engine == EngineName::Archunit)
+        || rules.iter().any(|rule| rule.engine == EngineName::Archunit);
+    if uses_build || resolve_imports && rules.iter().any(|rule| rule.id == UNNECESSARY_IMPORT_RULE)
     {
         let build = build_check::BuildSystem::detect(root);
         let maven_full = build == build_check::BuildSystem::Maven && changes.is_some();
@@ -476,6 +494,8 @@ async fn check(
             profiles,
             global: &rules,
             global_kotlin,
+            resolve_imports,
+            include_other_sources: !uses_build,
             changes: if maven_full { None } else { changes.as_ref() },
             required: organization.is_some(),
         })
@@ -505,7 +525,7 @@ async fn check(
         ));
     }
     let mut files = match source_files(root, target, organization.is_some(), |language| {
-        language != SourceLanguage::Kotlin && rules.iter().any(|rule| rule.applies_to(language))
+        rules.iter().any(|rule| rule.applies_to(language))
     }) {
         Ok(files) => files,
         Err(error) => return scoped_prep_error(error),
@@ -523,7 +543,7 @@ async fn check(
     if files.is_empty() {
         return scoped_prep_error(miette!("No source files apply to this check"));
     }
-    let mut outcome = run_source_engines(root, &files, &registry, &rules).await;
+    let mut outcome = run_source_engines(root, &files, &registry, &rules, &config.format).await;
     outcome.scope = scope;
     outcome.fallback_reason = fallback_reason;
     if organization.is_none() {
@@ -537,6 +557,7 @@ async fn run_source_engines(
     files: &[PathBuf],
     registry: &Registry,
     rules: &[&dornguard_config::Rule],
+    format: &FormatConfig,
 ) -> Outcome {
     let check_group = async |engine, files: Vec<PathBuf>| {
         let languages = files
@@ -568,9 +589,9 @@ async fn run_source_engines(
         };
         match engine {
             EngineName::Semgrep => Semgrep::default().check(request).await,
-            EngineName::Pmd => Pmd.check(request).await,
+            EngineName::Pmd => Pmd::default().check(request).await,
             EngineName::Eslint => Eslint.check(request).await,
-            EngineName::Builtin => JSpecify.check(request).await,
+            EngineName::Builtin => check_builtin(request, format).await,
             _ => unreachable!("source runner requires a source engine"),
         }
     };
