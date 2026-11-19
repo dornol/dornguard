@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
@@ -9,7 +10,9 @@ use dornguard_engine::{ArchModule, check_architecture};
 use dornguard_gradle::CompileModules;
 use miette::{Result, bail, miette};
 
-use crate::{changed::Changes, failure, run_source_engines, source_files};
+use crate::{
+    TEMPLATE_DIR, changed::Changes, failure, is_template, run_source_engines, source_files,
+};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum BuildSystem {
@@ -122,6 +125,11 @@ pub async fn check(check: Check<'_>) -> Outcome {
         .collect::<BTreeMap<_, _>>();
     let rules_for = |name: &str| overrides.get(name).map_or(global, Vec::as_slice);
     let kotlin_for = |name: &str| global_kotlin || kotlin_modules.contains(name);
+    let html_for = |name: &str| {
+        rules_for(name)
+            .iter()
+            .any(|rule| rule.applies_to(SourceLanguage::Html))
+    };
     let has_arch = |rules: &[&Rule]| rules.iter().any(|rule| rule.engine == EngineName::Archunit);
     let (discovery, affected, fallback_reason) = if let Some(changes_found) = changes {
         let model = match build.collect(root, CompileModules::Selected(&[])).await {
@@ -134,6 +142,7 @@ pub async fn check(check: Check<'_>) -> Outcome {
             changes_found,
             kotlin_for,
             global_kotlin || !kotlin_modules.is_empty(),
+            html_for,
         ) {
             Ok(affected) => (Some(model), Some(affected), None),
             Err(error) => {
@@ -235,7 +244,10 @@ pub async fn check(check: Check<'_>) -> Outcome {
     for module in selected {
         let rules = rules_for(&module.path);
         let kotlin = kotlin_for(&module.path);
-        let mut files = match module_files(build_name, root, target, module, required, kotlin) {
+        let jvm = |language| {
+            language == SourceLanguage::Java || (language == SourceLanguage::Kotlin && kotlin)
+        };
+        let mut files = match module_files(build_name, root, target, module, required, jvm) {
             Ok(files) => files,
             Err(error) => return preparation_error(error),
         };
@@ -245,7 +257,7 @@ pub async fn check(check: Check<'_>) -> Outcome {
             .filter(|rule| rule.engine == EngineName::Archunit)
             .collect::<Vec<_>>();
         if !arch_rules.is_empty() && (affected.is_some() || !files.is_empty()) {
-            let all_files = match module_files(build_name, root, root, module, required, kotlin) {
+            let all_files = match module_files(build_name, root, root, module, required, jvm) {
                 Ok(files) => files,
                 Err(error) => return preparation_error(error),
             };
@@ -256,6 +268,14 @@ pub async fn check(check: Check<'_>) -> Outcome {
                     files: all_files,
                     kotlin,
                 });
+            }
+        }
+        if html_for(&module.path) {
+            match module_files(build_name, root, target, module, required, |language| {
+                language == SourceLanguage::Html
+            }) {
+                Ok(templates) => files.extend(templates),
+                Err(error) => return preparation_error(error),
             }
         }
         if let Some(changes) = changes {
@@ -367,6 +387,7 @@ fn affected_modules(
     changes: &Changes,
     kotlin_for: impl Fn(&str) -> bool,
     any_kotlin: bool,
+    html_for: impl Fn(&str) -> bool,
 ) -> Result<BTreeSet<String>> {
     let mut affected = BTreeSet::new();
     for path in changes.paths() {
@@ -374,6 +395,9 @@ fn affected_modules(
             continue;
         };
         if language == SourceLanguage::Kotlin && !any_kotlin {
+            continue;
+        }
+        if language == SourceLanguage::Html && !is_template(path) {
             continue;
         }
         let full = root.join(path);
@@ -384,11 +408,16 @@ fn affected_modules(
                 .any(|dir| full.starts_with(dir))
         }) {
             matched = true;
-            if language == SourceLanguage::Java || kotlin_for(&module.path) {
+            let enabled = match language {
+                SourceLanguage::Java => true,
+                SourceLanguage::Kotlin => kotlin_for(&module.path),
+                SourceLanguage::Html => html_for(&module.path),
+            };
+            if enabled {
                 affected.insert(module.path.clone());
             }
         }
-        if !matched {
+        if !matched && language != SourceLanguage::Html {
             bail!(
                 "Changed source path does not map to a Gradle module: {}",
                 path.display()
@@ -415,14 +444,19 @@ fn module_files(
     target: &Path,
     module: &Module,
     required: bool,
-    kotlin: bool,
+    accepts: impl Fn(SourceLanguage) -> bool,
 ) -> Result<Vec<PathBuf>> {
     let mut files = BTreeSet::new();
-    for language in [SourceLanguage::Java, SourceLanguage::Kotlin] {
-        if language == SourceLanguage::Kotlin && !kotlin {
-            continue;
-        }
-        for dir in source_dirs(module, language) {
+    for language in [
+        SourceLanguage::Java,
+        SourceLanguage::Kotlin,
+        SourceLanguage::Html,
+    ]
+    .into_iter()
+    .filter(|&language| accepts(language))
+    {
+        let dirs = source_dirs(module, language);
+        for dir in dirs.iter() {
             if !dir.starts_with(root) {
                 bail!(
                     "{build_name} source directory is outside the project: {}",
@@ -444,9 +478,10 @@ fn module_files(
     Ok(files.into_iter().collect())
 }
 
-fn source_dirs(module: &Module, language: SourceLanguage) -> &[PathBuf] {
+fn source_dirs(module: &Module, language: SourceLanguage) -> Cow<'_, [PathBuf]> {
     match language {
-        SourceLanguage::Java => &module.source_dirs,
-        SourceLanguage::Kotlin => &module.kotlin_source_dirs,
+        SourceLanguage::Java => Cow::Borrowed(&module.source_dirs),
+        SourceLanguage::Kotlin => Cow::Borrowed(&module.kotlin_source_dirs),
+        SourceLanguage::Html => Cow::Owned(vec![module.project_dir.join(TEMPLATE_DIR)]),
     }
 }

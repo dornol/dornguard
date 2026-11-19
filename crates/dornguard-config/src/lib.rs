@@ -92,7 +92,9 @@ impl Rule {
         match self.engine {
             EngineName::Pmd => language == SourceLanguage::Java,
             EngineName::Semgrep => self.semgrep_languages.iter().any(|name| {
-                name == language.semgrep_name() || matches!(name.as_str(), "generic" | "regex")
+                name == language.semgrep_name()
+                    || (language != SourceLanguage::Html
+                        && matches!(name.as_str(), "generic" | "regex"))
             }),
             _ => false,
         }
@@ -138,6 +140,7 @@ impl Registry {
             include_str!("../assets/profiles/kotlin.yml"),
             include_str!("../assets/profiles/security.yml"),
             include_str!("../assets/profiles/spring-boot.yml"),
+            include_str!("../assets/profiles/thymeleaf.yml"),
             include_str!("../assets/profiles/hexagonal.yml"),
             include_str!("../assets/profiles/layered.yml"),
             include_str!("../assets/profiles/java-library.yml"),
@@ -150,6 +153,7 @@ impl Registry {
             include_str!("../assets/rules/kotlin.stdout-usage.yml"),
             include_str!("../assets/rules/security.cors-wildcard.yml"),
             include_str!("../assets/rules/spring.field-injection.yml"),
+            include_str!("../assets/rules/thymeleaf.restricted-bean-access.yml"),
             include_str!("../assets/rules/architecture.domain-independence.yml"),
             include_str!("../assets/rules/architecture.application-independence.yml"),
             include_str!("../assets/rules/architecture.adapter-isolation.yml"),
@@ -175,6 +179,10 @@ impl Registry {
             (
                 "rules/semgrep/security/cors-wildcard.yml",
                 include_str!("../assets/rules/semgrep/security/cors-wildcard.yml"),
+            ),
+            (
+                "rules/semgrep/thymeleaf/restricted-bean-access.yml",
+                include_str!("../assets/rules/semgrep/thymeleaf/restricted-bean-access.yml"),
             ),
             (
                 "rules/semgrep/spring/field-injection.yml",

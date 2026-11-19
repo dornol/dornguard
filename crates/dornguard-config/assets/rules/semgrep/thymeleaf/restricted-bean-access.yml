@@ -1,0 +1,21 @@
+rules:
+  - id: thymeleaf-restricted-bean-access
+    languages: [html]
+    message: Use a model attribute in restricted Thymeleaf expressions.
+    severity: ERROR
+    patterns:
+      - pattern: <$TAG $ATTRIBUTE="$VALUE" ...>...</$TAG>
+      - metavariable-regex:
+          metavariable: $ATTRIBUTE
+          regex: '^(?:th:|data-th-)(?:href|src|utext|on[a-z]+|insert|replace)$'
+      - metavariable-regex:
+          metavariable: $VALUE
+          # Match a variable or selection expression in the attribute or URL base,
+          # including a simple fragment selector. Skip quoted SpEL literals.
+          regex: >-
+            (?x)^\s*
+            (?: @\{\s* | ~\{\s*(?:[\w./-]+\s*::\s*)? )?
+            [$*]\{
+            (?: [^{}'"@] | '(?:[^']|'')*' | "(?:[^"]|"")*" )*
+            @\s*(?: [A-Za-z_$][\w$]* | '(?:[^']|'')+' )
+      - focus-metavariable: $VALUE

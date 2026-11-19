@@ -28,6 +28,7 @@ pub struct Module {
 pub enum SourceLanguage {
     Java,
     Kotlin,
+    Html,
 }
 
 impl SourceLanguage {
@@ -35,6 +36,7 @@ impl SourceLanguage {
         match path.extension()?.to_str()? {
             "java" => Some(Self::Java),
             "kt" => Some(Self::Kotlin),
+            "html" | "htm" => Some(Self::Html),
             _ => None,
         }
     }
@@ -43,6 +45,7 @@ impl SourceLanguage {
         match self {
             Self::Java => "java",
             Self::Kotlin => "kotlin",
+            Self::Html => "html",
         }
     }
 }

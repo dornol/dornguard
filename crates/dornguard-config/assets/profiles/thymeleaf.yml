@@ -1,0 +1,4 @@
+name: thymeleaf
+description: Thymeleaf template compatibility checks
+rules:
+  - thymeleaf.restricted-bean-access

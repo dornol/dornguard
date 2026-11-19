@@ -10,12 +10,24 @@ Use `dornguard rules explain ID` for the reason and guidance for a rule.
 | `java` | Semgrep and PMD Java source rules |
 | `kotlin` | Semgrep rules for Gradle Kotlin/JVM production sources |
 | `spring-boot` | Java rules and Spring injection checks |
+| `thymeleaf` | Spring bean references in restricted template attributes |
 | `security` | Java CORS patterns |
 | `hexagonal` | Domain, application, and adapter dependencies |
 | `layered` | Controller, service, and repository dependencies |
 | `rest-api` | Spring and security rules |
 | `scheduler` | Spring rules for scheduler modules |
 | `java-library` | Java and framework independence rules |
+
+## Thymeleaf compatibility
+
+Add `thymeleaf` to `profiles` to scan `.html` and `.htm` files under
+`src/main/resources/templates` in the project or its build modules.
+`thymeleaf.restricted-bean-access` flags Spring bean references in direct
+expressions in `th:href`, `th:src`, `th:utext`, `th:on*`, `th:insert`, and
+`th:replace`, including their `data-th-*` forms. It also checks simple
+dynamic URL bases and fragment selectors. These restricted expressions
+can fail at render time on Thymeleaf 3.1.4 and later. Compute the value in
+the controller and expose it as a model attribute.
 
 ## Reuse a policy bundle
 

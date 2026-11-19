@@ -1,0 +1,8 @@
+id: thymeleaf.restricted-bean-access
+engine: semgrep
+severity: error
+description: Thymeleaf 3.1.4 and later restrict Spring bean access in this expression.
+fix: Compute the value in the controller and expose it as a model attribute.
+implementation:
+  config: rules/semgrep/thymeleaf/restricted-bean-access.yml
+  rule_id: thymeleaf-restricted-bean-access

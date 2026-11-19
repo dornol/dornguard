@@ -235,9 +235,16 @@ fn gradle_project_enforces_architecture_and_keeps_module_policies_separate() {
         root,
         &["commit", "--quiet", "-m", "Move source across modules"],
     );
+    let template = "api/src/main/resources/templates/book.html";
+    fs::create_dir_all(root.join(template).parent().unwrap()).unwrap();
+    fs::write(
+        root.join(template),
+        r#"<a th:href="${@bookLinks.list()}">Books</a>"#,
+    )
+    .unwrap();
     let changed = report(
         check(root)
-            .args(["--changed", "--base", "pr-base"])
+            .args(["--changed", "--base", "pr-base", "--profile", "thymeleaf"])
             .output()
             .unwrap(),
         1,
@@ -249,6 +256,16 @@ fn gradle_project_enforces_architecture_and_keeps_module_policies_separate() {
             .unwrap()
             .iter()
             .any(|diagnostic| diagnostic["rule_id"] == "architecture.domain-independence")
+    );
+
+    assert!(
+        changed["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| {
+                item["rule_id"] == "thymeleaf.restricted-bean-access" && item["path"] == template
+            })
     );
 
     let controller = root.join("admin/src/main/java/example/admin/controller/AdminController.java");
@@ -955,14 +972,14 @@ fn kotlin_changed_base_keeps_old_module_ownership_and_checks_dependents() {
 }
 
 #[test]
-#[ignore = "requires Git, Maven 3, JDK 21 and the bundled JVM artifacts"]
+#[ignore = "requires Git, Maven 3, JDK 21, Semgrep and the bundled JVM artifacts"]
 fn maven_reactor_enforces_layered_and_hexagonal_profiles() {
     let parent = tempfile::tempdir().unwrap();
     let root = parent.path().join("maven reactor");
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join(".dornguard.yml"),
-        "version: 1\nprofiles: [layered, hexagonal]\n",
+        "version: 1\nprofiles: [layered, hexagonal, thymeleaf]\n",
     )
     .unwrap();
     fs::write(
@@ -1036,6 +1053,10 @@ fn maven_reactor_enforces_layered_and_hexagonal_profiles() {
     )
     .unwrap();
 
+    let template = root.join("web/src/main/resources/templates/books.htm");
+    fs::create_dir_all(template.parent().unwrap()).unwrap();
+    fs::write(&template, r#"<a th:href="${@bookLinks.list()}">Books</a>"#).unwrap();
+
     fs::write(root.join(".gitignore"), "target/\n").unwrap();
     commit_fixture(&root);
     let result = report(check(&root).arg("--changed").output().unwrap(), 1);
@@ -1045,7 +1066,17 @@ fn maven_reactor_enforces_layered_and_hexagonal_profiles() {
         "Maven build checks scan the full reactor"
     );
     assert_eq!(result["complete"], true);
-    assert_eq!(result["files_scanned"], 4);
+    assert_eq!(result["files_scanned"], 5);
+    assert!(
+        result["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|finding| {
+                finding["rule_id"] == "thymeleaf.restricted-bean-access"
+                    && finding["path"] == "web/src/main/resources/templates/books.htm"
+            })
+    );
     for (rule, path) in [
         (
             "architecture.controller-repository",
@@ -1080,11 +1111,12 @@ fn maven_reactor_enforces_layered_and_hexagonal_profiles() {
     )
     .unwrap();
     fs::write(domain, "package example.domain; public class Book {}").unwrap();
+    fs::write(template, r#"<a th:href="@{/books}">Books</a>"#).unwrap();
     let mut selected = check(&root);
     selected.args(["--module", "example:web"]);
     let result = report(selected.output().unwrap(), 0);
     assert_eq!(result["complete"], true);
-    assert_eq!(result["files_scanned"], 2);
+    assert_eq!(result["files_scanned"], 3);
 
     fs::write(
         web.join("domain/Book.java"),
@@ -1094,4 +1126,60 @@ fn maven_reactor_enforces_layered_and_hexagonal_profiles() {
     let result = report(check(&root).output().unwrap(), 4);
     assert_eq!(result["status"], "preparation_error");
     assert_eq!(result["complete"], false);
+}
+
+#[test]
+#[ignore = "requires Git and the pinned Semgrep version"]
+fn thymeleaf_profile_reports_restricted_bean_access_in_changed_templates() {
+    let project = tempfile::tempdir().unwrap();
+    let root = project.path();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [thymeleaf]\n",
+    )
+    .unwrap();
+    let dir = root.join("src/main/resources/templates");
+    fs::create_dir_all(&dir).unwrap();
+    let page = dir.join("books.html");
+    let safe = r#"<a th:href="@{/books}">Books</a>
+<a th:href="@{/books(id=${@links.currentId()})}">Books</a>
+<i th:text="${@labels.title()}"></i>
+<a th:href="${'https://example.com/@author'}">Link</a>
+<a th:href="${assetUrl}">Link</a>
+<!-- <a th:href="${@example.link()}">Comment</a> -->
+<pre>th:href="${@example.text()}"</pre>
+"#;
+    fs::write(&page, safe).unwrap();
+    fs::write(
+        root.join("unrelated.html"),
+        r#"<a th:href="${@links.outside()}">Outside</a>"#,
+    )
+    .unwrap();
+    commit_fixture(root);
+    let clean = report(check(root).output().unwrap(), 0);
+    assert_eq!(clean["files_scanned"], 1);
+
+    fs::write(
+        &page,
+        format!(
+            r#"{safe}<a th:href="${{@links.book()}}">Book</a>
+<script data-th-src='@{{${{@links.script()}}}}'></script>
+<div th:utext="${{@renderer.html()}}" th:onclick="${{@clickHandler.code()}}"></div>
+<section th:replace="~{{layout :: ${{@fragments.current()}}}}"></section>
+"#
+        ),
+    )
+    .unwrap();
+
+    let violations = report(check(root).arg("--changed").output().unwrap(), 1);
+    assert_eq!(violations["scope"], "changed");
+    assert_eq!(violations["complete"], true);
+    assert_eq!(violations["files_scanned"], 1);
+    let findings = violations["diagnostics"].as_array().unwrap();
+    assert_eq!(findings.len(), 5, "{violations}");
+    for finding in findings {
+        assert_eq!(finding["path"], "src/main/resources/templates/books.html");
+        assert_eq!(finding["rule_id"], "thymeleaf.restricted-bean-access");
+        assert_eq!(finding["severity"], "error");
+    }
 }

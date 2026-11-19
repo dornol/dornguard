@@ -15,6 +15,8 @@ mod build_check;
 mod changed;
 mod maven;
 
+const TEMPLATE_DIR: &str = "src/main/resources/templates";
+
 #[derive(Parser)]
 #[command(
     name = "dornguard",
@@ -454,7 +456,7 @@ async fn check(
         ));
     }
     let mut files = match source_files(root, target, organization.is_some(), |language| {
-        language == SourceLanguage::Java && rules.iter().any(|rule| rule.applies_to(language))
+        language != SourceLanguage::Kotlin && rules.iter().any(|rule| rule.applies_to(language))
     }) {
         Ok(files) => files,
         Err(error) => return scoped_prep_error(error),
@@ -470,7 +472,7 @@ async fn check(
         }
     }
     if files.is_empty() {
-        return scoped_prep_error(miette!("No Java source files apply to this check"));
+        return scoped_prep_error(miette!("No source files apply to this check"));
     }
     let mut outcome = run_source_engines(root, &files, &registry, &rules).await;
     outcome.scope = scope;
@@ -510,18 +512,36 @@ async fn run_source_engines(
     };
     let (semgrep_files, pmd_files) = (files_for(&semgrep_rules), files_for(&pmd_rules));
     let semgrep = async {
-        if semgrep_rules.is_empty() {
-            Outcome::default()
-        } else {
-            Semgrep::default()
-                .check(Request {
-                    root,
-                    files: &semgrep_files,
-                    rules: &semgrep_rules,
-                    registry,
-                })
-                .await
+        // Generic JVM rules must not run on templates in a mixed project.
+        let (templates, jvm): (Vec<_>, Vec<_>) = semgrep_files
+            .into_iter()
+            .partition(|file| SourceLanguage::of(file) == Some(SourceLanguage::Html));
+        let mut outcome = Outcome::default();
+        for files in [&jvm, &templates] {
+            if files.is_empty() {
+                continue;
+            }
+            let languages = files
+                .iter()
+                .filter_map(|file| SourceLanguage::of(file))
+                .collect::<std::collections::BTreeSet<_>>();
+            let rules = semgrep_rules
+                .iter()
+                .copied()
+                .filter(|rule| languages.iter().any(|&language| rule.applies_to(language)))
+                .collect::<Vec<_>>();
+            outcome.merge(
+                Semgrep::default()
+                    .check(Request {
+                        root,
+                        files,
+                        rules: &rules,
+                        registry,
+                    })
+                    .await,
+            );
         }
+        outcome
     };
     let pmd = async {
         if pmd_rules.is_empty() {
@@ -631,7 +651,9 @@ fn source_files(
         }
         let path = entry.path();
         if entry.file_type().is_some_and(|kind| kind.is_file())
-            && SourceLanguage::of(path).is_some_and(&accepts)
+            && SourceLanguage::of(path).is_some_and(|language| {
+                accepts(language) && (language != SourceLanguage::Html || is_template(path))
+            })
         {
             let relative = path.strip_prefix(root).into_diagnostic()?;
             if relative.to_str().is_none() {
@@ -645,6 +667,11 @@ fn source_files(
     }
     files.sort();
     Ok(files)
+}
+
+fn is_template(path: &Path) -> bool {
+    path.ancestors()
+        .any(|parent| parent.ends_with(TEMPLATE_DIR))
 }
 
 fn failure(kind: FailureKind, error: miette::Report) -> Outcome {
