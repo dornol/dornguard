@@ -1,0 +1,8 @@
+id: architecture.framework-independence
+engine: archunit
+severity: error
+description: Domain and application code must not reference the Spring framework.
+fix: Apply framework annotations and integrations in an adapter.
+options:
+  from: [domain, application]
+  forbidden: [org.springframework]

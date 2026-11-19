@@ -1,0 +1,87 @@
+name: DornGuard Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, platform: linux-x86_64 }
+          - { runner: ubuntu-24.04-arm, platform: linux-arm64 }
+          - { runner: macos-15, platform: macos-arm64 }
+          - { runner: macos-15-intel, platform: macos-x86_64 }
+          - { runner: windows-2025, platform: windows-x86_64 }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Build matching ArchUnit runner
+        run: |
+          examples/spring-boot-multimodule/gradlew --no-daemon --console=plain -p runners/archunit-runner jar
+          python -c 'import hashlib,pathlib; p=pathlib.Path("runners/archunit-runner/build/libs/archunit-runner.jar"); print("DORNGUARD_ARCHUNIT_SHA256="+hashlib.sha256(p.read_bytes()).hexdigest())' >> "$GITHUB_ENV"
+      - name: Build and test CLI
+        run: |
+          cargo test --workspace --locked
+          cargo build --release --locked
+          target/release/dornguard version
+      - name: Verify managed engines
+        env:
+          DORNGUARD_ENGINE_DIR: ${{ runner.temp }}/dornguard-engines
+          DORNGUARD_ARCHUNIT_RUNNER: ${{ github.workspace }}/runners/archunit-runner/build/libs/archunit-runner.jar
+        run: |
+          target/release/dornguard engines install
+          target/release/dornguard doctor
+          cargo test --workspace --locked -- --include-ignored
+          target/release/dornguard check examples/spring-boot-multimodule --format json
+      - name: Package release
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          DORNGUARD_ENGINE_DIR: ${{ runner.temp }}/dornguard-engines
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            python scripts/package-release.py "$PLATFORM" --tag "$GITHUB_REF_NAME" --smoke-test
+          else
+            python scripts/package-release.py "$PLATFORM" --smoke-test
+          fi
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: dornguard-${{ matrix.platform }}
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    needs: package
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes

@@ -1,0 +1,8 @@
+id: java.empty-catch
+engine: pmd
+severity: error
+description: Handle exceptions explicitly.
+fix: Recover, report the exception, or propagate it to a caller that can handle it.
+implementation:
+  config: rules/pmd/java/empty-catch.xml
+  rule_id: EmptyCatchBlock

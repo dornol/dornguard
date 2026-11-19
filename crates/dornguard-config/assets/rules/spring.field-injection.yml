@@ -1,0 +1,8 @@
+id: spring.field-injection
+engine: semgrep
+severity: error
+description: Spring field injection hides a class's dependencies.
+fix: Move the dependency to a constructor parameter and store it in a final field.
+implementation:
+  config: rules/semgrep/spring/field-injection.yml
+  rule_id: spring-field-injection

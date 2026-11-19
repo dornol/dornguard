@@ -1,0 +1,7 @@
+id: architecture.library-framework-independence
+engine: archunit
+severity: error
+description: A Java library must not reference the Spring framework.
+fix: Keep the framework integration in the consuming application.
+options:
+  forbidden: [org.springframework]

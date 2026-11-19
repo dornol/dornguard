@@ -1,0 +1,5 @@
+name: java-library
+description: Java libraries with no direct Spring dependency
+extends: [java]
+rules:
+  - architecture.library-framework-independence

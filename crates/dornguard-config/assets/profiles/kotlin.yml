@@ -1,0 +1,4 @@
+name: kotlin
+description: Kotlin/JVM source checks
+rules:
+  - kotlin.stdout-usage

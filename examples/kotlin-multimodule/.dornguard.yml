@@ -1,0 +1,8 @@
+version: 1
+modules:
+  ":library":
+    profiles: [kotlin]
+  ":service":
+    profiles: [java, kotlin, hexagonal]
+  ":tools":
+    profiles: [kotlin]

@@ -1,0 +1,8 @@
+id: security.cors-wildcard
+engine: semgrep
+severity: error
+description: A wildcard CORS origin allows requests from arbitrary origins.
+fix: List the trusted origins explicitly.
+implementation:
+  config: rules/semgrep/security/cors-wildcard.yml
+  rule_id: security-cors-wildcard

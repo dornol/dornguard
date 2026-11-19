@@ -1,0 +1,8 @@
+id: java.stdout-usage
+engine: semgrep
+severity: error
+description: Avoid printing directly to standard output.
+fix: Use the project logger.
+implementation:
+  config: rules/semgrep/java/stdout-usage.yml
+  rule_id: java-stdout-usage

@@ -1,0 +1,9 @@
+docs/plan
+
+/target/
+/.venv/
+.gradle/
+**/build/
+/.ci-tools/
+/dornguard.sarif
+/dist/

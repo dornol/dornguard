@@ -1,0 +1,8 @@
+id: architecture.controller-repository
+engine: archunit
+severity: error
+description: A controller must not depend directly on a repository.
+fix: Expose the operation through a service.
+options:
+  from: [controller]
+  forbidden: [repository]

@@ -1,0 +1,18 @@
+version: 1
+profiles: [java, security]
+
+modules:
+  ":api":
+    profiles: [hexagonal, rest-api]
+  ":admin":
+    profiles: [layered, rest-api]
+  ":batch":
+    profiles: [scheduler]
+  ":common":
+    profiles: [java-library]
+
+module_dependencies:
+  forbid:
+    - { from: ":api", to: ":admin" }
+    - { from: ":common", to: ":api" }
+    - { from: ":common", to: ":admin" }

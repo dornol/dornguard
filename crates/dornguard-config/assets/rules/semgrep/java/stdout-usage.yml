@@ -1,0 +1,6 @@
+rules:
+  - id: java-stdout-usage
+    languages: [java]
+    message: Use the project logger.
+    severity: ERROR
+    pattern: System.out.println(...)

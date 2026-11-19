@@ -1,0 +1,8 @@
+id: architecture.application-independence
+engine: archunit
+severity: error
+description: Application code must not depend on adapters or infrastructure.
+fix: Depend on a port implemented by the adapter.
+options:
+  from: [application]
+  forbidden: [adapter, infrastructure]

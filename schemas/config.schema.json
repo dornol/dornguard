@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DornGuard configuration version 1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version"],
+  "properties": {
+    "version": { "const": 1 },
+    "profiles": { "$ref": "#/$defs/profiles" },
+    "rules": { "$ref": "#/$defs/rules" },
+    "ruleset": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "source": { "const": "builtin" },
+            "version": { "const": "1.0.0" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source", "path"],
+          "properties": {
+            "source": { "const": "local" },
+            "path": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source", "repository", "ref"],
+          "properties": {
+            "source": { "const": "git" },
+            "repository": { "type": "string", "minLength": 1 },
+            "ref": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
+    "modules": {
+      "type": "object",
+      "propertyNames": { "pattern": "^:" },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "profiles": { "$ref": "#/$defs/profiles" },
+          "rules": { "$ref": "#/$defs/rules" }
+        }
+      }
+    },
+    "module_dependencies": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "forbid": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["from", "to"],
+            "properties": {
+              "from": { "type": "string", "pattern": "^:" },
+              "to": { "type": "string", "pattern": "^:" }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "profiles": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "severity": { "enum": ["warning", "error"] },
+          "options": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["forbidden"],
+            "properties": {
+              "from": { "type": "array", "items": { "type": "string" } },
+              "forbidden": { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+            }
+          }
+        }
+      }
+    }
+  }
+}

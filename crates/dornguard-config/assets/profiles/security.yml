@@ -1,0 +1,4 @@
+name: security
+description: Java web security checks
+rules:
+  - security.cors-wildcard

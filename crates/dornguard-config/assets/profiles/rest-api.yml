@@ -1,0 +1,3 @@
+name: rest-api
+description: Spring and web security checks for API modules
+extends: [spring-boot, security]

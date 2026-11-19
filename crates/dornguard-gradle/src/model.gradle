@@ -1,0 +1,46 @@
+import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
+import org.gradle.api.artifacts.ProjectDependency
+import org.gradle.api.tasks.SourceSetContainer
+
+gradle.projectsEvaluated {
+    def root = gradle.rootProject
+    def requestPath = root.providers.gradleProperty('dornguardModelRequest').get()
+    def request = new JsonSlurper().parse(new File(requestPath))
+    def compileModules = request.compileModules as Set
+    boolean compileAll = request.compileAll
+    def javaModules = root.allprojects.findAll {
+        it.extensions.findByType(SourceSetContainer)?.findByName('main') != null
+    }
+    def compileProjects = javaModules.findAll { compileAll || compileModules.contains(it.path) }
+    def taskName = 'dornguardExportProjectModel'
+
+    root.tasks.register(taskName) {
+        dependsOn(compileProjects.collect { project ->
+            def main = project.extensions.getByType(SourceSetContainer).getByName('main')
+            project.tasks.named(main.classesTaskName)
+        })
+        doLast {
+            def modules = root.allprojects.collect { project ->
+                def main = project.extensions.findByType(SourceSetContainer)?.findByName('main')
+                def kotlinMain = project.plugins.hasPlugin('org.jetbrains.kotlin.jvm') ?
+                    project.extensions.getByName('kotlin').sourceSets.getByName('main') : null
+                def dependencies = ['api', 'implementation', 'compileOnly', 'compileOnlyApi', 'runtimeOnly'].collectMany { name ->
+                    def configuration = project.configurations.findByName(name)
+                    configuration == null ? [] : configuration.allDependencies.withType(ProjectDependency).collect { it.path }
+                }.unique().sort()
+                [
+                    path: project.path,
+                    name: project.name,
+                    projectDir: project.projectDir.canonicalPath,
+                    sourceDirs: main == null ? [] : main.java.srcDirs*.canonicalPath.sort(),
+                    kotlinSourceDirs: kotlinMain == null ? [] : kotlinMain.kotlin.srcDirs*.canonicalPath.sort(),
+                    classDirs: main == null ? [] : main.output.classesDirs.files*.canonicalPath.sort(),
+                    classpath: main != null && project in compileProjects ? main.compileClasspath.files*.canonicalPath : [],
+                    dependencies: dependencies,
+                ]
+            }.sort { it.path }
+            new File(request.output).setText(JsonOutput.toJson([schemaVersion: 1, modules: modules]), 'UTF-8')
+        }
+    }
+}

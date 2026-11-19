@@ -1,0 +1,8 @@
+rules:
+  - id: kotlin-stdout-usage
+    languages: [kotlin]
+    severity: ERROR
+    message: Use the project logger.
+    pattern-either:
+      - pattern: println(...)
+      - pattern: kotlin.io.println(...)

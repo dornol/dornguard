@@ -1,0 +1,5 @@
+id: architecture.module-dependency
+engine: gradle
+severity: error
+description: A forbidden Gradle project dependency is declared.
+fix: Remove the project dependency or depend on a shared module.

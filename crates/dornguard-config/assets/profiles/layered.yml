@@ -1,0 +1,5 @@
+name: layered
+description: Enforce dependencies between controller, service, and repository layers
+rules:
+  - architecture.controller-repository
+  - architecture.repository-independence

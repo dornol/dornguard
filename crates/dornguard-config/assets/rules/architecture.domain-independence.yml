@@ -1,0 +1,8 @@
+id: architecture.domain-independence
+engine: archunit
+severity: error
+description: Domain code must remain independent of application and infrastructure.
+fix: Put the dependency behind a domain abstraction.
+options:
+  from: [domain]
+  forbidden: [application, adapter, infrastructure]

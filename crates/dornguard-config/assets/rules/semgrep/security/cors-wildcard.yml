@@ -1,0 +1,9 @@
+rules:
+  - id: security-cors-wildcard
+    languages: [java]
+    message: List the trusted origins explicitly.
+    severity: ERROR
+    pattern-either:
+      - pattern: $CORS.allowedOrigins("*", ...)
+      - pattern: $CORS.addAllowedOrigin("*")
+      - pattern: $CORS.setAllowedOrigins(List.of("*", ...))

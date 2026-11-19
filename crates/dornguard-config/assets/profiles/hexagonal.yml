@@ -1,0 +1,7 @@
+name: hexagonal
+description: Dependency direction for hexagonal architecture
+rules:
+  - architecture.domain-independence
+  - architecture.application-independence
+  - architecture.adapter-isolation
+  - architecture.framework-independence

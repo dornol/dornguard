@@ -1,0 +1,8 @@
+id: architecture.repository-independence
+engine: archunit
+severity: error
+description: Repositories must remain independent of service and controller layers.
+fix: Move orchestration into a service.
+options:
+  from: [repository]
+  forbidden: [controller, service]

@@ -1,0 +1,5 @@
+name: spring-boot
+description: Spring Boot source checks
+extends: [java]
+rules:
+  - spring.field-injection

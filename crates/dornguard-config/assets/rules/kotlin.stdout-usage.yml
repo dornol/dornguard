@@ -1,0 +1,8 @@
+id: kotlin.stdout-usage
+engine: semgrep
+severity: error
+description: Avoid printing directly to standard output.
+fix: Use the project logger.
+implementation:
+  config: rules/semgrep/kotlin/stdout-usage.yml
+  rule_id: kotlin-stdout-usage

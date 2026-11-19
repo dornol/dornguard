@@ -1,0 +1,16 @@
+rules:
+  - id: spring-field-injection
+    languages: [java]
+    message: Use constructor injection.
+    severity: ERROR
+    patterns:
+      - pattern-inside: |
+          class $CLASS {
+            ...
+          }
+      - pattern: |
+          @$ANNOTATION
+          $TYPE $FIELD;
+      - metavariable-regex:
+          metavariable: $ANNOTATION
+          regex: '^(org\.springframework\.beans\.factory\.annotation\.)?Autowired$'

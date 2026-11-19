@@ -1,0 +1,8 @@
+id: architecture.adapter-isolation
+engine: archunit
+severity: error
+description: An inbound adapter must not depend on an outbound adapter.
+fix: Route the dependency through an application port.
+options:
+  from: [inbound]
+  forbidden: [outbound]
