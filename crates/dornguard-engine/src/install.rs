@@ -44,7 +44,9 @@ pub async fn install(engine: EngineName) -> Result<PathBuf> {
     match engine {
         EngineName::Semgrep => install_semgrep(&root, &destination).await?,
         EngineName::Pmd => install_pmd(&root, &destination).await?,
-        _ => bail!("The ArchUnit runner is distributed with DornGuard releases"),
+        _ => {
+            bail!("The ArchUnit runner is distributed with DornGuard releases");
+        }
     }
     Ok(destination)
 }

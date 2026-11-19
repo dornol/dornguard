@@ -167,10 +167,9 @@ impl Source {
                 if !location.starts_with(root) || !location.is_file() {
                     bail!("Ruleset file must stay inside the policy directory: {name}");
                 }
-                match fs::metadata(&location) {
-                    Ok(metadata) if metadata.len() <= MAX_FILE_BYTES as u64 => {}
-                    Ok(_) => bail!("Ruleset file is too large: {name}"),
-                    Err(error) => return Err(error).into_diagnostic(),
+                let metadata = fs::metadata(&location).into_diagnostic()?;
+                if metadata.len() > MAX_FILE_BYTES as u64 {
+                    bail!("Ruleset file is too large: {name}");
                 }
                 fs::read(location).into_diagnostic()?
             }
