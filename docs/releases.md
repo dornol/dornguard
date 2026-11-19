@@ -1,6 +1,6 @@
 # Releases
 
-See the [v0.0.2 release notes](releases/v0.0.2.md) for upgrade details.
+See the [v0.0.3 release notes](releases/v0.0.3.md) for upgrade details.
 
 The [release workflow](../.github/workflows/release.yml) builds archives for
 Linux x86-64 and ARM64, macOS ARM64, and Windows x86-64. Each
@@ -21,7 +21,7 @@ The script reuses a supported Python with `venv` and `ensurepip` and an
 existing JDK 21 or later. It ends by running `dornguard doctor`.
 
 ```sh
-sh scripts/install.sh v0.0.2 --with-deps
+sh scripts/install.sh v0.0.3 --with-deps
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
@@ -34,8 +34,8 @@ For local installation from source, use
 
 ## Report format
 
-The current source tree emits JSON check report version 3. The published
-v0.0.2 archive emits version 2. Project configuration remains version 1.
+DornGuard v0.0.3 emits JSON check report version 3. The v0.0.2 archive emits
+version 2. Project configuration remains version 1.
 
 Version 3 uses one-based lines and UTF-16 columns in text, JSON, and SARIF.
 JSON adds optional `end_line`, `end_column`, and `subject`. The end position

@@ -289,7 +289,7 @@ dependencies = [
 
 [[package]]
 name = "dornguard-cli"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "base64",
  "clap",
@@ -313,7 +313,7 @@ dependencies = [
 
 [[package]]
 name = "dornguard-config"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "dornguard-core",
  "dunce",
@@ -326,7 +326,7 @@ dependencies = [
 
 [[package]]
 name = "dornguard-core"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "serde",
  "sha2",
@@ -334,7 +334,7 @@ dependencies = [
 
 [[package]]
 name = "dornguard-engine"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "dornguard-config",
  "dornguard-core",
@@ -356,7 +356,7 @@ dependencies = [
 
 [[package]]
 name = "dornguard-gradle"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "dornguard-core",
  "dunce",
@@ -369,7 +369,7 @@ dependencies = [
 
 [[package]]
 name = "dornguard-report"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "dornguard-core",
  "serde_json",
