@@ -1,0 +1,5 @@
+id: flyway.changed-versioned-migration
+engine: builtin
+severity: warning
+description: An existing Flyway versioned migration changed or was removed.
+fix: Preserve the existing migration and introduce a new versioned migration for the change.

@@ -96,7 +96,7 @@ pub async fn discover(
     Ok(changes)
 }
 
-async fn compare_commits(root: &Path, reference: &str) -> Result<(String, String)> {
+pub(crate) async fn compare_commits(root: &Path, reference: &str) -> Result<(String, String)> {
     let head = resolve_commit(root, "HEAD").await?;
     let base = resolve_commit(root, reference).await?;
     let output = git(root, &["merge-base", "--all", &base, &head])
@@ -108,7 +108,7 @@ async fn compare_commits(root: &Path, reference: &str) -> Result<(String, String
     Ok((start, head))
 }
 
-async fn resolve_commit(root: &Path, reference: &str) -> Result<String> {
+pub(crate) async fn resolve_commit(root: &Path, reference: &str) -> Result<String> {
     let expression = format!("{reference}^{{commit}}");
     let output = git(
         root,
@@ -204,7 +204,7 @@ fn policy_or_build_path(path: &Path) -> bool {
         || path.starts_with("profiles")
 }
 
-async fn git(root: &Path, args: &[&str]) -> Result<Vec<u8>> {
+pub(crate) async fn git(root: &Path, args: &[&str]) -> Result<Vec<u8>> {
     let mut command = Command::new("git");
     command
         .current_dir(root)

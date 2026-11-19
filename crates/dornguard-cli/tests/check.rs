@@ -1971,6 +1971,35 @@ public record Book(BookRepository repository) {
         [3],
         "{resolved}"
     );
+
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [flyway]\n",
+    )
+    .unwrap();
+    let migration = "src/main/resources/db/migration/V1__initial.sql";
+    for module in ["", "web", "storage"] {
+        let file = root.join(module).join(migration);
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(file, "select 1;\n").unwrap();
+    }
+    git(&root, &["add", "-A"]);
+    git(
+        &root,
+        &["commit", "--quiet", "-m", "Add versioned migrations"],
+    );
+    for module in ["", "web", "storage"] {
+        fs::write(root.join(module).join(migration), "select 2;\n").unwrap();
+    }
+    for (module, expected) in [
+        ("example:root", migration.to_owned()),
+        ("example:web", format!("web/{migration}")),
+    ] {
+        let result = report(check(&root).args(["--module", module]).output().unwrap(), 0);
+        let findings = result["diagnostics"].as_array().unwrap();
+        assert_eq!(findings.len(), 1, "{result}");
+        assert_eq!(findings[0]["path"], expected, "{result}");
+    }
 }
 
 #[test]
@@ -3260,5 +3289,244 @@ fn html_profile_flags_inline_javascript_and_skips_non_executable_blocks() {
             ("html.inline-event-handler", 9),
         ],
         "{result}"
+    );
+}
+
+#[test]
+#[ignore = "requires the pinned Semgrep and PMD engines"]
+fn spring_self_calls_check_unambiguous_parameterized_methods() {
+    let project = project(
+        r#"import org.springframework.scheduling.annotation.Async;
+import org.springframework.transaction.annotation.Transactional;
+class Example {
+    @Transactional void save(String name, int count) {}
+    void save(int count) {}
+    @Async void send(String payload) {}
+    @Async void ambiguous(String payload) {}
+    void ambiguous(int count) {}
+    @Async void variadic(String... payloads) {}
+    @Async static void staticTarget(String payload) {}
+    void use(Example other) {
+        this.save("book", 1);
+        send("message");
+        save(1);
+        other.send("other");
+        ambiguous(1);
+        variadic("skip");
+        staticTarget("skip");
+        Runnable nested = new Runnable() {
+            @Override public void run() { send("outer"); }
+        };
+    }
+}
+class Inherited extends Example {
+    @Async void inherited(String value) {}
+    void useInherited() { inherited("skip"); }
+}
+"#,
+    );
+    let result = report(
+        check(project.path())
+            .args(["--profile", "spring-boot"])
+            .output()
+            .unwrap(),
+        0,
+    );
+    assert!(result["complete"].as_bool().unwrap(), "{result}");
+    let calls = result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|item| {
+            item["rule_id"]
+                .as_str()
+                .unwrap()
+                .ends_with("-self-invocation")
+        })
+        .map(|item| {
+            (
+                item["line"].as_u64().unwrap(),
+                item["subject"].as_str().unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(calls, [(12, "save"), (13, "send")], "{result}");
+}
+
+#[test]
+fn jpa_web_checks_resolved_entity_types_across_sources() {
+    let project = project(
+        r#"package example.web;
+import example.model.Book;
+import example.model.Legacy;
+import java.util.List;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+class Example {
+    @GetMapping Book direct() { return null; }
+    @GetMapping ResponseEntity<List<Book>> wrapped() { return null; }
+    @GetMapping Legacy[] array() { return null; }
+    @GetMapping List<? extends Book> wildcard() { return null; }
+    @GetMapping BookDto dto() { return null; }
+    @GetMapping <Book> Book typeVariable() { return null; }
+    Book helper() { return null; }
+}
+class BookDto {}
+@org.springframework.stereotype.Controller
+class Mvc {
+    @GetMapping Book view() { return null; }
+    @GetMapping ResponseEntity<Book> explicitResponse() { return null; }
+    @GetMapping @org.springframework.web.bind.annotation.ResponseBody Book responseBody() { return null; }
+}
+"#,
+    );
+    let root = project.path();
+    let model = root.join("src/model");
+    fs::create_dir_all(&model).unwrap();
+    let book = model.join("Book.java");
+    fs::write(
+        &book,
+        "package example.model; @jakarta.persistence.Entity public class Book {}\n",
+    )
+    .unwrap();
+    fs::write(
+        model.join("Legacy.java"),
+        "package example.model; import javax.persistence.Entity; @Entity public class Legacy {}\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [jpa-web]\n",
+    )
+    .unwrap();
+    let result = report(check(root).arg("src/Example.java").output().unwrap(), 0);
+    let diagnostics = result["diagnostics"].as_array().unwrap();
+    assert_eq!(
+        diagnostics
+            .iter()
+            .map(|item| item["line"].as_u64().unwrap())
+            .collect::<Vec<_>>(),
+        [11, 12, 13, 14, 23, 24],
+        "{result}"
+    );
+    assert_eq!(diagnostics[2]["subject"], "example.model.Legacy");
+    assert_eq!(result["files_scanned"], 1);
+
+    fs::write(
+        root.join("src/LocalBook.java"),
+        "package example.web; class Book {}\n",
+    )
+    .unwrap();
+    let controller = root.join("src/Example.java");
+    let source = fs::read_to_string(&controller)
+        .unwrap()
+        .replace("import example.model.Book;", "import example.model.*;");
+    fs::write(controller, source).unwrap();
+    let shadowed = report(check(root).arg("src/Example.java").output().unwrap(), 0);
+    let findings = shadowed["diagnostics"].as_array().unwrap();
+    assert_eq!(findings.len(), 1, "{shadowed}");
+    assert_eq!(findings[0]["subject"], "example.model.Legacy");
+}
+
+#[test]
+fn jpa_entity_change_rechecks_unchanged_controllers() {
+    let project = project(
+        r#"import example.model.Book;
+@org.springframework.web.bind.annotation.RestController
+class Example {
+    @org.springframework.web.bind.annotation.GetMapping
+    Book read() { return null; }
+}
+"#,
+    );
+    let root = project.path();
+    let model = root.join("src/Book.java");
+    fs::write(&model, "package example.model; public class Book {}\n").unwrap();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [jpa-web]\n",
+    )
+    .unwrap();
+    commit_fixture(root);
+    assert!(
+        report(check(root).output().unwrap(), 0)["diagnostics"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    fs::write(
+        model,
+        "package example.model; @jakarta.persistence.Entity public class Book {}\n",
+    )
+    .unwrap();
+    let changed = report(check(root).arg("--changed").output().unwrap(), 0);
+    assert_eq!(changed["scope"], "full");
+    assert_eq!(changed["diagnostics"][0]["path"], "src/Example.java");
+    assert_eq!(
+        changed["diagnostics"][0]["rule_id"],
+        "spring.jpa-entity-response"
+    );
+}
+
+#[test]
+fn flyway_compares_existing_versioned_migrations_against_git() {
+    let project = tempfile::tempdir().unwrap();
+    let root = project.path();
+    let dir = root.join("app/src/main/resources/db/migration");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [flyway]\n",
+    )
+    .unwrap();
+    fs::write(dir.join("V1__initial.sql"), "select 1;\n").unwrap();
+    fs::write(dir.join("V2_1__rename.sql"), "select 2;\n").unwrap();
+    fs::write(dir.join("R__view.sql"), "select 1;\n").unwrap();
+    commit_fixture(root);
+    git(root, &["branch", "pr-base"]);
+    fs::write(dir.join("V1__initial.sql"), "select 10;\n").unwrap();
+    fs::write(dir.join("R__view.sql"), "select 9;\n").unwrap();
+    fs::write(dir.join("V3__new.sql"), "select 3;\n").unwrap();
+    fs::rename(dir.join("V2_1__rename.sql"), dir.join("V2_1__renamed.sql")).unwrap();
+    let local = report(check(root).output().unwrap(), 0);
+    let list = local["diagnostics"].as_array().unwrap();
+    assert_eq!(list.len(), 2, "{local}");
+    assert!(
+        list[0]["path"]
+            .as_str()
+            .unwrap()
+            .ends_with("V1__initial.sql")
+    );
+    assert!(list[1]["message"].as_str().unwrap().contains("deleted"));
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-m", "Change migrations"]);
+    assert!(
+        report(check(root).output().unwrap(), 0)["diagnostics"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    let compared = report(
+        check(root)
+            .args(["--changed", "--base", "pr-base"])
+            .output()
+            .unwrap(),
+        0,
+    );
+    assert_eq!(compared["scope"], "changed");
+    assert_eq!(compared["diagnostics"], local["diagnostics"]);
+    let missing_base = report(
+        check(root)
+            .args(["--changed", "--base", "missing-ref"])
+            .output()
+            .unwrap(),
+        4,
+    );
+    assert_eq!(
+        missing_base["failures"][0]["rule_ids"][0],
+        "flyway.changed-versioned-migration"
     );
 }

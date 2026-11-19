@@ -1,8 +1,5 @@
 id: spring.async-self-invocation
-engine: semgrep
+engine: builtin
 severity: warning
 description: This direct call bypasses the target method's asynchronous advice in Spring proxy mode.
 fix: Call the asynchronous operation through another Spring bean.
-implementation:
-  config: rules/semgrep/spring/async-self-invocation.yml
-  rule_id: spring-async-self-invocation

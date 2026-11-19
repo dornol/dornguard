@@ -3,7 +3,9 @@ use std::path::{Component, Path, PathBuf};
 use std::process::{Output, Stdio};
 use std::time::Duration;
 
-use dornguard_config::{FormatConfig, Registry, Rule};
+use dornguard_config::{
+    ASYNC_SELF_RULE, FormatConfig, JPA_RESPONSE_RULE, Registry, Rule, TRANSACTIONAL_SELF_RULE,
+};
 use dornguard_core::{EngineName, Failure, FailureKind, FailureStage, Outcome, SourceLanguage};
 use miette::{IntoDiagnostic, Result, WrapErr, bail};
 use tokio::process::Command;
@@ -18,6 +20,7 @@ mod jspecify;
 mod pmd;
 mod semgrep;
 mod source;
+mod spring;
 
 pub use archunit::{ArchModule, check_architecture, maven_model_path};
 pub use eslint::Eslint;
@@ -34,6 +37,7 @@ pub struct Request<'a> {
     pub files: &'a [PathBuf],
     pub rules: &'a [&'a Rule],
     pub registry: &'a Registry,
+    pub required: bool,
 }
 
 impl Request<'_> {
@@ -53,28 +57,47 @@ pub trait Engine {
 }
 
 pub async fn check_builtin(request: Request<'_>, settings: &FormatConfig) -> Outcome {
-    let (format_rules, jspecify_rules): (Vec<_>, Vec<_>) = request
+    let (format_rules, java_rules): (Vec<_>, Vec<_>) = request
         .rules
         .iter()
         .copied()
         .partition(|rule| rule.is_format_rule());
     let mut outcome = Outcome::default();
-    if !jspecify_rules.is_empty() {
+    if !java_rules.is_empty() {
         let java_files = request
             .files
             .iter()
             .filter(|path| SourceLanguage::of(path) == Some(SourceLanguage::Java))
             .cloned()
             .collect::<Vec<_>>();
-        outcome.merge(
-            jspecify::JSpecify
-                .check(Request {
+        let (spring_rules, jspecify_rules): (Vec<_>, Vec<_>) =
+            java_rules.into_iter().partition(|rule| {
+                matches!(
+                    rule.id.as_str(),
+                    ASYNC_SELF_RULE | TRANSACTIONAL_SELF_RULE | JPA_RESPONSE_RULE
+                )
+            });
+        if !jspecify_rules.is_empty() {
+            outcome.merge(
+                jspecify::JSpecify
+                    .check(Request {
+                        files: &java_files,
+                        rules: &jspecify_rules,
+                        ..request
+                    })
+                    .await,
+            );
+        }
+        if !spring_rules.is_empty() {
+            outcome.merge(spring::check(
+                Request {
                     files: &java_files,
-                    rules: &jspecify_rules,
+                    rules: &spring_rules,
                     ..request
-                })
-                .await,
-        );
+                },
+                request.required,
+            ));
+        }
     }
     if !format_rules.is_empty() {
         let format_request = Request {

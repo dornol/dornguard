@@ -278,7 +278,7 @@ impl<'a> Names<'a> {
     }
 }
 
-fn package_name(unit: Node<'_>, source: &str) -> String {
+pub(super) fn package_name(unit: Node<'_>, source: &str) -> String {
     child(unit, "package_declaration")
         .and_then(declared_name)
         .map_or_else(String::new, |name| qualified_name(name, source))
@@ -296,7 +296,7 @@ fn declared_name(node: Node<'_>) -> Option<Node<'_>> {
     children(node).find(|node| matches!(node.kind(), "identifier" | "scoped_identifier"))
 }
 
-fn qualified_name(node: Node<'_>, source: &str) -> String {
+pub(super) fn qualified_name(node: Node<'_>, source: &str) -> String {
     let mut parts = Vec::new();
     let mut current = node;
     while let (Some(scope), Some(name)) = (

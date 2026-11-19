@@ -339,6 +339,7 @@ dependencies = [
  "dornguard-config",
  "dornguard-core",
  "dunce",
+ "ignore",
  "miette",
  "rustix",
  "serde",

@@ -1,0 +1,4 @@
+name: flyway
+description: Review changes to existing Flyway versioned SQL migrations
+rules:
+  - flyway.changed-versioned-migration

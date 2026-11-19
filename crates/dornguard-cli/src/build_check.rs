@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use dornguard_config::{
-    PRESERVE_STACK_TRACE_RULE, ProjectConfig, RESOURCE_RULE, Registry, Rule,
+    FLYWAY_RULE, PRESERVE_STACK_TRACE_RULE, ProjectConfig, RESOURCE_RULE, Registry, Rule,
     UNNECESSARY_IMPORT_RULE,
 };
 use dornguard_core::{
@@ -73,6 +73,7 @@ pub struct Check<'a> {
     pub include_other_sources: bool,
     pub changes: Option<&'a Changes>,
     pub required: bool,
+    pub module_git_outcome: Outcome,
 }
 
 pub async fn check(check: Check<'_>) -> Outcome {
@@ -90,6 +91,7 @@ pub async fn check(check: Check<'_>) -> Outcome {
         include_other_sources,
         mut changes,
         required,
+        mut module_git_outcome,
     } = check;
     let config_error = |error| failure(FailureKind::ConfigurationError, error);
     let preparation_error = |error| failure(FailureKind::PreparationError, error);
@@ -316,6 +318,26 @@ pub async fn check(check: Check<'_>) -> Outcome {
         .iter()
         .map(|module| module.path.as_str())
         .collect::<BTreeSet<_>>();
+    if filter.is_some() {
+        let selected_path = |path: &Path| {
+            let absolute = root.join(path);
+            model
+                .modules
+                .iter()
+                .filter(|module| absolute.starts_with(&module.project_dir))
+                .max_by_key(|module| module.project_dir.components().count())
+                .is_some_and(|module| selected_names.contains(module.path.as_str()))
+        };
+        module_git_outcome.diagnostics.retain(|item| {
+            item.path
+                .as_deref()
+                .is_some_and(|path| selected_path(Path::new(path)))
+        });
+        module_git_outcome
+            .scanned_files
+            .retain(|path| selected_path(path));
+        outcome.merge(module_git_outcome);
+    }
     let mut source_groups = BTreeMap::new();
     let mut pmd_modules = Vec::new();
     let mut mapped_files = BTreeSet::new();
@@ -511,6 +533,9 @@ pub async fn check(check: Check<'_>) -> Outcome {
             outcome.no_changes = true;
             return outcome;
         }
+        if global.iter().any(|rule| rule.id == FLYWAY_RULE) {
+            return outcome;
+        }
         outcome.merge(preparation_error(miette!(
             "No {build_name} module targets apply to this check"
         )));
@@ -568,6 +593,7 @@ pub async fn check(check: Check<'_>) -> Outcome {
                     &rules,
                     config,
                     java_source,
+                    required,
                 )
                 .await,
             );
@@ -589,6 +615,7 @@ pub async fn check(check: Check<'_>) -> Outcome {
                 files: &files,
                 rules: &rules,
                 registry,
+                required,
             })
             .await;
             for failure in &mut result.failures {

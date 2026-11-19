@@ -1,8 +1,5 @@
 id: spring.transactional-self-invocation
-engine: semgrep
+engine: builtin
 severity: warning
 description: This direct call bypasses the target method's transaction advice in Spring proxy mode.
 fix: Move the transaction boundary to a proxied entry point or invoke the operation on another Spring bean.
-implementation:
-  config: rules/semgrep/spring/transactional-self-invocation.yml
-  rule_id: spring-transactional-self-invocation

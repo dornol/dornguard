@@ -5,7 +5,8 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand, ValueEnum};
 use dornguard_config::{
-    BUILTIN_VERSION, CONFIG_FILE, DEFAULT_CONFIG, ProjectConfig, Registry, UNNECESSARY_IMPORT_RULE,
+    BUILTIN_VERSION, CONFIG_FILE, DEFAULT_CONFIG, FLYWAY_RULE, JPA_RESPONSE_RULE, ProjectConfig,
+    Registry, UNNECESSARY_IMPORT_RULE,
 };
 use dornguard_core::{EngineName, Failure, FailureKind, Outcome, Scope, SourceLanguage};
 use dornguard_engine::{
@@ -20,6 +21,7 @@ mod baseline;
 mod build_check;
 mod changed;
 mod csp;
+mod flyway;
 mod maven;
 mod suppressions;
 
@@ -229,7 +231,10 @@ async fn dispatch(action: Action) -> Result<u8> {
                     &[],
                     config.as_deref(),
                     None,
-                    None,
+                    changed.then_some(changed::Request {
+                        base: base.as_deref(),
+                        baseline: None,
+                    }),
                     Some(policy),
                     resolve_imports,
                 )
@@ -454,22 +459,52 @@ async fn check(
         Err(error) => return config_error(error),
     };
     let rules = resolved_rules.iter().collect::<Vec<_>>();
+    let flyway_rule = rules.iter().copied().find(|rule| rule.id == FLYWAY_RULE);
+    let mut jpa_enabled = rules.iter().any(|rule| rule.id == JPA_RESPONSE_RULE);
+    let mut jspecify_enabled = rules
+        .iter()
+        .any(|rule| rule.id == "java.jspecify-null-marked");
+    for module_name in config.modules.keys() {
+        let module_rules = match registry.resolve(&config, Some(module_name), profiles) {
+            Ok(rules) => rules,
+            Err(error) => return config_error(error),
+        };
+        if module_rules
+            .iter()
+            .find(|rule| rule.id == FLYWAY_RULE)
+            .map(|rule| rule.severity)
+            != flyway_rule.map(|rule| rule.severity)
+        {
+            return config_error(miette!("The flyway rule is configured at project scope"));
+        }
+        jpa_enabled |= module_rules.iter().any(|rule| rule.id == JPA_RESPONSE_RULE);
+        jspecify_enabled |= module_rules
+            .iter()
+            .any(|rule| rule.id == "java.jspecify-null-marked");
+    }
     let global_kotlin = match registry.kotlin_profile_enabled(&config, None, profiles) {
         Ok(enabled) => enabled || rules.iter().any(|rule| rule.enables_kotlin()),
         Err(error) => return config_error(error),
     };
     let mut fallback_reason = None;
-    let jspecify_rule = |rule: &dornguard_config::Rule| rule.id == "java.jspecify-null-marked";
-    let jspecify_enabled = rules.iter().copied().any(jspecify_rule)
-        || config.modules.keys().any(|name| {
-            registry
-                .resolve(&config, Some(name), profiles)
-                .is_ok_and(|rules| rules.iter().any(jspecify_rule))
-        });
-    let changes = if let Some(request) = changed {
+    let changes = if organization.is_none()
+        && let Some(request) = changed
+    {
         match changed::discover(root, &project, config.local_ruleset_path(), request).await {
             Ok(changes) if jspecify_enabled && changes.java_scope_changed() => {
                 fallback_reason = Some("A Java package or module declaration changed".to_owned());
+                None
+            }
+            Ok(changes)
+                if jpa_enabled
+                    && changes
+                        .paths()
+                        .any(|path| SourceLanguage::of(path) == Some(SourceLanguage::Java)) =>
+            {
+                fallback_reason = Some(
+                    "A Java change may affect JPA response types in unchanged controllers"
+                        .to_owned(),
+                );
                 None
             }
             Ok(changes) => Some(changes),
@@ -493,6 +528,18 @@ async fn check(
     } else {
         &target
     };
+    let git_outcome = if let Some(rule) = flyway_rule {
+        match flyway::check(root, target, changed.and_then(|request| request.base), rule).await {
+            Ok(outcome) => outcome,
+            Err(error) => {
+                let mut outcome = prep_error(error.wrap_err("Flyway Git comparison failed"));
+                outcome.failures[0].set_rules([FLYWAY_RULE]);
+                outcome
+            }
+        }
+    } else {
+        Outcome::default()
+    };
     let uses_build = global_kotlin
         || module.is_some()
         || !config.modules.is_empty()
@@ -500,6 +547,11 @@ async fn check(
         || rules.iter().any(|rule| rule.engine == EngineName::Archunit);
     if uses_build || resolve_imports && rules.iter().any(|rule| rule.id == UNNECESSARY_IMPORT_RULE)
     {
+        let (module_git_outcome, git_outcome) = if module.is_some() {
+            (git_outcome, Outcome::default())
+        } else {
+            (Outcome::default(), git_outcome)
+        };
         let build = build_check::BuildSystem::detect(root);
         let maven_full = build == build_check::BuildSystem::Maven && changes.is_some();
         let mut outcome = build_check::check(build_check::Check {
@@ -516,8 +568,13 @@ async fn check(
             include_other_sources: !uses_build,
             changes: if maven_full { None } else { changes.as_ref() },
             required: organization.is_some(),
+            module_git_outcome,
         })
         .await;
+        if !git_outcome.diagnostics.is_empty() {
+            outcome.no_changes = false;
+        }
+        outcome.merge(git_outcome);
         if outcome.fallback_reason.is_none() {
             outcome.scope = if maven_full { Scope::Full } else { scope };
             outcome.fallback_reason = if maven_full {
@@ -542,15 +599,23 @@ async fn check(
             "No rules apply; select a profile with active rules"
         ));
     }
-    let mut files = match source_files(root, target, organization.is_some(), |language| {
-        rules.iter().any(|rule| rule.applies_to(language))
-    }) {
-        Ok(files) => files,
-        Err(error) => return scoped_prep_error(error),
+    let mut files = if rules.iter().all(|rule| rule.id == FLYWAY_RULE) {
+        Vec::new()
+    } else {
+        match source_files(root, target, organization.is_some(), |language| {
+            rules.iter().any(|rule| rule.applies_to(language))
+        }) {
+            Ok(files) => files,
+            Err(error) => {
+                let mut outcome = scoped_prep_error(error);
+                outcome.merge(git_outcome);
+                return outcome;
+            }
+        }
     };
     if let Some(changes) = &changes {
         files.retain(|file| changes.matches(file));
-        if files.is_empty() {
+        if files.is_empty() && flyway_rule.is_none() {
             return Outcome {
                 scope,
                 no_changes: true,
@@ -559,9 +624,30 @@ async fn check(
         }
     }
     if files.is_empty() {
+        if flyway_rule.is_some() {
+            let mut outcome = git_outcome;
+            outcome.scope = scope;
+            outcome.fallback_reason = fallback_reason;
+            outcome.no_changes =
+                changes.is_some() && outcome.diagnostics.is_empty() && outcome.failures.is_empty();
+            if organization.is_none() {
+                suppressions::apply(root, &config.ignore, &mut outcome);
+            }
+            return outcome;
+        }
         return scoped_prep_error(miette!("No source files apply to this check"));
     }
-    let mut outcome = run_source_engines(root, &files, &registry, &rules, &config, None).await;
+    let mut outcome = run_source_engines(
+        root,
+        &files,
+        &registry,
+        &rules,
+        &config,
+        None,
+        organization.is_some(),
+    )
+    .await;
+    outcome.merge(git_outcome);
     outcome.scope = scope;
     outcome.fallback_reason = fallback_reason;
     if organization.is_none() {
@@ -577,6 +663,7 @@ async fn run_source_engines(
     rules: &[&dornguard_config::Rule],
     config: &ProjectConfig,
     java_source: Option<u16>,
+    required: bool,
 ) -> Outcome {
     let check_group = async |engine, files: Vec<PathBuf>| {
         let languages = files
@@ -605,6 +692,7 @@ async fn run_source_engines(
             files: &files,
             rules: &rules,
             registry,
+            required,
         };
         match engine {
             EngineName::Semgrep => Semgrep::default().check(request).await,

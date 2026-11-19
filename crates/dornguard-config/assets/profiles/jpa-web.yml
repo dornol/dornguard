@@ -1,0 +1,4 @@
+name: jpa-web
+description: Review JPA entities returned by Spring MVC endpoints
+rules:
+  - spring.jpa-entity-response

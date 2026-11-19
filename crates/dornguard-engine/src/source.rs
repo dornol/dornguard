@@ -49,7 +49,7 @@ impl Sources {
 }
 
 impl Source {
-    fn new(text: String) -> Self {
+    pub(super) fn new(text: String) -> Self {
         let mut lines = vec![0];
         lines.extend(text.match_indices('\n').map(|(offset, _)| offset + 1));
         Self { text, lines }
@@ -117,7 +117,7 @@ impl Source {
     }
 }
 
-fn fragment_fingerprint(fragment: &str) -> Option<String> {
+pub(super) fn fragment_fingerprint(fragment: &str) -> Option<String> {
     let normalized = fragment
         .lines()
         .map(str::trim)

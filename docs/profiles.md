@@ -13,6 +13,8 @@ Use `dornguard rules explain ID` for the reason and guidance for a rule.
 | `kotlin` | Semgrep output and coroutine checks for Gradle Kotlin/JVM production sources |
 | `spring-boot` | Java and Spring injection, transaction, and singleton-state checks |
 | `spring-rollback` | Opt-in review of checked exceptions under Spring’s default rollback policy |
+| `jpa-web` | Opt-in review of JPA entities declared as Spring MVC response types |
+| `flyway` | Opt-in review of modifications and deletions of existing versioned SQL migrations |
 | `thymeleaf` | Spring bean references in restricted template attributes |
 | `thymeleaf-output-review` | Thymeleaf compatibility checks plus warnings for dynamic expressions rendered without HTML escaping |
 | `html` | Executable inline scripts and common inline event handlers |
@@ -106,12 +108,14 @@ make it blocking.
 | `spring.singleton-request-state` | A Java Spring MVC singleton controller handler that stores a parameter directly in a `this` field |
 | `spring.shared-simple-date-format` | A field of type `SimpleDateFormat` or one initialized with it in a singleton Spring component |
 | `spring.private-transactional` | A private Java method with Spring's `@Transactional` |
-| `spring.transactional-self-invocation` | An implicit or explicit `this` call from a Java method to a no-argument Spring `@Transactional` method declared in the same class |
-| `spring.async-self-invocation` | An implicit or explicit `this` call from a Java method to a no-argument Spring `@Async` method declared in the same class |
+| `spring.transactional-self-invocation` | A direct Java call to a same-class Spring `@Transactional` method |
+| `spring.async-self-invocation` | A direct Java call to a same-class Spring `@Async` method |
 
 The Spring self-invocation checks apply to proxy-based transactions and async
-execution. They cover no-argument targets so calls with arguments cannot be
-mistaken for the annotated overload.
+execution. They check unqualified calls and calls through `this`. For calls
+with arguments, the rule requires an unambiguous declared method by name
+and arity. Classes with explicit supertypes, competing overloads of the
+same arity, and varargs candidates are skipped for parameterized calls.
 
 The shared formatter check recognizes Java Spring stereotype annotations
 with default singleton scope or an explicit singleton declaration.
@@ -169,6 +173,33 @@ throws in simple top-level `if` branches. Review the transaction’s actual
 rollback policy and whether the exception should undo the transaction.
 
 For setup and runtime CSP checks, see [HTML, JavaScript, and CSP](web-checks.md).
+
+## JPA response review
+
+Add `jpa-web` to report `spring.jpa-entity-response` when a Spring MVC
+endpoint declares a source type annotated with `jakarta.persistence.Entity`
+or `javax.persistence.Entity` as its response. The rule recognizes
+`@RestController`, `@Controller` with `@ResponseBody`, and explicit
+`ResponseEntity` returns on mapped controller methods. It follows arrays
+and supported containers, including `ResponseEntity<List<Book>>`.
+
+The rule indexes top-level entity declarations from project Java sources.
+With this profile enabled, a Java change triggers a full check because an
+entity change can affect an unchanged controller.
+
+## Flyway migration review
+
+Add `flyway` at project scope to report
+`flyway.changed-versioned-migration`. It checks existing `V1__name.sql` and
+similar versioned SQL files under `db/migration` directories for modifications,
+deletions and renames. Newly added versions and repeatable migrations are
+allowed.
+
+Use `dornguard check --changed --base origin/main` in a pull request to
+compare the working tree with the merge base. Without `--base`, the
+comparison uses `HEAD` and covers local changes. Git history is required.
+Findings are warnings by default because the Git comparison cannot establish
+which migrations have already run in a database.
 
 ## Thymeleaf compatibility
 

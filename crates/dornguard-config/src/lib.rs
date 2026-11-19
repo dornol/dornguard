@@ -12,6 +12,10 @@ use ruleset::{PolicySource, Ruleset, Source};
 pub const CONFIG_FILE: &str = ".dornguard.yml";
 pub const DEFAULT_CONFIG: &str = "version: 1\nprofiles: [java]\n";
 pub const BUILTIN_VERSION: &str = "1.1.0";
+pub const FLYWAY_RULE: &str = "flyway.changed-versioned-migration";
+pub const JPA_RESPONSE_RULE: &str = "spring.jpa-entity-response";
+pub const TRANSACTIONAL_SELF_RULE: &str = "spring.transactional-self-invocation";
+pub const ASYNC_SELF_RULE: &str = "spring.async-self-invocation";
 pub const UNNECESSARY_IMPORT_RULE: &str = "java.unnecessary-import";
 pub const RESOURCE_RULE: &str = "java.resource-not-closed";
 pub const PRESERVE_STACK_TRACE_RULE: &str = "java.preserve-stack-trace";
@@ -157,6 +161,7 @@ impl Rule {
                 language,
                 SourceLanguage::Java | SourceLanguage::Kotlin | SourceLanguage::Javascript
             ),
+            EngineName::Builtin if self.id == FLYWAY_RULE => false,
             EngineName::Pmd | EngineName::Builtin => language == SourceLanguage::Java,
             EngineName::Semgrep => self.semgrep_languages.iter().any(|name| {
                 name == language.semgrep_name()
@@ -233,6 +238,8 @@ impl Registry {
             include_str!("../assets/profiles/layered.yml"),
             include_str!("../assets/profiles/java-library.yml"),
             include_str!("../assets/profiles/rest-api.yml"),
+            include_str!("../assets/profiles/flyway.yml"),
+            include_str!("../assets/profiles/jpa-web.yml"),
             include_str!("../assets/profiles/scheduler.yml"),
             include_str!("../assets/profiles/html.yml"),
             include_str!("../assets/profiles/javascript.yml"),
@@ -246,6 +253,8 @@ impl Registry {
             include_str!("../assets/rules/format.blank-lines.yml"),
             include_str!("../assets/rules/format.control-spacing.yml"),
             include_str!("../assets/rules/java.stdout-usage.yml"),
+            include_str!("../assets/rules/flyway.changed-versioned-migration.yml"),
+            include_str!("../assets/rules/spring.jpa-entity-response.yml"),
             include_str!("../assets/rules/java.empty-catch.yml"),
             include_str!("../assets/rules/java.jspecify-null-marked.yml"),
             include_str!("../assets/rules/kotlin.stdout-usage.yml"),
@@ -321,10 +330,6 @@ impl Registry {
                 include_str!("../assets/rules/pmd/java/return-from-finally.xml"),
             ),
             (
-                "rules/semgrep/spring/async-self-invocation.yml",
-                include_str!("../assets/rules/semgrep/spring/async-self-invocation.yml"),
-            ),
-            (
                 "rules/semgrep/kotlin/thread-sleep-in-suspend.yml",
                 include_str!("../assets/rules/semgrep/kotlin/thread-sleep-in-suspend.yml"),
             ),
@@ -371,10 +376,6 @@ impl Registry {
             (
                 "rules/semgrep/spring/private-transactional.yml",
                 include_str!("../assets/rules/semgrep/spring/private-transactional.yml"),
-            ),
-            (
-                "rules/semgrep/spring/transactional-self-invocation.yml",
-                include_str!("../assets/rules/semgrep/spring/transactional-self-invocation.yml"),
             ),
             (
                 "rules/pmd/java/unnecessary-import.xml",
