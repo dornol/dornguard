@@ -55,12 +55,9 @@ engines that produced results. Exit codes retain their documented meanings.
 For reproducible CI, pin the CLI archive,
 the built-in Ruleset version or external Ruleset commit, and the engine versions.
 
-## Verification status
+## Release verification
 
-The full integration suite passed with the pinned engines on macOS ARM64,
-on Intel macOS binaries under Rosetta, and in Linux ARM64 and x86-64
-containers. Windows x86-64 passed Rust's cross-target check. Native Windows
-engine and Gradle execution remains a release-matrix check. A Windows
-executable built with MinGW also returned the expected CLI version and
-JSON failure codes under Wine, including for a project path with spaces.
-The Rosetta environment stopped the Windows Semgrep and Java processes.
+Run the release workflow on the candidate commit to verify the four platform
+packages. It runs the pinned engines and the integration suite, then extracts
+and smoke-tests each archive. Use the Windows workflow result to verify native
+Windows engine and Gradle execution.
