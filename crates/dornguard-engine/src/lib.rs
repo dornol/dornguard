@@ -23,7 +23,7 @@ mod source;
 mod spring;
 mod thymeleaf;
 
-pub use archunit::{ArchModule, check_architecture, maven_model_path};
+pub use archunit::{ArchModule, check_architecture, inspect_archunit, maven_model_path};
 pub use eslint::Eslint;
 pub use install::{inspect_java, install};
 pub use pmd::Pmd;

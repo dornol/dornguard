@@ -1,0 +1,5 @@
+version: 1
+profiles: [java-source]
+modules:
+  "example:coverage":
+    profiles: [layered]

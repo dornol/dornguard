@@ -230,6 +230,8 @@ pub struct Outcome {
     pub requested_files: BTreeSet<PathBuf>,
     pub incomplete_files: BTreeSet<PathBuf>,
     pub scope: Scope,
+    pub project_scope: Option<Scope>,
+    pub organization_scope: Option<Scope>,
     pub no_changes: bool,
     pub fallback_reason: Option<String>,
     pub suppressed_count: usize,
@@ -289,6 +291,8 @@ impl Outcome {
             exit_code,
             complete: self.failures.is_empty(),
             scope: self.scope,
+            project_scope: self.project_scope,
+            organization_scope: self.organization_scope,
             fallback_reason: self.fallback_reason,
             files_requested: self.requested_files.union(&self.scanned_files).count(),
             files_scanned: self
@@ -312,6 +316,10 @@ pub struct CheckReport {
     pub exit_code: u8,
     pub complete: bool,
     pub scope: Scope,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_scope: Option<Scope>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub organization_scope: Option<Scope>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fallback_reason: Option<String>,
     pub files_scanned: usize,

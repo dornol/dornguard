@@ -770,9 +770,12 @@ impl Registry {
         let source = fs::read_to_string(path)
             .into_diagnostic()
             .wrap_err_with(|| format!("Could not read {}", path.display()))?;
-        let config: ProjectConfig = serde_saphyr::from_str(&source)
-            .into_diagnostic()
-            .wrap_err_with(|| format!("Invalid configuration in {}", path.display()))?;
+        Self::parse(&source)
+            .wrap_err_with(|| format!("Invalid configuration in {}", path.display()))
+    }
+
+    pub fn parse(source: &str) -> Result<ProjectConfig> {
+        let config: ProjectConfig = serde_saphyr::from_str(source).into_diagnostic()?;
         if config.version != 1 {
             bail!(
                 "Unsupported configuration version {}; expected 1",

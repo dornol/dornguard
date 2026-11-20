@@ -7,7 +7,7 @@ use dornguard_config::{FileFormat, FormatConfig, LineEnding, Rule};
 use dornguard_core::{Diagnostic, EngineName, Outcome, SourceLanguage, fingerprint};
 use tree_sitter::{Node, Parser};
 
-use crate::{Request, display_path, fail};
+use crate::{Request, display_path, engine_failure, fail};
 
 pub fn check(request: Request<'_>, settings: &FormatConfig) -> Outcome {
     let mut outcome = Outcome::default();
@@ -17,6 +17,11 @@ pub fn check(request: Request<'_>, settings: &FormatConfig) -> Outcome {
         .iter()
         .map(|rule| (rule.id.as_str(), *rule))
         .collect();
+    let line_rules = rules
+        .iter()
+        .filter(|(id, _)| matches!(**id, "format.line-ending" | "format.final-newline"))
+        .map(|(id, rule)| (*id, *rule))
+        .collect::<BTreeMap<_, _>>();
     for file in request.files {
         let Some(language) = SourceLanguage::of(file) else {
             continue;
@@ -50,15 +55,34 @@ pub fn check(request: Request<'_>, settings: &FormatConfig) -> Outcome {
             );
             continue;
         };
+        let root = tree.root_node();
+        let partial = root.has_error() && line_rules.len() < rules.len();
+        if partial {
+            let mut failure = engine_failure(
+                EngineName::Builtin,
+                "Source syntax prevented a complete formatting check",
+            );
+            failure.path = Some(display_path(file));
+            failure.error_type = Some("PartialParsing".to_owned());
+            failure.file_count = Some(1);
+            failure.set_rules(
+                rules
+                    .keys()
+                    .copied()
+                    .filter(|id| !line_rules.contains_key(id)),
+            );
+            outcome.failures.push(failure);
+        } else {
+            outcome.scanned_files.insert(file.clone());
+        }
         check_layout(
             file,
             &source,
-            tree.root_node(),
+            root,
             settings.for_file(file, language),
-            &rules,
+            if partial { &line_rules } else { &rules },
             &mut outcome,
         );
-        outcome.scanned_files.insert(file.clone());
     }
     outcome
 }

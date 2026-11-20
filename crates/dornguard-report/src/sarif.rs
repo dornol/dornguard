@@ -87,6 +87,12 @@ pub fn write_sarif(report: &CheckReport, writer: &mut impl Write) -> io::Result<
         "suppressedCount": report.suppressed_count,
         "organizationPolicyEnforced": report.organization_policy_enforced
     });
+    if let Some(scope) = report.project_scope {
+        properties["projectScope"] = json!(scope);
+    }
+    if let Some(scope) = report.organization_scope {
+        properties["organizationScope"] = json!(scope);
+    }
     if let Some(reason) = &report.fallback_reason {
         properties["fallbackReason"] = Value::String(reason.clone());
     }

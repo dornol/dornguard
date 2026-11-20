@@ -65,6 +65,8 @@ dornguard doctor
 The check exit codes are 0 for success, 1 for a policy violation, 2 for
 configuration errors, 3 for engine errors, and 4 for preparation errors.
 Check reports include per-rule counts and identify incomplete analysis.
+In a configured project, `dornguard doctor` checks the engines selected by its
+profiles, including the ArchUnit runner protocol when architecture checks apply.
 JSON includes the affected rules and available file or module information for
 each failure. See the
 [report format](docs/releases.md#report-format) for location and range fields.

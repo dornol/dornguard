@@ -3883,6 +3883,45 @@ public class Controller {
     assert_eq!(violation["diagnostics"][0]["path"], controller);
     assert_eq!(violation["diagnostics"][0]["line"], 6);
 
+    let script = "docs/scripts/Tool.java";
+    fs::create_dir_all(root.join(script).parent().unwrap()).unwrap();
+    fs::write(
+        root.join(script),
+        "class Tool { void run() { System.out.println(1); } }\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join(".dornguard.yml"),
+        include_str!("../../../schemas/examples/maven-layered.yml"),
+    )
+    .unwrap();
+    for args in [&[][..], &["docs/scripts"][..]] {
+        let result = report(check(root).args(args).output().unwrap(), 1);
+        assert!(
+            result["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|item| { item["path"] == script && item["rule_id"] == "java.stdout-usage" }),
+            "{result}"
+        );
+    }
+    let module = report(
+        check(root)
+            .args(["--module", "example:coverage"])
+            .output()
+            .unwrap(),
+        1,
+    );
+    assert!(
+        module["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|item| item["path"] != script)
+    );
+    fs::write(root.join(".dornguard.yml"), config).unwrap();
+
     fs::OpenOptions::new()
         .write(true)
         .open(root.join(controller))
@@ -3989,4 +4028,140 @@ ignore:
     assert_eq!(excluded["complete"], true);
     assert_eq!(excluded["files_requested"], 4);
     assert_eq!(excluded["diagnostics"], local["diagnostics"]);
+}
+
+#[test]
+fn tracked_changes_are_checked_even_when_their_directory_is_gitignored() {
+    let project = project("class Example {}\n");
+    let root = project.path();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [format]\n",
+    )
+    .unwrap();
+    commit_fixture(root);
+    fs::write(root.join(".gitignore"), "src/\n").unwrap();
+    git(root, &["add", ".gitignore"]);
+    git(
+        root,
+        &["commit", "--quiet", "-m", "Ignore untracked sources"],
+    );
+    fs::write(root.join("src/Example.java"), "class Example {}").unwrap();
+    fs::write(root.join("src/Untracked.java"), "class Untracked {}").unwrap();
+
+    for arguments in [&[][..], &["--changed"][..], &["src/Example.java"][..]] {
+        let result = report(check(root).args(arguments).output().unwrap(), 1);
+        assert_eq!(result["files_requested"], 1, "{result}");
+        assert_eq!(
+            result["diagnostics"][0]["path"], "src/Example.java",
+            "{result}"
+        );
+        assert_eq!(result["diagnostics"][0]["rule_id"], "format.final-newline");
+    }
+}
+
+#[test]
+fn malformed_sources_report_partial_formatting_and_keep_line_diagnostics() {
+    let project = project("class Example {");
+    let root = project.path();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [format]\n",
+    )
+    .unwrap();
+    fs::write(root.join("src/example.js"), "function example( {\n").unwrap();
+    let result = report(check(root).output().unwrap(), 3);
+    assert_eq!(result["complete"], false);
+    assert_eq!(result["files_requested"], 2);
+    assert_eq!(result["files_scanned"], 0);
+    assert_eq!(result["diagnostics"][0]["rule_id"], "format.final-newline");
+    let failures = result["failures"].as_array().unwrap();
+    assert_eq!(failures.len(), 2, "{result}");
+    for failure in failures {
+        assert_eq!(failure["error_type"], "PartialParsing");
+        let ids = failure["rule_ids"].as_array().unwrap();
+        assert!(ids.iter().any(|id| id == "format.indentation"));
+        assert!(ids.iter().all(|id| id != "format.final-newline"));
+    }
+}
+
+#[test]
+fn organization_policy_reports_its_full_scope_alongside_changed_scope() {
+    let project = project("class Example {}\n");
+    let root = project.path();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [format]\n",
+    )
+    .unwrap();
+    commit_fixture(root);
+    let authority = tempfile::tempdir().unwrap();
+    let policy = authority.path().join("required.yml");
+    fs::write(&policy, "version: 1\nprofiles: [format]\n").unwrap();
+    let run = || {
+        check(root)
+            .arg("--changed")
+            .arg("--organization-policy")
+            .arg(&policy)
+            .output()
+            .unwrap()
+    };
+    let clean = report(run(), 0);
+    assert_eq!(clean["status"], "passed");
+    assert_eq!(clean["scope"], "full");
+    assert_eq!(clean["project_scope"], "changed");
+    assert_eq!(clean["organization_scope"], "full");
+    assert_eq!(clean["files_scanned"], 1);
+
+    fs::write(root.join("src/Example.java"), "class Example {}").unwrap();
+    git(root, &["add", "src/Example.java"]);
+    git(
+        root,
+        &[
+            "commit",
+            "--quiet",
+            "-m",
+            "Add an existing formatting violation",
+        ],
+    );
+    let failed = report(run(), 1);
+    assert_eq!(failed["scope"], "full");
+    assert_eq!(failed["diagnostics"][0]["path"], "src/Example.java");
+}
+
+#[test]
+#[ignore = "requires Java 21 and the bundled JVM artifacts"]
+fn doctor_validates_the_archunit_runner_for_active_profiles() {
+    let project = project(CLEAN);
+    let root = project.path();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [layered]\n",
+    )
+    .unwrap();
+    let doctor = || {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_dornguard"));
+        command.current_dir(root).arg("doctor");
+        command
+    };
+    let valid = doctor().output().unwrap();
+    assert!(
+        valid.status.success(),
+        "{}",
+        String::from_utf8_lossy(&valid.stderr)
+    );
+    assert!(String::from_utf8_lossy(&valid.stdout).contains("ArchUnit runner OK (protocol"));
+    let wrong = doctor()
+        .env("DORNGUARD_ARCHUNIT_RUNNER", root.join("missing-runner.jar"))
+        .output()
+        .unwrap();
+    assert_eq!(wrong.status.code(), Some(3));
+    assert!(String::from_utf8_lossy(&wrong.stderr).contains("missing-runner.jar"));
+    let invalid_jar = root.join("invalid-runner.jar");
+    fs::write(&invalid_jar, "invalid JVM archive").unwrap();
+    let wrong = doctor()
+        .env("DORNGUARD_ARCHUNIT_RUNNER", invalid_jar)
+        .output()
+        .unwrap();
+    assert_eq!(wrong.status.code(), Some(3));
 }

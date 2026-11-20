@@ -53,7 +53,9 @@ can contain diagnostics from the
 engines that produced results. Exit codes retain their documented meanings.
 
 The development version adds `rule_counts` with error and warning counts by
-rule, and optional `analysis_notes` describing PMD classpath use. ArchUnit
+rule, and optional `analysis_notes` describing PMD classpath use. When organization policy runs, reports include `project_scope`
+and `organization_scope`. The combined `scope` is full. SARIF exposes the same
+scopes as `projectScope` and `organizationScope`. ArchUnit
 reports one finding per module, rule, origin class and forbidden target class.
 Existing dependency fingerprints still match the grouped finding.
 The current runner uses protocol 4 and must be installed with the matching CLI.

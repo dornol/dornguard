@@ -51,6 +51,27 @@ pub async fn check_architecture(root: &Path, modules: &[ArchModule<'_>]) -> Outc
     outcome
 }
 
+pub async fn inspect_archunit(root: &Path) -> Result<String> {
+    let java = crate::inspect_java(root).await?;
+    let runner = runner_path()?;
+    let mut command = crate::install::java_command(root);
+    command.arg("-jar").arg(&runner).arg("--version");
+    let output = run_command(
+        ENGINE,
+        &mut command,
+        Instant::now() + Duration::from_secs(15),
+    )
+    .await?;
+    let protocol = String::from_utf8_lossy(&output.stdout);
+    if !output.status.success() || protocol.trim().parse::<u32>().ok() != Some(SCHEMA_VERSION) {
+        bail!(
+            "ArchUnit runner {} did not report protocol {SCHEMA_VERSION}; install the matching runner",
+            runner.display()
+        );
+    }
+    Ok(format!("protocol {SCHEMA_VERSION}, {java}"))
+}
+
 async fn run(root: &Path, modules: &[ArchModule<'_>], outcome: &mut Outcome) -> Result<()> {
     let temp = tempfile::tempdir().into_diagnostic()?;
     let request_path = temp.path().join("request.json");

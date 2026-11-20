@@ -53,6 +53,14 @@ pub fn write_agent(report: &CheckReport, writer: &mut impl Write, limit: usize) 
     Ok(())
 }
 
+fn scope_label(scope: Scope) -> &'static str {
+    match scope {
+        Scope::Full => "full",
+        Scope::Selected => "selected",
+        Scope::Changed => "changed",
+    }
+}
+
 fn write_summary(report: &CheckReport, writer: &mut impl Write) -> io::Result<()> {
     let status = match report.status {
         Status::Passed => "PASSED",
@@ -62,11 +70,7 @@ fn write_summary(report: &CheckReport, writer: &mut impl Write) -> io::Result<()
         Status::EngineError => "ENGINE ERROR",
         Status::PreparationError => "PREPARATION ERROR",
     };
-    let scope = match report.scope {
-        Scope::Full => "full",
-        Scope::Selected => "selected",
-        Scope::Changed => "changed",
-    };
+    let scope = scope_label(report.scope);
     write!(
         writer,
         "DornGuard: {status} ({scope}, {} files scanned",
@@ -76,6 +80,14 @@ fn write_summary(report: &CheckReport, writer: &mut impl Write) -> io::Result<()
         write!(writer, " of {} requested", report.files_requested)?;
     }
     writeln!(writer, ")")?;
+    if let (Some(project), Some(organization)) = (report.project_scope, report.organization_scope) {
+        writeln!(
+            writer,
+            "  Project scope: {}. Organization policy scope: {}.",
+            scope_label(project),
+            scope_label(organization)
+        )?;
+    }
     if let Some(reason) = &report.fallback_reason {
         writeln!(writer, "Full scan: {reason}")?;
     }

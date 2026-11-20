@@ -16,7 +16,8 @@ in the module that owns it.
 
 Use `--module :api` to check a single Gradle module. Use `--changed` to
 compare the index and working tree with `HEAD`, including untracked,
-non-ignored source files in the selected languages. Source engines check changed files. ArchUnit checks
+non-ignored untracked source files in the selected languages. Tracked files
+remain eligible even when they match a Git ignore pattern. Source engines check changed files. ArchUnit checks
 affected modules and their reverse dependents. A change to build or policy
 inputs or an unmapped path in a selected language triggers a full check.
 
@@ -39,8 +40,11 @@ DornGuard runs Maven's `compile` phase for architecture checks and collects
 the production source roots, class output directory and compile classpath
 of each reactor module. The build uses the project's regular Maven profiles
 and settings. Source rules check the reported Java production and test
-source roots, including custom test directories. Maven integration has
-been tested with Maven 3.9.9 and JDK 21.
+source roots, including custom test directories. Build-aware checks also apply
+project-wide source rules to eligible files outside module source roots, such
+as Java scripts under `docs/scripts`. These files use source-only analysis.
+Use `--module` to select a module's sources. Maven integration has been tested
+with Maven 3.9.9 and JDK 21.
 
 Java test sources use source-only analysis for import checks. Rules with
 Java test exceptions, such as `spring.field-injection`, recognize the test

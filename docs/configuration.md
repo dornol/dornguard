@@ -3,7 +3,8 @@
 DornGuard searches from the target directory to its ancestors for
 `.dornguard.yml`. Use `--config PATH` to choose a specific file. See
 the [configuration schema](../schemas/config.schema.json) and the [Gradle
-example](../examples/spring-boot-multimodule/.dornguard.yml).
+example](../examples/spring-boot-multimodule/.dornguard.yml) or the
+[Maven module example](../schemas/examples/maven-layered.yml).
 
 ```yaml
 version: 1
@@ -131,7 +132,12 @@ format:
 Use forward slashes. A single `*` stays within one path segment and `**` can
 span directories. The last matching override wins for each field it sets.
 `exclude` applies to source checks. Architecture and migration checks still
-use their build and Git scopes, respectively.
+use their build and Git scopes, respectively. A tracked source file remains
+eligible even if it matches `.gitignore`.
+
+Malformed Java, Kotlin, or JavaScript can leave syntax-dependent formatting
+rules incomplete. The report lists the affected rules and retains line-ending
+and final-newline checks.
 
 ## Intentional exceptions
 

@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -10,8 +11,8 @@ use dornguard_config::{
 };
 use dornguard_core::{EngineName, Failure, FailureKind, Outcome, Scope, SourceLanguage};
 use dornguard_engine::{
-    Engine, Eslint, Pmd, Request, Semgrep, check_builtin, inspect, inspect_java, install,
-    supported_version,
+    Engine, Eslint, Pmd, Request, Semgrep, check_builtin, inspect, inspect_archunit, inspect_java,
+    install, maven_model_path, supported_version,
 };
 use ignore::WalkBuilder;
 use miette::{IntoDiagnostic, Result, WrapErr, bail, miette};
@@ -165,8 +166,15 @@ Run dornguard check --format agent to verify how the configuration applies."#
     Init,
     /// Print the installed CLI version
     Version,
-    /// Verify that supported engine versions are available
-    Doctor,
+    /// Verify the engines needed by the project's active profiles
+    Doctor {
+        /// Add a profile to the configured project profiles
+        #[arg(long)]
+        profile: Vec<String>,
+        /// Read a specific .dornguard.yml
+        #[arg(long, value_name = "PATH")]
+        config: Option<PathBuf>,
+    },
     /// Browse supported engines
     Engines {
         #[command(subcommand)]
@@ -332,6 +340,10 @@ async fn dispatch(action: Action) -> Result<u8> {
                 )
                 .await;
                 outcome.organization_policy_enforced = required.failures.is_empty();
+                outcome.project_scope = Some(outcome.scope);
+                outcome.organization_scope = Some(required.scope);
+                outcome.scope = dornguard_core::Scope::Full;
+                outcome.no_changes &= required.no_changes && required.scanned_files.is_empty();
                 for diagnostic in &mut required.diagnostics {
                     diagnostic.severity = dornguard_core::Severity::Error;
                 }
@@ -412,24 +424,7 @@ async fn dispatch(action: Action) -> Result<u8> {
             );
             Ok(0)
         }
-        Action::Doctor => {
-            let root = std::env::current_dir().into_diagnostic()?;
-            let mut exit_code = 0;
-            for engine in [EngineName::Semgrep, EngineName::Pmd] {
-                match inspect(engine, &root).await {
-                    Ok(()) => println!("{} {} OK", engine.executable(), supported_version(engine)),
-                    Err(error) => {
-                        eprintln!("{}: {error:#}", engine.executable());
-                        exit_code = 3;
-                    }
-                }
-            }
-            match inspect_java(&root).await {
-                Ok(java) => println!("ArchUnit runtime (Java 21+): {java}"),
-                Err(error) => eprintln!("ArchUnit runtime: {error:#}"),
-            }
-            Ok(exit_code)
-        }
+        Action::Doctor { profile, config } => doctor(&profile, config.as_deref()).await,
         Action::Engines {
             command: EngineAction::List,
         } => {
@@ -532,6 +527,88 @@ async fn dispatch(action: Action) -> Result<u8> {
             Ok(0)
         }
     }
+}
+
+async fn doctor(profiles: &[String], config: Option<&Path>) -> Result<u8> {
+    let cwd = dunce::canonicalize(".").into_diagnostic()?;
+    let config = discover_config(&cwd, config)?;
+    let root = config.as_deref().and_then(Path::parent).unwrap_or(&cwd);
+    let mut engines = BTreeSet::new();
+    let mut needs_build_model = false;
+    if let Some(path) = &config {
+        let config = Registry::load(path)?;
+        let registry = Registry::for_config(path, &config)?;
+        for module in
+            std::iter::once(None).chain(config.modules.keys().map(|name| Some(name.as_str())))
+        {
+            engines.extend(
+                registry
+                    .resolve(&config, module, profiles)?
+                    .into_iter()
+                    .map(|rule| rule.engine),
+            );
+        }
+        needs_build_model = !config.modules.is_empty() || engines.contains(&EngineName::Archunit);
+    } else if profiles.is_empty() {
+        engines.extend([EngineName::Semgrep, EngineName::Pmd]);
+        if std::env::var_os("DORNGUARD_ARCHUNIT_RUNNER").is_some() {
+            engines.insert(EngineName::Archunit);
+        }
+    } else {
+        let config = Registry::parse("version: 1\n")?;
+        engines.extend(
+            Registry::builtin()?
+                .resolve(&config, None, profiles)?
+                .into_iter()
+                .map(|rule| rule.engine),
+        );
+        needs_build_model = engines.contains(&EngineName::Archunit);
+    }
+
+    let mut exit_code = 0;
+    for engine in engines.iter().copied().filter(|engine| {
+        matches!(
+            engine,
+            EngineName::Semgrep | EngineName::Pmd | EngineName::Eslint
+        )
+    }) {
+        match inspect(engine, root).await {
+            Ok(()) => println!("{} {} OK", engine.executable(), supported_version(engine)),
+            Err(error) => {
+                eprintln!("{}: {error:#}", engine.executable());
+                exit_code = 3;
+            }
+        }
+    }
+    if engines.contains(&EngineName::Archunit) {
+        match inspect_archunit(root).await {
+            Ok(details) => println!("ArchUnit runner OK ({details})"),
+            Err(error) => {
+                eprintln!("ArchUnit runner: {error:#}");
+                exit_code = 3;
+            }
+        }
+    } else if config.is_none() && profiles.is_empty() {
+        match inspect_java(root).await {
+            Ok(java) => println!("ArchUnit runtime (Java 21+): {java}"),
+            Err(error) => eprintln!("Optional ArchUnit runtime: {error:#}"),
+        }
+    }
+    if needs_build_model
+        && build_check::BuildSystem::detect(root) == build_check::BuildSystem::Maven
+    {
+        match maven_model_path() {
+            Ok(path) => println!("Maven model extension OK ({})", path.display()),
+            Err(error) => {
+                eprintln!("{error:#}");
+                exit_code = 3;
+            }
+        }
+    }
+    if engines.iter().all(|engine| *engine == EngineName::Builtin) && !needs_build_model {
+        println!("No external engines required by the active rules.");
+    }
+    Ok(exit_code)
 }
 
 #[derive(Default)]
@@ -685,6 +762,19 @@ async fn check(
         || !config.modules.is_empty()
         || !config.module_dependencies.forbid.is_empty()
         || rules.iter().any(|rule| rule.engine == EngineName::Archunit);
+    let tracked = if organization.is_some() {
+        BTreeSet::new()
+    } else {
+        match changed::tracked_sources(root).await {
+            Ok(tracked) => tracked,
+            Err(error) => return prep_error(error),
+        }
+    };
+    let sources = SourceFiles {
+        root,
+        tracked,
+        required: organization.is_some(),
+    };
     if uses_build || resolve_imports && rules.iter().any(|rule| rule.uses_pmd_classpath()) {
         let (module_git_outcome, git_outcome) = if module.is_some() {
             (git_outcome, Outcome::default())
@@ -704,7 +794,7 @@ async fn check(
             global: &rules,
             global_kotlin,
             resolve_imports,
-            include_other_sources: !uses_build,
+            sources: &sources,
             changes: if maven_full { None } else { changes.as_ref() },
             required: organization.is_some(),
             module_git_outcome,
@@ -741,7 +831,7 @@ async fn check(
     let mut files = if rules.iter().all(|rule| rule.id == FLYWAY_RULE) {
         Vec::new()
     } else {
-        match source_files(root, target, organization.is_some(), |language| {
+        match sources.collect(target, |language| {
             rules.iter().any(|rule| rule.applies_to(language))
         }) {
             Ok(files) => files,
@@ -891,8 +981,14 @@ async fn run_source_engines(
 }
 
 fn find_config(target: &Path, config: Option<&Path>) -> Result<PathBuf> {
+    discover_config(target, config)?
+        .ok_or_else(|| miette!("No {CONFIG_FILE} found; run dornguard init at the project root"))
+}
+
+fn discover_config(target: &Path, config: Option<&Path>) -> Result<Option<PathBuf>> {
     if let Some(path) = config {
         return dunce::canonicalize(path)
+            .map(Some)
             .into_diagnostic()
             .wrap_err_with(|| format!("Could not access configuration {}", path.display()));
     }
@@ -905,7 +1001,7 @@ fn find_config(target: &Path, config: Option<&Path>) -> Result<PathBuf> {
     for ancestor in directory.ancestors() {
         let path = ancestor.join(CONFIG_FILE);
         match fs::symlink_metadata(&path) {
-            Ok(_) => return Ok(path),
+            Ok(_) => return Ok(Some(path)),
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(error) => {
                 return Err(error).into_diagnostic().wrap_err_with(|| {
@@ -914,7 +1010,7 @@ fn find_config(target: &Path, config: Option<&Path>) -> Result<PathBuf> {
             }
         }
     }
-    bail!("No {CONFIG_FILE} found; run dornguard init at the project root");
+    Ok(None)
 }
 
 fn current_registry() -> Result<Registry> {
@@ -952,64 +1048,97 @@ fn trusted_policy(root: &Path, path: &Path) -> Result<PathBuf> {
     Ok(path)
 }
 
-fn source_files(
-    root: &Path,
-    target: &Path,
+struct SourceFiles<'a> {
+    root: &'a Path,
+    tracked: BTreeSet<PathBuf>,
     required: bool,
-    accepts: impl Fn(SourceLanguage) -> bool,
-) -> Result<Vec<PathBuf>> {
-    if !target.starts_with(root) {
-        bail!("The check target must be inside the configuration directory");
-    }
-    let mut files = Vec::new();
-    let mut walker = WalkBuilder::new(target);
-    let web = [
-        SourceLanguage::Html,
-        SourceLanguage::Template,
-        SourceLanguage::Javascript,
-        SourceLanguage::Jsp,
-    ]
-    .into_iter()
-    .any(&accepts);
-    walker
-        .require_git(false)
-        .git_global(false)
-        .git_exclude(false)
-        .ignore(false)
-        .hidden(!required)
-        .git_ignore(!required)
-        .filter_entry(move |entry| {
-            entry.file_name() != ".git" && (!web || entry.file_name() != "node_modules")
-        });
-    for entry in walker.build() {
-        let entry = entry
-            .into_diagnostic()
-            .wrap_err("Could not enumerate source files")?;
-        if let Some(error) = entry.error() {
-            bail!("Could not read project ignore rules: {error}");
+}
+
+impl SourceFiles<'_> {
+    fn collect(
+        &self,
+        target: &Path,
+        accepts: impl Fn(SourceLanguage) -> bool,
+    ) -> Result<Vec<PathBuf>> {
+        let root = self.root;
+        let required = self.required;
+        if !target.starts_with(root) {
+            bail!("The check target must be inside the configuration directory");
         }
-        let path = entry.path();
-        if entry.file_type().is_some_and(|kind| kind.is_file())
-            && SourceLanguage::of(path).is_some_and(&accepts)
-            && (!web
-                || !path.strip_prefix(root).is_ok_and(|relative| {
-                    relative
-                        .components()
-                        .any(|part| part.as_os_str() == "node_modules")
-                }))
-        {
-            let relative = path.strip_prefix(root).into_diagnostic()?;
-            if relative.to_str().is_none() {
-                bail!(
-                    "Source path is not representable as UTF-8: {}",
-                    path.display()
-                );
+        let mut files = BTreeSet::new();
+        let mut walker = WalkBuilder::new(target);
+        let web = [
+            SourceLanguage::Html,
+            SourceLanguage::Template,
+            SourceLanguage::Javascript,
+            SourceLanguage::Jsp,
+        ]
+        .into_iter()
+        .any(&accepts);
+        walker
+            .require_git(false)
+            .git_global(false)
+            .git_exclude(false)
+            .ignore(false)
+            .hidden(!required)
+            .git_ignore(!required)
+            .filter_entry(move |entry| {
+                entry.file_name() != ".git" && (!web || entry.file_name() != "node_modules")
+            });
+        let allowed = |relative: &Path| {
+            SourceLanguage::of(relative).is_some_and(&accepts)
+                && !relative.components().any(|part| {
+                    part.as_os_str() == ".git" || web && part.as_os_str() == "node_modules"
+                })
+        };
+        for entry in walker.build() {
+            let entry = entry
+                .into_diagnostic()
+                .wrap_err("Could not enumerate source files")?;
+            if let Some(error) = entry.error() {
+                bail!("Could not read project ignore rules: {error}");
             }
-            files.push(relative.to_path_buf());
+            let relative = entry.path().strip_prefix(root).into_diagnostic()?;
+            if entry.file_type().is_some_and(|kind| kind.is_file()) && allowed(relative) {
+                if relative.to_str().is_none() {
+                    bail!(
+                        "Source path is not representable as UTF-8: {}",
+                        entry.path().display()
+                    );
+                }
+                files.insert(relative.to_path_buf());
+            }
         }
+        let relative_target = target.strip_prefix(root).into_diagnostic()?;
+        for path in self
+            .tracked
+            .iter()
+            .filter(|path| path.starts_with(relative_target) && allowed(path))
+        {
+            if files.contains(path) {
+                continue;
+            }
+            let absolute = root.join(path);
+            match fs::symlink_metadata(&absolute) {
+                Ok(metadata) if metadata.is_file() => {
+                    // The walker does not follow symlinks, including parents of tracked paths.
+                    if dunce::canonicalize(&absolute).into_diagnostic()? == absolute {
+                        files.insert(path.clone());
+                    }
+                }
+                Ok(_) => {}
+                Err(error)
+                    if error.kind() == io::ErrorKind::NotFound
+                        || error.kind() == io::ErrorKind::NotADirectory => {}
+                Err(error) => {
+                    return Err(error).into_diagnostic().wrap_err_with(|| {
+                        format!("Could not inspect tracked source {}", path.display())
+                    });
+                }
+            }
+        }
+        Ok(files.into_iter().collect())
     }
-    files.sort();
-    Ok(files)
 }
 
 fn failure(kind: FailureKind, error: miette::Report) -> Outcome {

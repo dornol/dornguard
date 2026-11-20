@@ -11,7 +11,7 @@ use dornguard_engine::{ArchModule, Engine, Pmd, Request, check_architecture};
 use dornguard_gradle::CompileModules;
 use miette::{Result, bail, miette};
 
-use crate::{changed::Changes, failure, run_source_engines, source_files};
+use crate::{SourceFiles, changed::Changes, failure, run_source_engines};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum BuildSystem {
@@ -67,7 +67,7 @@ pub struct Check<'a> {
     pub global: &'a [&'a Rule],
     pub global_kotlin: bool,
     pub resolve_imports: bool,
-    pub include_other_sources: bool,
+    pub sources: &'a SourceFiles<'a>,
     pub changes: Option<&'a Changes>,
     pub required: bool,
     pub module_git_outcome: Outcome,
@@ -85,7 +85,7 @@ pub async fn check(check: Check<'_>) -> Outcome {
         global,
         global_kotlin,
         resolve_imports,
-        include_other_sources,
+        sources,
         mut changes,
         required,
         mut module_git_outcome,
@@ -337,7 +337,6 @@ pub async fn check(check: Check<'_>) -> Outcome {
     }
     let mut source_groups = BTreeMap::new();
     let mut pmd_modules = Vec::new();
-    let mut mapped_files = BTreeSet::new();
     let mut excluded_source = false;
     let mut architecture = Vec::new();
     for module in selected {
@@ -351,10 +350,9 @@ pub async fn check(check: Check<'_>) -> Outcome {
             |language| jvm(language) || (language == SourceLanguage::Kotlin && format_kotlin);
         let mut files = match module_files(
             build_name,
-            root,
+            sources,
             target,
             module,
-            required,
             format_kotlin,
             source_jvm,
         ) {
@@ -372,8 +370,7 @@ pub async fn check(check: Check<'_>) -> Outcome {
                     .iter()
                     .any(|path| SourceLanguage::of(path).is_some_and(jvm)))
         {
-            let all_files = match module_files(build_name, root, root, module, required, false, jvm)
-            {
+            let all_files = match module_files(build_name, sources, root, module, false, jvm) {
                 Ok(files) => files,
                 Err(error) => return preparation_error(error),
             };
@@ -416,18 +413,10 @@ pub async fn check(check: Check<'_>) -> Outcome {
                 }
             }
         }
-        match module_files(
-            build_name,
-            root,
-            target,
-            module,
-            required,
-            false,
-            |language| {
-                !matches!(language, SourceLanguage::Java | SourceLanguage::Kotlin)
-                    && web_for(&module.path, language)
-            },
-        ) {
+        match module_files(build_name, sources, target, module, false, |language| {
+            !matches!(language, SourceLanguage::Java | SourceLanguage::Kotlin)
+                && web_for(&module.path, language)
+        }) {
             Ok(web_files) => files.extend(web_files),
             Err(error) => return preparation_error(error),
         }
@@ -463,9 +452,8 @@ pub async fn check(check: Check<'_>) -> Outcome {
             let mut tests = BTreeSet::new();
             if let Err(error) = collect_source_dirs(
                 build_name,
-                root,
+                sources,
                 target,
-                required,
                 SourceLanguage::Java,
                 &module.test_source_dirs,
                 &mut tests,
@@ -479,18 +467,12 @@ pub async fn check(check: Check<'_>) -> Outcome {
             for file in &files {
                 tests.remove(file);
             }
-            if include_other_sources {
-                mapped_files.extend(tests.iter().cloned());
-            }
             add_source_group(
                 &mut source_groups,
                 test_rules,
                 tests,
                 module.java_test_source.or(module.java_source),
             );
-        }
-        if include_other_sources {
-            mapped_files.extend(files.iter().cloned());
         }
         let uses_classpath = source_rules.iter().any(|rule| rule.uses_pmd_classpath());
         let classpath = (!compile_failed
@@ -543,17 +525,51 @@ pub async fn check(check: Check<'_>) -> Outcome {
         }
         add_source_group(&mut source_groups, source_rules, files, module.java_source);
     }
-    if include_other_sources {
-        let files = match source_files(root, target, required, |language| {
-            global.iter().any(|rule| rule.applies_to(language))
-        }) {
+    let include_unmapped = |language| {
+        // Kotlin checks depend on the source sets registered by the JVM plugin.
+        (language != SourceLanguage::Kotlin || !global_kotlin && kotlin_modules.is_empty())
+            && global.iter().any(|rule| rule.applies_to(language))
+    };
+    if filter.is_none() && SOURCE_LANGUAGES.into_iter().any(include_unmapped) {
+        let roots = SOURCE_LANGUAGES
+            .into_iter()
+            .filter(|&language| include_unmapped(language))
+            .map(|language| {
+                let paths = model
+                    .modules
+                    .iter()
+                    .flat_map(|module| {
+                        source_dirs(module, language, format_kotlin(&module.path))
+                            .into_owned()
+                            .into_iter()
+                            .chain(
+                                module
+                                    .test_source_dirs
+                                    .iter()
+                                    .filter(|_| language == SourceLanguage::Java)
+                                    .cloned(),
+                            )
+                    })
+                    .collect::<BTreeSet<_>>();
+                (language, paths)
+            })
+            .collect::<BTreeMap<_, _>>();
+        let files = match sources.collect(target, include_unmapped) {
             Ok(files) => files,
             Err(error) => return preparation_error(error),
         };
         let files = files
             .into_iter()
             .filter(|path| {
-                !mapped_files.contains(path) && changes.is_none_or(|changes| changes.matches(path))
+                changes.is_none_or(|changes| changes.matches(path))
+                    && SourceLanguage::of(path)
+                        .and_then(|language| roots.get(&language))
+                        .is_none_or(|directories| {
+                            let full_path = root.join(path);
+                            !directories
+                                .iter()
+                                .any(|directory| full_path.starts_with(directory))
+                        })
             })
             .filter(|path| {
                 let excluded = config.excludes_source(path);
@@ -800,46 +816,44 @@ fn affected_modules(
     Ok(affected)
 }
 
+const SOURCE_LANGUAGES: [SourceLanguage; 6] = [
+    SourceLanguage::Java,
+    SourceLanguage::Kotlin,
+    SourceLanguage::Html,
+    SourceLanguage::Template,
+    SourceLanguage::Javascript,
+    SourceLanguage::Jsp,
+];
+
 fn module_files(
     build_name: &str,
-    root: &Path,
+    sources: &SourceFiles<'_>,
     target: &Path,
     module: &Module,
-    required: bool,
     format_kotlin: bool,
     accepts: impl Fn(SourceLanguage) -> bool,
 ) -> Result<Vec<PathBuf>> {
     let mut files = BTreeSet::new();
-    for language in [
-        SourceLanguage::Java,
-        SourceLanguage::Kotlin,
-        SourceLanguage::Html,
-        SourceLanguage::Template,
-        SourceLanguage::Javascript,
-        SourceLanguage::Jsp,
-    ]
-    .into_iter()
-    .filter(|&language| accepts(language))
+    for language in SOURCE_LANGUAGES
+        .into_iter()
+        .filter(|&language| accepts(language))
     {
         let dirs = source_dirs(module, language, format_kotlin);
-        collect_source_dirs(
-            build_name, root, target, required, language, &dirs, &mut files,
-        )?;
+        collect_source_dirs(build_name, sources, target, language, &dirs, &mut files)?;
     }
     Ok(files.into_iter().collect())
 }
 
 fn collect_source_dirs(
     build_name: &str,
-    root: &Path,
+    sources: &SourceFiles<'_>,
     target: &Path,
-    required: bool,
     language: SourceLanguage,
     dirs: &[PathBuf],
     files: &mut BTreeSet<PathBuf>,
 ) -> Result<()> {
     for dir in dirs {
-        if !dir.starts_with(root) {
+        if !dir.starts_with(sources.root) {
             bail!(
                 "{build_name} source directory is outside the project: {}",
                 dir.display()
@@ -849,11 +863,9 @@ fn collect_source_dirs(
             continue;
         }
         if target.starts_with(dir) {
-            files.extend(source_files(root, target, required, |file| {
-                file == language
-            })?);
+            files.extend(sources.collect(target, |file| file == language)?);
         } else if dir.starts_with(target) {
-            files.extend(source_files(root, dir, required, |file| file == language)?);
+            files.extend(sources.collect(dir, |file| file == language)?);
         }
     }
     Ok(())

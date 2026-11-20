@@ -96,6 +96,31 @@ pub async fn discover(
     Ok(changes)
 }
 
+pub async fn tracked_sources(root: &Path) -> Result<BTreeSet<PathBuf>> {
+    if !root
+        .ancestors()
+        .any(|directory| directory.join(".git").exists())
+    {
+        return Ok(BTreeSet::new());
+    }
+    let output = git(root, &["ls-files", "--cached", "-z", "--", "."])
+        .await
+        .wrap_err("Could not enumerate tracked project files")?;
+    output
+        .split(|&byte| byte == 0)
+        .filter_map(|bytes| {
+            let candidate = String::from_utf8_lossy(bytes);
+            SourceLanguage::of(Path::new(candidate.as_ref()))?;
+            Some(
+                std::str::from_utf8(bytes)
+                    .into_diagnostic()
+                    .wrap_err("Git reported a tracked source path that is not UTF-8")
+                    .map(PathBuf::from),
+            )
+        })
+        .collect()
+}
+
 pub(crate) async fn compare_commits(root: &Path, reference: &str) -> Result<(String, String)> {
     let head = resolve_commit(root, "HEAD").await?;
     let base = resolve_commit(root, reference).await?;
