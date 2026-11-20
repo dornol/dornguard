@@ -1969,6 +1969,22 @@ public record Book(BookRepository repository) {
         "{resolved}"
     );
     assert!(
+        resolved["pmd_coverage"]["compiled_classpath"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|path| path == domain_path),
+        "{resolved}"
+    );
+    assert!(
+        resolved["pmd_coverage"]["source_only"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|path| path == test_path),
+        "{resolved}"
+    );
+    assert!(
         resolved["diagnostics"]
             .as_array()
             .unwrap()
@@ -3844,6 +3860,19 @@ fn maven_architecture_rejects_uncompiled_sources_and_groups_the_same_dependency(
         "package example.controller; public class Controller {}\n",
     )
     .unwrap();
+    let metadata = "src/main/java/example/package-info.java";
+    fs::write(root.join(metadata), "package example;\n").unwrap();
+    let exclude_metadata = |value: String| {
+        value.replace(
+        "<version>3.13.0</version>",
+        "<version>3.13.0</version><configuration><excludes><exclude>**/package-info.java</exclude></excludes></configuration>",
+    )
+    };
+    fs::write(
+        root.join("pom.xml"),
+        exclude_metadata(pom.replace("OPTIONS", "")),
+    )
+    .unwrap();
     let clean = report(check(root).output().unwrap(), 0);
     assert_eq!(clean["complete"], true);
     fs::write(
@@ -4320,5 +4349,152 @@ class LocalAssertions {
             ("java.assert-throws-nested-call", 12, "warning"),
         ],
         "{result}"
+    );
+}
+
+#[test]
+fn formatting_handles_tabs_control_spacing_and_minified_defaults() {
+    let project = tempfile::tempdir().unwrap();
+    let root = project.path();
+    fs::write(root.join("ui.js"), "if(true) {\n\trun();\n}\n").unwrap();
+    fs::write(root.join("vendor.min.js"), "if(true){run()}").unwrap();
+    let config = "version: 1\nprofiles: [format]\n";
+    fs::write(root.join(".dornguard.yml"), config).unwrap();
+    let default = report(check(root).output().unwrap(), 1);
+    assert_eq!(default["files_requested"], 1);
+    assert!(
+        default["rule_counts"]["format.indentation"]["errors"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+
+    fs::write(root.join(".dornguard.yml"), format!("{config}format:\n  overrides:\n    - files: [ui.js]\n      indent_style: tabs\n      control_spacing: none\n")).unwrap();
+    let expected = report(check(root).output().unwrap(), 0);
+    assert_eq!(expected["files_scanned"], 1);
+    fs::write(root.join("ui.js"), "if (true) {\n\trun();\n}\n").unwrap();
+    let wrong = report(check(root).output().unwrap(), 1);
+    assert_eq!(wrong["diagnostics"][0]["rule_id"], "format.control-spacing");
+    assert!(
+        wrong["diagnostics"][0]["fix"]
+            .as_str()
+            .unwrap()
+            .contains("directly")
+    );
+
+    fs::write(
+        root.join(".dornguard.yml"),
+        format!("{config}format: {{include_minified: true, exclude: [ui.js]}}\n"),
+    )
+    .unwrap();
+    let included = report(check(root).output().unwrap(), 1);
+    assert_eq!(included["files_requested"], 1);
+    assert_eq!(included["diagnostics"][0]["path"], "vendor.min.js");
+}
+
+#[test]
+#[ignore = "requires the pinned Semgrep engine"]
+fn formatting_exceptions_keep_other_rules_active() {
+    let project = tempfile::tempdir().unwrap();
+    let root = project.path();
+    for folder in ["ignored", "excluded"] {
+        fs::create_dir(root.join(folder)).unwrap();
+        fs::write(
+            root.join(folder).join("Example.java"),
+            "class Example {\n void run() {\n  System.out.println(1);\n }\n}\n",
+        )
+        .unwrap();
+    }
+    fs::write(
+        root.join(".dornguard.yml"),
+        r#"version: 1
+profiles: [java-source, format]
+format:
+  exclude: ["excluded/**"]
+ignore:
+  - path: ignored/
+    rule: "format.*"
+    reason: Preserve legacy formatting
+"#,
+    )
+    .unwrap();
+    let result = report(check(root).output().unwrap(), 1);
+    assert_eq!(result["suppressed_count"], 3);
+    let findings = result["diagnostics"].as_array().unwrap();
+    assert_eq!(findings.len(), 2);
+    for (finding, path) in findings
+        .iter()
+        .zip(["excluded/Example.java", "ignored/Example.java"])
+    {
+        assert_eq!(finding["rule_id"], "java.stdout-usage");
+        assert_eq!(finding["path"], path);
+    }
+}
+
+#[test]
+#[ignore = "requires the pinned Semgrep engine"]
+fn thymeleaf_partial_warning_preserves_incomplete_status_and_other_failures() {
+    let project = tempfile::tempdir().unwrap();
+    let root = project.path();
+    let path = "src/main/resources/templates/broken.html";
+    fs::create_dir_all(root.join(path).parent().unwrap()).unwrap();
+    fs::write(root.join(path), r#"<html><body><th:block th:if="${a}"><br"#).unwrap();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [thymeleaf]\nthymeleaf_partial_parsing: warning\n",
+    )
+    .unwrap();
+    let warning = report(check(root).output().unwrap(), 0);
+    assert_eq!(warning["status"], "incomplete");
+    assert_eq!(warning["complete"], false);
+    assert_eq!(warning["files_scanned"], 0);
+    assert_eq!(warning["analysis_warnings"][0]["path"], path);
+    assert_eq!(
+        warning["analysis_warnings"][0]["error_type"],
+        "PartialParsing"
+    );
+    let baseline = Command::new(env!("CARGO_BIN_EXE_dornguard"))
+        .current_dir(root)
+        .args(["baseline", "create"])
+        .output()
+        .unwrap();
+    assert_eq!(baseline.status.code(), Some(3));
+    assert!(!root.join(".dornguard-baseline.json").is_file());
+
+    let html = report(check(root).args(["--profile", "html"]).output().unwrap(), 3);
+    assert!(
+        html["failures"][0]["rule_ids"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|rule| rule.as_str().unwrap().starts_with("html.")),
+        "{html}"
+    );
+    assert_eq!(html["analysis_warnings"][0]["path"], path);
+
+    let authority = tempfile::tempdir().unwrap();
+    let policy = authority.path().join("policy.yml");
+    fs::write(&policy, "version: 1\nprofiles: [thymeleaf]\n").unwrap();
+    let required = report(
+        check(root)
+            .arg("--organization-policy")
+            .arg(policy)
+            .output()
+            .unwrap(),
+        3,
+    );
+    assert_eq!(required["failures"][0]["path"], path);
+
+    fs::write(
+        root.join("src/main/resources/templates/violation.html"),
+        r#"<html><body><a th:href="${@example.value()}">Link</a></body></html>"#,
+    )
+    .unwrap();
+    let failing = report(check(root).output().unwrap(), 1);
+    assert_eq!(failing["complete"], false);
+    assert_eq!(failing["analysis_warnings"][0]["path"], path);
+    assert_eq!(
+        failing["diagnostics"][0]["rule_id"],
+        "thymeleaf.restricted-bean-access"
     );
 }

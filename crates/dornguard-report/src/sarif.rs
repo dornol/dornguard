@@ -67,8 +67,15 @@ pub fn write_sarif(report: &CheckReport, writer: &mut impl Write) -> io::Result<
     let notifications = report
         .failures
         .iter()
-        .map(|failure| {
-            let mut item = json!({"level": "error", "message": {"text": failure.message}});
+        .map(|failure| ("error", failure))
+        .chain(
+            report
+                .analysis_warnings
+                .iter()
+                .map(|warning| ("warning", warning)),
+        )
+        .map(|(level, failure)| {
+            let mut item = json!({"level": level, "message": {"text": failure.message}});
             if let Some(path) = &failure.path {
                 item["locations"] = json!([{"physicalLocation": {"artifactLocation": {
                     "uri": relative_uri(path), "uriBaseId": "%SRCROOT%"

@@ -51,6 +51,8 @@ pub struct ProjectConfig {
     #[serde(default)]
     pub thymeleaf_sanitizers: Vec<String>,
     #[serde(default)]
+    pub thymeleaf_partial_parsing: PartialParsing,
+    #[serde(default)]
     rules: BTreeMap<String, RuleOverride>,
 }
 
@@ -62,6 +64,10 @@ pub struct FormatConfig {
     pub javascript_indent: u8,
     pub line_ending: LineEnding,
     pub max_blank_lines: u8,
+    pub indent_style: IndentStyle,
+    pub control_spacing: ControlSpacing,
+    include_minified: bool,
+    exclude: Vec<PathGlob>,
     overrides: Vec<FormatOverride>,
 }
 
@@ -70,6 +76,8 @@ pub struct FormatConfig {
 struct FormatOverride {
     files: Vec<PathGlob>,
     indent_size: Option<u8>,
+    indent_style: Option<IndentStyle>,
+    control_spacing: Option<ControlSpacing>,
     line_ending: Option<LineEnding>,
     max_blank_lines: Option<u8>,
 }
@@ -77,6 +85,8 @@ struct FormatOverride {
 #[derive(Clone, Copy)]
 pub struct FileFormat {
     pub indent_size: u8,
+    pub indent_style: IndentStyle,
+    pub control_spacing: ControlSpacing,
     pub line_ending: LineEnding,
     pub max_blank_lines: u8,
 }
@@ -143,6 +153,16 @@ impl ProjectConfig {
 }
 
 impl FormatConfig {
+    pub fn excludes_file(&self, file: &Path) -> bool {
+        self.exclude.iter().any(|glob| glob.0.is_match(file))
+            || !self.include_minified
+                && SourceLanguage::of(file) == Some(SourceLanguage::Javascript)
+                && file
+                    .file_stem()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.ends_with(".min"))
+    }
+
     pub fn for_file(&self, file: &Path, language: SourceLanguage) -> FileFormat {
         let mut settings = FileFormat {
             indent_size: match language {
@@ -152,10 +172,15 @@ impl FormatConfig {
             },
             line_ending: self.line_ending,
             max_blank_lines: self.max_blank_lines,
+            indent_style: self.indent_style,
+            control_spacing: self.control_spacing,
         };
         for entry in &self.overrides {
             if entry.files.iter().any(|glob| glob.0.is_match(file)) {
                 settings.indent_size = entry.indent_size.unwrap_or(settings.indent_size);
+                settings.indent_style = entry.indent_style.unwrap_or(settings.indent_style);
+                settings.control_spacing =
+                    entry.control_spacing.unwrap_or(settings.control_spacing);
                 settings.line_ending = entry.line_ending.unwrap_or(settings.line_ending);
                 settings.max_blank_lines =
                     entry.max_blank_lines.unwrap_or(settings.max_blank_lines);
@@ -173,6 +198,30 @@ pub enum LineEnding {
     Crlf,
 }
 
+#[derive(Clone, Copy, Default, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum IndentStyle {
+    #[default]
+    Spaces,
+    Tabs,
+}
+
+#[derive(Clone, Copy, Default, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ControlSpacing {
+    #[default]
+    Space,
+    None,
+}
+
+#[derive(Clone, Copy, Default, PartialEq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PartialParsing {
+    #[default]
+    Error,
+    Warning,
+}
+
 impl Default for FormatConfig {
     fn default() -> Self {
         Self {
@@ -181,6 +230,10 @@ impl Default for FormatConfig {
             javascript_indent: 2,
             line_ending: LineEnding::Lf,
             max_blank_lines: 1,
+            indent_style: IndentStyle::Spaces,
+            control_spacing: ControlSpacing::Space,
+            include_minified: false,
+            exclude: Vec::new(),
             overrides: Vec::new(),
         }
     }
@@ -231,8 +284,8 @@ impl TryFrom<IgnoreEntry> for Ignore {
                     "Ignore fingerprint for {path} must be a lowercase SHA-256 digest"
                 ));
             }
-            if rule.is_none() {
-                return Err(format!("Ignore fingerprint for {path} requires a rule"));
+            if rule.as_deref().is_none_or(|rule| rule.contains('*')) {
+                return Err(format!("Ignore fingerprint for {path} requires a rule ID"));
             }
             IgnoreSelector::Finding { path, fingerprint }
         } else {
@@ -247,10 +300,25 @@ impl TryFrom<IgnoreEntry> for Ignore {
     }
 }
 
+fn ignore_rule_matches(pattern: &str, rule: &str) -> bool {
+    if let Some(prefix) = pattern
+        .strip_suffix(".*")
+        .filter(|prefix| !prefix.is_empty())
+    {
+        rule.strip_prefix(prefix)
+            .is_some_and(|rest| rest.starts_with('.'))
+    } else {
+        pattern == rule
+    }
+}
+
 impl Ignore {
     pub fn matches_path(&self, path: &Path, rule: &str) -> bool {
         matches!(&self.selector, IgnoreSelector::Path(pattern) if pattern.0.is_match(path))
-            && self.rule.as_deref().is_none_or(|selected| selected == rule)
+            && self
+                .rule
+                .as_deref()
+                .is_none_or(|selected| ignore_rule_matches(selected, rule))
     }
 
     pub fn finding(&self) -> Option<(&str, &str, &str)> {
@@ -655,7 +723,13 @@ impl Registry {
             .iter()
             .filter_map(|entry| entry.rule.as_deref())
         {
-            registry.rule(rule).wrap_err("Invalid ignore rule")?;
+            if !registry
+                .rules
+                .keys()
+                .any(|id| ignore_rule_matches(rule, id))
+            {
+                bail!("Invalid ignore rule: Unknown rule or rule family {rule}");
+            }
         }
         Ok(registry)
     }

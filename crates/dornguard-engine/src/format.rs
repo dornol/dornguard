@@ -4,7 +4,7 @@ use std::fs;
 use std::ops::Range;
 use std::path::Path;
 
-use dornguard_config::{FileFormat, FormatConfig, LineEnding, Rule};
+use dornguard_config::{ControlSpacing, FileFormat, FormatConfig, IndentStyle, LineEnding, Rule};
 use dornguard_core::{Diagnostic, EngineName, Outcome, SourceEdit, SourceLanguage, fingerprint};
 use tree_sitter::{Node, Parser};
 
@@ -154,7 +154,17 @@ fn check_layout(
                 engine: EngineName::Builtin,
                 severity: rule.severity,
                 message: detail.unwrap_or_else(|| rule.description.clone()),
-                fix: rule.fix.clone(),
+                fix: match id {
+                    "format.control-spacing"
+                        if matches!(settings.control_spacing, ControlSpacing::None) =>
+                    {
+                        "Put the opening parenthesis directly after the keyword.".to_owned()
+                    }
+                    "format.indentation" if matches!(settings.indent_style, IndentStyle::Tabs) => {
+                        "Indent each block level by one tab.".to_owned()
+                    }
+                    _ => rule.fix.clone(),
+                },
                 edit: if root.has_error() {
                     None
                 } else {
@@ -178,6 +188,14 @@ fn check_layout(
         }
     };
 
+    let (indent_byte, width, indent_unit) = match settings.indent_style {
+        IndentStyle::Spaces => (b' ', usize::from(settings.indent_size), "spaces"),
+        IndentStyle::Tabs => (b'\t', 1, "tabs"),
+    };
+    let control_spacing = match settings.control_spacing {
+        ControlSpacing::Space => " ",
+        ControlSpacing::None => "",
+    };
     let mut expected = BTreeMap::new();
     let mut literals = Vec::new();
     let mut cursor = root.walk();
@@ -191,14 +209,7 @@ fn check_layout(
             continue;
         }
         if node == root || !node.has_error() && is_block(node.kind()) {
-            collect_indentation(
-                node,
-                root,
-                source,
-                &lines,
-                usize::from(settings.indent_size),
-                &mut expected,
-            );
+            collect_indentation(node, root, source, &lines, width, &mut expected);
         }
         if !node.is_named()
             && matches!(
@@ -215,13 +226,15 @@ fn check_layout(
         {
             let tail = &source[node.end_byte()..];
             let rest = tail.trim_start_matches([' ', '\t', '\r', '\n']);
-            if rest.starts_with('(') && &tail[..tail.len() - rest.len()] != " " {
+            if rest.starts_with('(') && &tail[..tail.len() - rest.len()] != control_spacing {
                 let row = line_index(&lines, node.start_byte());
                 emit(
                     "format.control-spacing",
                     row,
                     node.start_byte() - lines[row].start,
-                    None,
+                    matches!(settings.control_spacing, ControlSpacing::None).then(|| {
+                        "Unexpected whitespace before the opening parenthesis.".to_owned()
+                    }),
                 );
             }
         }
@@ -258,12 +271,12 @@ fn check_layout(
             continue;
         }
         let prefix = leading_indent(line.text);
-        if prefix.contains('\t') {
+        if prefix.bytes().any(|byte| byte != indent_byte) {
             emit(
                 "format.indentation",
                 row,
                 0,
-                Some("Use spaces for indentation.".into()),
+                Some(format!("Use {indent_unit} for indentation.")),
             );
         } else if let Some(&indent) = expected.get(&row)
             && prefix.len() != indent
@@ -273,7 +286,7 @@ fn check_layout(
                 row,
                 prefix.len(),
                 Some(format!(
-                    "Expected {indent} spaces of indentation, found {}.",
+                    "Expected {indent} {indent_unit} of indentation, found {}.",
                     prefix.len()
                 )),
             );

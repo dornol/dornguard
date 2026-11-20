@@ -73,6 +73,8 @@ dornguard doctor
 The check exit codes are 0 for success, 1 for a policy violation, 2 for
 configuration errors, 3 for engine errors, and 4 for preparation errors.
 Check reports include per-rule counts and identify incomplete analysis.
+Projects can allow partial Thymeleaf parsing with exit code 0 and an incomplete
+report. See [Thymeleaf parsing settings](docs/web-checks.md#partial-thymeleaf-parsing).
 In a configured project, `dornguard doctor` checks the engines selected by its
 profiles, including the ArchUnit runner protocol when architecture checks apply.
 JSON includes the affected rules and available file or module information for

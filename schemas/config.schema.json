@@ -19,6 +19,7 @@
       "type": "array",
       "items": { "type": "string", "minLength": 1 }
     },
+    "thymeleaf_partial_parsing": { "enum": ["error", "warning"], "default": "error" },
     "thymeleaf_sanitizers": {
       "type": "array",
       "items": { "type": "string", "pattern": "^@[A-Za-z_$][A-Za-z0-9_$]*\\.[A-Za-z_$][A-Za-z0-9_$]*$" }
@@ -36,6 +37,10 @@
         "javascript_indent": { "type": "integer", "minimum": 1, "maximum": 16, "default": 2 },
         "line_ending": { "enum": ["lf", "crlf"], "default": "lf" },
         "max_blank_lines": { "type": "integer", "minimum": 0, "maximum": 255, "default": 1 },
+        "indent_style": { "enum": ["spaces", "tabs"], "default": "spaces" },
+        "control_spacing": { "enum": ["space", "none"], "default": "space" },
+        "include_minified": { "type": "boolean", "default": false },
+        "exclude": { "type": "array", "items": { "$ref": "#/$defs/sourceGlob" } },
         "overrides": {
           "type": "array",
           "items": {

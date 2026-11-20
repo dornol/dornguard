@@ -72,6 +72,7 @@ fn scope_label(scope: Scope) -> &'static str {
 fn write_summary(report: &CheckReport, writer: &mut impl Write) -> io::Result<()> {
     let status = match report.status {
         Status::Passed => "PASSED",
+        Status::Incomplete => "INCOMPLETE",
         Status::NoChanges => "NO CHANGES",
         Status::Violations => "FAILED",
         Status::ConfigurationError => "CONFIGURATION ERROR",
@@ -106,6 +107,21 @@ fn write_summary(report: &CheckReport, writer: &mut impl Write) -> io::Result<()
             filter.omitted
         )?;
     }
+    for (label, paths) in [
+        (
+            "compiled classpath",
+            &report.pmd_coverage.compiled_classpath,
+        ),
+        ("source only", &report.pmd_coverage.source_only),
+    ] {
+        if let Some(first) = paths.first() {
+            writeln!(
+                writer,
+                "  PMD {label}: {} files (first: {first})",
+                paths.len()
+            )?;
+        }
+    }
     for note in &report.analysis_notes {
         writeln!(writer, "  {note}")?;
     }
@@ -124,7 +140,20 @@ fn write_rule_counts(report: &CheckReport, writer: &mut impl Write) -> io::Resul
 }
 
 fn write_failures(report: &CheckReport, writer: &mut impl Write) -> io::Result<()> {
-    for failure in &report.failures {
+    for (warning, failure) in report
+        .failures
+        .iter()
+        .map(|failure| (false, failure))
+        .chain(
+            report
+                .analysis_warnings
+                .iter()
+                .map(|warning| (true, warning)),
+        )
+    {
+        if warning {
+            write!(writer, "Warning: ")?;
+        }
         match failure.stage {
             Some(FailureStage::Engine) => {
                 if let Some(engine) = failure.engine {

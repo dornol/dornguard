@@ -6,8 +6,8 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand, ValueEnum};
 use dornguard_config::{
-    BUILTIN_VERSION, CONFIG_FILE, DEFAULT_CONFIG, FLYWAY_RULE, JPA_RESPONSE_RULE, ProjectConfig,
-    Registry,
+    BUILTIN_VERSION, CONFIG_FILE, DEFAULT_CONFIG, FLYWAY_RULE, JPA_RESPONSE_RULE, PartialParsing,
+    ProjectConfig, Registry, Rule,
 };
 use dornguard_core::{EngineName, Failure, FailureKind, Outcome, Scope, SourceLanguage};
 use dornguard_engine::{
@@ -152,9 +152,8 @@ version: 1
 profiles: [spring-boot, format]
 rules:
   java.stdout-usage: { severity: warning }
-exclude:
-  - "**/*.min.js"
 format:
+  exclude: ["src/main/resources/static/vendor/**"]
   overrides:
     - files: ["src/main/resources/static/legacy/**/*.js"]
       indent_size: 4
@@ -167,7 +166,10 @@ Choose profiles with dornguard profiles list and inspect them with dornguard pro
 Use rules to change severity or disable an active rule with enabled: false.
 Use forward slashes in paths relative to the directory containing .dornguard.yml.
 Use exclude to skip source analysis. Use ignore to suppress findings in a file, directory
-or glob. Omit rule to suppress all findings in that path. Every ignore entry requires a reason.
+or glob. Use rule: "format.*" to select the formatting rule family. Every ignore entry
+requires a reason.
+For the thymeleaf profile, set thymeleaf_partial_parsing: warning to tolerate partial
+template parsing while reporting incomplete coverage.
 
 Run dornguard check --format agent to verify how the configuration applies."#
     )]
@@ -434,7 +436,11 @@ async fn dispatch(action: Action) -> Result<u8> {
             if !report.complete {
                 dornguard_report::write_text(&report, &mut io::stderr().lock())
                     .into_diagnostic()?;
-                return Ok(report.exit_code);
+                return Ok(if report.exit_code == 0 {
+                    3
+                } else {
+                    report.exit_code
+                });
             }
             if !matches!(report.scope, Scope::Full) {
                 bail!("Run baseline create at the project root");
@@ -522,7 +528,10 @@ async fn dispatch(action: Action) -> Result<u8> {
                     println!("{}  {}\nFix: {}", rule.id, rule.description, rule.fix);
                     let options = match rule.id.as_str() {
                         "format.indentation" => Some(
-                            "format.java_indent (4), format.kotlin_indent (4), format.javascript_indent (2), format.overrides[].indent_size",
+                            "format.indent_style (spaces), format.java_indent (4), format.kotlin_indent (4), format.javascript_indent (2), format.overrides[].indent_style and indent_size",
+                        ),
+                        "format.control-spacing" => Some(
+                            "format.control_spacing (space), format.overrides[].control_spacing",
                         ),
                         "format.line-ending" => {
                             Some("format.line_ending (lf), format.overrides[].line_ending")
@@ -545,7 +554,7 @@ async fn dispatch(action: Action) -> Result<u8> {
                     }
                     if rule.is_format_rule() {
                         println!(
-                            "Use exclude for source globs or check --only-profile format to run formatting alone."
+                            "Use format.exclude for formatting-only globs, format.include_minified to check minified JavaScript, or check --only-profile format to run formatting alone."
                         );
                     }
                 }
@@ -923,7 +932,9 @@ async fn run_source_engines(
     java_source: Option<u16>,
     required: bool,
 ) -> Outcome {
-    let check_group = async |engine, files: Vec<PathBuf>| {
+    let warn_on_thymeleaf_partial =
+        !required && config.thymeleaf_partial_parsing == PartialParsing::Warning;
+    let check_group = async |engine, files: Vec<PathBuf>, accepts_rule: fn(&Rule) -> bool| {
         let languages = files
             .iter()
             .filter_map(|path| SourceLanguage::of(path))
@@ -932,7 +943,9 @@ async fn run_source_engines(
             .iter()
             .copied()
             .filter(|rule| {
-                rule.engine == engine && languages.iter().any(|&language| rule.applies_to(language))
+                rule.engine == engine
+                    && accepts_rule(rule)
+                    && languages.iter().any(|&language| rule.applies_to(language))
             })
             .collect::<Vec<_>>();
         if rules.is_empty() {
@@ -954,7 +967,7 @@ async fn run_source_engines(
         };
         match engine {
             EngineName::Semgrep => {
-                Semgrep::with_thymeleaf_sanitizers(&config.thymeleaf_sanitizers)
+                Semgrep::with_thymeleaf(&config.thymeleaf_sanitizers, warn_on_thymeleaf_partial)
                     .check(request)
                     .await
             }
@@ -985,20 +998,35 @@ async fn run_source_engines(
             &[SourceLanguage::Javascript],
             &[SourceLanguage::Jsp],
         ] {
-            let files = files
+            let files: Vec<_> = files
                 .iter()
                 .filter(|path| SourceLanguage::of(path).is_some_and(|kind| group.contains(&kind)))
                 .cloned()
                 .collect();
-            outcome.merge(check_group(EngineName::Semgrep, files).await);
+            if warn_on_thymeleaf_partial && group == [SourceLanguage::Template] {
+                outcome.merge(
+                    check_group(EngineName::Semgrep, files.clone(), |rule| {
+                        rule.id.starts_with("thymeleaf.")
+                    })
+                    .await,
+                );
+                outcome.merge(
+                    check_group(EngineName::Semgrep, files, |rule| {
+                        !rule.id.starts_with("thymeleaf.")
+                    })
+                    .await,
+                );
+            } else {
+                outcome.merge(check_group(EngineName::Semgrep, files, |_| true).await);
+            }
         }
         outcome
     };
     let (mut outcome, pmd, eslint, builtin) = tokio::join!(
         semgrep,
-        check_group(EngineName::Pmd, files.to_vec()),
-        check_group(EngineName::Eslint, files.to_vec()),
-        check_group(EngineName::Builtin, files.to_vec()),
+        check_group(EngineName::Pmd, files.to_vec(), |_| true),
+        check_group(EngineName::Eslint, files.to_vec(), |_| true),
+        check_group(EngineName::Builtin, files.to_vec(), |_| true),
     );
     outcome.merge(pmd);
     outcome.merge(eslint);

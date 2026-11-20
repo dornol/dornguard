@@ -50,8 +50,11 @@ can contain diagnostics from the
 engines that produced results. Exit codes retain their documented meanings.
 
 Version 0.0.4 adds `rule_counts` with error and warning counts by rule and
-optional `analysis_notes` describing PMD classpath use. When organization
-policy runs, reports include `project_scope` and `organization_scope`. The
+optional `analysis_notes` describing PMD classpath use. In newer builds,
+`pmd_coverage.compiled_classpath` and `pmd_coverage.source_only` list the files
+PMD scanned in each mode. Tolerated partial Thymeleaf parsing appears in
+`analysis_warnings` and sets `complete` to false. When organization policy
+runs, reports include `project_scope` and `organization_scope`. The
 combined `scope` is full. SARIF exposes the same scopes as `projectScope`
 and `organizationScope`. ArchUnit
 reports one finding per module, rule, origin class and forbidden target class.

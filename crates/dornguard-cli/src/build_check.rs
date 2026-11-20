@@ -370,10 +370,22 @@ pub async fn check(check: Check<'_>) -> Outcome {
                     .iter()
                     .any(|path| SourceLanguage::of(path).is_some_and(jvm)))
         {
-            let all_files = match module_files(build_name, sources, root, module, false, jvm) {
+            let mut all_files = match module_files(build_name, sources, root, module, false, jvm) {
                 Ok(files) => files,
                 Err(error) => return preparation_error(error),
             };
+            // package-info.java need not emit bytecode. Keep it in source checks.
+            let has_arch_sources = !all_files.is_empty();
+            let has_class_sources = all_files.iter().any(|file| {
+                file.file_name()
+                    .is_some_and(|name| name != "package-info.java")
+            });
+            all_files.retain(|file| {
+                file.file_name()
+                    .is_none_or(|name| name != "package-info.java")
+                    || has_class_sources && module.compile_sources.contains(&root.join(file))
+            });
+            excluded_source |= has_arch_sources && all_files.is_empty();
             if !all_files.is_empty() {
                 if compile_failed && needs_compile(rules) {
                     outcome.record_coverage(&all_files);

@@ -8,7 +8,7 @@ use crate::java_names::JavaNames;
 use crate::source::Sources;
 use crate::thymeleaf::SanitizedOutput;
 use dornguard_config::Rule;
-use dornguard_core::{Diagnostic, EngineName, Outcome};
+use dornguard_core::{Diagnostic, EngineName, Outcome, SourceLanguage};
 use miette::{IntoDiagnostic, Result, WrapErr};
 use serde::Deserialize;
 use tokio::time::Instant;
@@ -21,6 +21,7 @@ use crate::{
 pub struct Semgrep {
     timeout: Duration,
     thymeleaf_sanitizers: Vec<String>,
+    warn_on_thymeleaf_partial: bool,
 }
 
 impl Default for Semgrep {
@@ -28,14 +29,16 @@ impl Default for Semgrep {
         Self {
             timeout: Duration::from_secs(120),
             thymeleaf_sanitizers: Vec::new(),
+            warn_on_thymeleaf_partial: false,
         }
     }
 }
 
 impl Semgrep {
-    pub fn with_thymeleaf_sanitizers(sanitizers: &[String]) -> Self {
+    pub fn with_thymeleaf(sanitizers: &[String], warn_on_thymeleaf_partial: bool) -> Self {
         Self {
             thymeleaf_sanitizers: sanitizers.to_vec(),
+            warn_on_thymeleaf_partial,
             ..Self::default()
         }
     }
@@ -57,6 +60,12 @@ impl Semgrep {
         check_version(EngineName::Semgrep, request.root, deadline).await?;
 
         let mut sanitized = SanitizedOutput::new(&self.thymeleaf_sanitizers);
+        let warn_on_thymeleaf_partial = self.warn_on_thymeleaf_partial
+            && !request.required
+            && request
+                .rules
+                .iter()
+                .all(|rule| rule.id.starts_with("thymeleaf."));
         for batch in request.files.chunk_by(budgeted_batch()) {
             let mut scan = command(EngineName::Semgrep, request.root)?;
             scan.args([
@@ -78,15 +87,20 @@ impl Semgrep {
             .args(batch);
             let output = run_command(EngineName::Semgrep, &mut scan, deadline).await?;
             let first_failure = outcome.failures.len();
+            let first_warning = outcome.analysis_warnings.len();
             normalize(
                 &output,
                 request.root,
                 batch,
                 &rules,
                 &mut sanitized,
+                warn_on_thymeleaf_partial,
                 outcome,
             );
-            for failure in &mut outcome.failures[first_failure..] {
+            for failure in outcome.failures[first_failure..]
+                .iter_mut()
+                .chain(&mut outcome.analysis_warnings[first_warning..])
+            {
                 failure.file_count = Some(batch.len());
             }
         }
@@ -163,6 +177,7 @@ fn normalize(
     batch: &[PathBuf],
     rules: &BTreeMap<&str, &Rule>,
     sanitized: &mut SanitizedOutput<'_>,
+    warn_on_thymeleaf_partial: bool,
     outcome: &mut Outcome,
 ) {
     let Ok(scan): std::result::Result<Scan, _> = serde_json::from_slice(&output.stdout) else {
@@ -178,6 +193,7 @@ fn normalize(
     };
     let expected: BTreeSet<&Path> = batch.iter().map(PathBuf::as_path).collect();
     let mut failed_files = BTreeSet::new();
+    let mut warning_files = BTreeSet::new();
     let mut batch_failed = !output.status.success() && scan.errors.is_empty();
     if batch_failed {
         fail(
@@ -208,6 +224,15 @@ fn normalize(
         }
         if let Some(path) = path {
             failure.path = Some(display_path(&path));
+            if warn_on_thymeleaf_partial
+                && kind == "PartialParsing"
+                && SourceLanguage::of(&path) == Some(SourceLanguage::Template)
+            {
+                warning_files.insert(path.clone());
+                failed_files.insert(path);
+                outcome.analysis_warnings.push(failure);
+                continue;
+            }
             failed_files.insert(path);
         } else {
             batch_failed = true;
@@ -233,17 +258,17 @@ fn normalize(
         .filter_map(|path| relative_path(root, path))
         .filter(|path| expected.contains(path.as_path()))
         .collect();
-    if scanned.len() != expected.len() {
-        let missing = expected
-            .iter()
-            .find(|path| !scanned.contains(**path))
-            .map_or_else(String::new, |path| path.display().to_string());
+    let mut missing = expected
+        .iter()
+        .filter(|path| !scanned.contains(**path) && !warning_files.contains(**path));
+    if let Some(first) = missing.next() {
         fail(
             outcome,
             EngineName::Semgrep,
             format!(
-                "Semgrep skipped {} required files (first: {missing})",
-                expected.len() - scanned.len()
+                "Semgrep skipped {} required files (first: {})",
+                missing.count() + 1,
+                first.display()
             ),
         );
     }

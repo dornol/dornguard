@@ -215,6 +215,7 @@ impl Failure {
 #[serde(rename_all = "snake_case")]
 pub enum Status {
     Passed,
+    Incomplete,
     NoChanges,
     Violations,
     ConfigurationError,
@@ -236,6 +237,8 @@ pub struct Outcome {
     pub diagnostics: Vec<Diagnostic>,
     pub failures: Vec<Failure>,
     pub analysis_notes: BTreeSet<String>,
+    pub analysis_warnings: Vec<Failure>,
+    pub pmd_coverage: PmdCoverage,
     pub scanned_files: BTreeSet<PathBuf>,
     pub requested_files: BTreeSet<PathBuf>,
     pub incomplete_files: BTreeSet<PathBuf>,
@@ -253,6 +256,13 @@ impl Outcome {
         self.diagnostics.extend(other.diagnostics);
         self.failures.extend(other.failures);
         self.analysis_notes.extend(other.analysis_notes);
+        self.analysis_warnings.extend(other.analysis_warnings);
+        self.pmd_coverage
+            .compiled_classpath
+            .extend(other.pmd_coverage.compiled_classpath);
+        self.pmd_coverage
+            .source_only
+            .extend(other.pmd_coverage.source_only);
         self.scanned_files.extend(other.scanned_files);
         self.requested_files.extend(other.requested_files);
         self.incomplete_files.extend(other.incomplete_files);
@@ -273,6 +283,8 @@ impl Outcome {
         self.diagnostics.dedup();
         self.failures.sort();
         self.failures.dedup();
+        self.analysis_warnings.sort();
+        self.analysis_warnings.dedup();
         let (status, exit_code) = match self.failures.last().map(|failure| failure.kind) {
             Some(FailureKind::ConfigurationError) => (Status::ConfigurationError, 2),
             Some(FailureKind::PreparationError) => (Status::PreparationError, 4),
@@ -284,6 +296,7 @@ impl Outcome {
             {
                 (Status::Violations, 1)
             }
+            None if !self.analysis_warnings.is_empty() => (Status::Incomplete, 0),
             None if self.no_changes => (Status::NoChanges, 0),
             None => (Status::Passed, 0),
         };
@@ -299,7 +312,7 @@ impl Outcome {
             version: 3,
             status,
             exit_code,
-            complete: self.failures.is_empty(),
+            complete: self.failures.is_empty() && self.analysis_warnings.is_empty(),
             scope: self.scope,
             project_scope: self.project_scope,
             organization_scope: self.organization_scope,
@@ -312,6 +325,8 @@ impl Outcome {
             suppressed_count: self.suppressed_count,
             organization_policy_enforced: self.organization_policy_enforced,
             analysis_notes: self.analysis_notes,
+            analysis_warnings: self.analysis_warnings,
+            pmd_coverage: self.pmd_coverage,
             rule_counts,
             report_filter: None,
             diagnostics: self.diagnostics,
@@ -339,11 +354,27 @@ pub struct CheckReport {
     pub organization_policy_enforced: bool,
     #[serde(skip_serializing_if = "BTreeSet::is_empty")]
     pub analysis_notes: BTreeSet<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub analysis_warnings: Vec<Failure>,
+    #[serde(skip_serializing_if = "PmdCoverage::is_empty")]
+    pub pmd_coverage: PmdCoverage,
     pub rule_counts: BTreeMap<String, RuleCount>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub report_filter: Option<ReportFilter>,
     pub diagnostics: Vec<Diagnostic>,
     pub failures: Vec<Failure>,
+}
+
+#[derive(Default, Serialize)]
+pub struct PmdCoverage {
+    pub compiled_classpath: BTreeSet<String>,
+    pub source_only: BTreeSet<String>,
+}
+
+impl PmdCoverage {
+    fn is_empty(&self) -> bool {
+        self.compiled_classpath.is_empty() && self.source_only.is_empty()
+    }
 }
 
 #[derive(Serialize)]

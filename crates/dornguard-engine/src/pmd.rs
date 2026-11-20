@@ -87,17 +87,15 @@ pub struct Pmd<'a> {
 impl Engine for Pmd<'_> {
     async fn check(&self, request: Request<'_>) -> Outcome {
         let mut outcome = Outcome::default();
-        if request.rules.iter().any(|rule| rule.uses_pmd_classpath()) {
-            let note = if self.classpath.is_some() {
-                "PMD Java analysis with the compiled project classpath."
-            } else {
-                "PMD Java analysis without a project classpath. Findings that require project type resolution may be missed."
-            };
-            outcome.analysis_notes.insert(note.to_owned());
-        }
         if let Err(error) = scan(request, self, &mut outcome).await {
             fail(&mut outcome, ENGINE, format!("{error:#}"));
         }
+        let coverage = if self.classpath.is_some() {
+            &mut outcome.pmd_coverage.compiled_classpath
+        } else {
+            &mut outcome.pmd_coverage.source_only
+        };
+        coverage.extend(outcome.scanned_files.iter().map(|path| display_path(path)));
         request.mark_incomplete(&mut outcome);
         outcome
     }

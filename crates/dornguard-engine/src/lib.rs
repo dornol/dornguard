@@ -43,7 +43,11 @@ pub struct Request<'a> {
 
 impl Request<'_> {
     fn mark_incomplete(&self, outcome: &mut Outcome) {
-        for failure in &mut outcome.failures {
+        for failure in outcome
+            .failures
+            .iter_mut()
+            .chain(&mut outcome.analysis_warnings)
+        {
             failure.file_count.get_or_insert(self.files.len());
             if failure.rule_ids.is_empty() {
                 failure.set_rules(self.rules.iter().map(|rule| rule.id.as_str()));
@@ -101,7 +105,14 @@ pub async fn check_builtin(request: Request<'_>, settings: &FormatConfig) -> Out
         }
     }
     if !format_rules.is_empty() {
+        let files = request
+            .files
+            .iter()
+            .filter(|path| !settings.excludes_file(path))
+            .cloned()
+            .collect::<Vec<_>>();
         let format_request = Request {
+            files: &files,
             rules: &format_rules,
             ..request
         };

@@ -117,21 +117,26 @@ format:
 
 Use the existing `rules` section to change the severity or disable individual
 [formatting rules](profiles.md#source-formatting). Override selected settings
-by file and exclude bundled or third-party sources with project-relative globs.
+by file. The format profile skips `*.min.js`, `*.min.mjs`, and `*.min.cjs`
+by default. Set `format.include_minified: true` to format-check them. Use
+`format.exclude` to skip only formatting for more paths.
 
 ```yaml
-exclude:
-  - "**/*.min.js"
-  - "src/main/resources/static/vendor/**"
 format:
+  exclude: ["src/main/resources/static/vendor/**"]
   overrides:
     - files: ["src/main/resources/static/legacy/**/*.js"]
-      indent_size: 4
+      indent_style: tabs
+      control_spacing: none
 ```
+
+The default `indent_style` is `spaces`. With `tabs`, each block level uses
+one tab. `control_spacing` accepts `space` for `if (...)` and `none` for
+`if(...)`. Both options can also be set at the top level of `format`.
 
 Use forward slashes. A single `*` stays within one path segment and `**` can
 span directories. The last matching override wins for each field it sets.
-`exclude` applies to source checks. Architecture and migration checks still
+Top-level `exclude` applies to source checks. Architecture and migration checks still
 use their build and Git scopes, respectively. A tracked source file remains
 eligible even if it matches `.gitignore`.
 
@@ -144,15 +149,18 @@ and final-newline checks.
 Use `ignore` to suppress results for a file or directory. A trailing slash
 matches all files under a directory, including nested directories. A glob
 such as `legacy/**/*.java` also works. Include `rule` to suppress only
-findings for that rule. Every entry requires a reason.
+findings for that rule. Use a quoted pattern such as `"format.*"` to
+suppress a rule family and keep other findings visible. Omitting `rule`
+suppresses findings from all rules at that path. Each entry requires a reason.
+Fingerprint entries use an exact rule ID.
 
 ```yaml
 ignore:
   - path: src/main/resources/static/vendor/
     reason: "Third-party files maintained upstream."
   - path: src/main/resources/static/legacy/**
-    rule: format.indentation
-    reason: "Preserve indentation until these files are migrated."
+    rule: "format.*"
+    reason: "Preserve formatting until these files are migrated."
   - path: docs/scripts/JasyptTool.java
     rule: java.stdout-usage
     reason: "The calling script reads standard output."

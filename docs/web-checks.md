@@ -50,3 +50,19 @@ inline script blocks.
 Exit code `0` means the checks passed, `1` means findings were reported,
 and `2` means the command could not complete. Use the final page URL
 when the server redirects. [CSP Level 3](https://www.w3.org/TR/CSP3/)
+
+## Partial Thymeleaf parsing
+
+DornGuard reports Semgrep partial parsing as incomplete analysis. To let a
+project check exit successfully when the only analysis problems are partial
+parses for Thymeleaf rules, set the following option.
+
+```yaml
+thymeleaf_partial_parsing: warning
+```
+
+The report still has `complete: false` and lists the affected files and
+rules in `analysis_warnings`. The status is `incomplete` with exit code 0
+when there are no blocking findings or other failures. Confirmed violations
+and incomplete results from HTML or organization rules still block the check.
+Baseline creation requires complete analysis.
