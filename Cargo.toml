@@ -27,3 +27,6 @@ dornguard-core = { version = "0.0.5", path = "crates/dornguard-core" }
 dornguard-engine = { version = "0.0.5", path = "crates/dornguard-engine" }
 dornguard-gradle = { version = "0.0.5", path = "crates/dornguard-gradle" }
 dornguard-report = { version = "0.0.5", path = "crates/dornguard-report" }
+
+[workspace.lints.clippy]
+unwrap_used = "warn"

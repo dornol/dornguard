@@ -15,3 +15,6 @@ tokio.workspace = true
 
 [dev-dependencies]
 dunce.workspace = true
+
+[lints]
+workspace = true

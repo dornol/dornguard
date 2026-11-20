@@ -97,16 +97,17 @@ impl Reactor {
         let components: Vec<_> = self
             .packages
             .keys()
-            .map(|(name, version)| {
-                let (group, artifact) = name.split_once(':').expect("validated Maven coordinate");
+            .filter_map(|(name, version)| {
+                // `MavenNode::coordinate` only admits IDs without ':'.
+                let (group, artifact) = name.split_once(':')?;
                 let purl = format!("pkg:maven/{group}/{artifact}@{}", purl_version(version));
-                json!({
+                Some(json!({
                     "type": "library",
                     "group": group,
                     "name": artifact,
                     "version": version,
                     "purl": purl,
-                })
+                }))
             })
             .collect();
         json!({

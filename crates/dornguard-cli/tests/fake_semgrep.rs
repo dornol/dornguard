@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used)]
 //! Runs `dornguard check` against a scripted stand-in for Semgrep so the
 //! engine integration (version gate, JSON normalization, failure reporting)
 //! is covered without installing the real engine.

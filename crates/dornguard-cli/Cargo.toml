@@ -29,3 +29,6 @@ tracing-subscriber.workspace = true
 [[bin]]
 name = "dornguard"
 path = "src/main.rs"
+
+[lints]
+workspace = true

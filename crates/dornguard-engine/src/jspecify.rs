@@ -60,7 +60,7 @@ fn check_file(
     let (source, tree) = parse(parser, request.root, file)?;
     let unit = tree.root_node();
     let names = Names::new(unit, &source);
-    let directory = file.parent().expect("source paths are project-relative");
+    let directory = file.parent().unwrap_or(Path::new(""));
     let package = descriptor(
         parser,
         descriptors,
