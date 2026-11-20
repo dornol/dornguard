@@ -11,6 +11,22 @@
     "java_target": { "type": "integer", "minimum": 1, "maximum": 65535 },
     "java_source": { "type": "integer", "minimum": 3, "maximum": 27 },
     "allow_logged_exceptions": { "type": "boolean", "default": false },
+    "java_resource_owners": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "java_managed_resource_factories": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "thymeleaf_sanitizers": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^@[A-Za-z_$][A-Za-z0-9_$]*\\.[A-Za-z_$][A-Za-z0-9_$]*$" }
+    },
+    "exclude": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/sourceGlob" }
+    },
     "format": {
       "type": "object",
       "additionalProperties": false,
@@ -19,7 +35,25 @@
         "kotlin_indent": { "type": "integer", "minimum": 1, "maximum": 16, "default": 4 },
         "javascript_indent": { "type": "integer", "minimum": 1, "maximum": 16, "default": 2 },
         "line_ending": { "enum": ["lf", "crlf"], "default": "lf" },
-        "max_blank_lines": { "type": "integer", "minimum": 0, "maximum": 255, "default": 1 }
+        "max_blank_lines": { "type": "integer", "minimum": 0, "maximum": 255, "default": 1 },
+        "overrides": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["files"],
+            "properties": {
+              "files": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "$ref": "#/$defs/sourceGlob" }
+              },
+              "indent_size": { "type": "integer", "minimum": 1, "maximum": 16 },
+              "line_ending": { "enum": ["lf", "crlf"] },
+              "max_blank_lines": { "type": "integer", "minimum": 0, "maximum": 255 }
+            }
+          }
+        }
       }
     },
     "ignore": {
@@ -27,7 +61,8 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["path", "rule", "fingerprint", "reason"],
+        "required": ["path", "reason"],
+        "dependentRequired": { "fingerprint": ["rule"] },
         "properties": {
           "path": { "type": "string", "minLength": 1 },
           "rule": { "type": "string", "minLength": 1 },
@@ -99,6 +134,7 @@
     }
   },
   "$defs": {
+    "sourceGlob": { "type": "string", "minLength": 1 },
     "profiles": {
       "type": "array",
       "items": { "type": "string" }

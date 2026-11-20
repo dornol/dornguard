@@ -7,6 +7,7 @@ import com.tngtech.archunit.thirdparty.org.objectweb.asm.Opcodes;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -19,6 +20,9 @@ final class SourceIndex {
                     + "(?:\\h*\\.\\h*(?:[\\p{L}_][\\p{L}\\p{N}_]*|`[^`\\r\\n]+`))*)");
     private static final Pattern COMMENTS_AND_STRINGS = Pattern.compile(
             "(?s)/\\*|//[^\\r\\n]*|\"\"\".*?\"\"\"|\"(?:\\\\.|[^\"\\\\])*\"|'(?:\\\\.|[^'\\\\])'");
+
+    private static final Pattern JAVA_WITHOUT_TYPES = Pattern.compile(
+            "(?:\\s|;|(?:package|import)\\s+[^;{}]+;)*");
 
     private final Map<String, List<Path>> files = new HashMap<>();
     private final Map<Path, String> contents = new HashMap<>();
@@ -34,27 +38,33 @@ final class SourceIndex {
 
     Origin locate(String className, String packageName) throws IOException {
         ClassSource source = classSource(className);
-        if (source == null || source.file == null) {
-            return new Origin(null, source != null && source.kotlin, 0);
+        if (source == null) {
+            return new Origin(null, false, 0, null);
         }
-        boolean kotlin = source.kotlin || source.file.endsWith(".kt");
-        List<Path> candidates = files.getOrDefault(source.file, List.of());
+        boolean kotlin = source.kotlin || source.file != null && source.file.endsWith(".kt");
+        String file = source.file;
+        boolean inferred = file == null && !kotlin;
+        if (inferred) {
+            String simpleName = className.substring(className.lastIndexOf('.') + 1);
+            file = simpleName.replaceFirst("\\$.*$", "") + ".java";
+        }
+        List<Path> candidates = file == null ? List.of() : files.getOrDefault(file, List.of());
         Path unique = null;
         for (Path candidate : candidates) {
-            if ((!kotlin && candidates.size() == 1) || packageName.equals(declaredPackage(read(candidate)))) {
+            if ((!inferred && !kotlin && candidates.size() == 1) || packageName.equals(declaredPackage(read(candidate), kotlin))) {
                 if (unique != null) {
-                    return new Origin(null, kotlin, 0);
+                    return new Origin(null, kotlin, 0, null);
                 }
                 unique = candidate;
             }
         }
         if (unique == null) {
-            return new Origin(null, kotlin, 0);
+            return new Origin(null, kotlin, 0, null);
         }
 
         // Kotlin inline expansions can contain line numbers belonging to another source.
-        long lines = kotlin ? (source.hasDebugMapping ? 0 : read(unique).lines().count()) : Long.MAX_VALUE;
-        return new Origin(unique.toString(), kotlin, lines);
+        long lines = inferred ? 0 : kotlin ? (source.hasDebugMapping ? 0 : read(unique).lines().count()) : Long.MAX_VALUE;
+        return new Origin(unique.toString(), kotlin, lines, source.time);
     }
 
     private String read(Path path) throws IOException {
@@ -72,6 +82,7 @@ final class SourceIndex {
             Path file = directory.resolve(relative);
             if (Files.isRegularFile(file)) {
                 ClassSource source = new ClassSource();
+                source.time = Files.getLastModifiedTime(file);
                 new ClassReader(Files.readAllBytes(file)).accept(source, ClassReader.SKIP_CODE | ClassReader.SKIP_FRAMES);
                 return source;
             }
@@ -79,14 +90,25 @@ final class SourceIndex {
         return null;
     }
 
-    private static String declaredPackage(String text) {
+    boolean expectsJavaClass(Path path) throws IOException {
+        String name = path.getFileName().toString();
+        return name.endsWith(".java") && !name.equals("module-info.java") && !name.equals("package-info.java")
+                && !JAVA_WITHOUT_TYPES.matcher(codeOnly(read(path), false)).matches();
+    }
+
+    private static CharSequence codeOnly(String text, boolean nestedComments) {
         var code = new StringBuilder(text);
         var nonCode = COMMENTS_AND_STRINGS.matcher(text);
         int start = 0;
         while (nonCode.find(start)) {
             start = nonCode.end();
             if (nonCode.group().equals("/*")) {
-                start = endOfComment(text, start);
+                if (nestedComments) {
+                    start = endOfComment(text, start);
+                } else {
+                    int end = text.indexOf("*/", start);
+                    start = end == -1 ? text.length() : end + 2;
+                }
             }
             for (int index = nonCode.start(); index < start; index++) {
                 char value = text.charAt(index);
@@ -95,7 +117,11 @@ final class SourceIndex {
                 }
             }
         }
-        var declaration = PACKAGE.matcher(code);
+        return code;
+    }
+
+    private static String declaredPackage(String text, boolean nestedComments) {
+        var declaration = PACKAGE.matcher(codeOnly(text, nestedComments));
         if (!declaration.find()) {
             return "";
         }
@@ -119,7 +145,7 @@ final class SourceIndex {
         return text.length();
     }
 
-    record Origin(String path, boolean kotlin, long lines) {
+    record Origin(String path, boolean kotlin, long lines, FileTime classTime) {
         Integer line(int number) {
             return number > 0 && number <= lines ? number : null;
         }
@@ -129,6 +155,7 @@ final class SourceIndex {
         private String file;
         private boolean hasDebugMapping;
         private boolean kotlin;
+        private FileTime time;
 
         private ClassSource() {
             super(Opcodes.ASM9);

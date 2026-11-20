@@ -57,14 +57,16 @@ dornguard check --changed --format agent
 dornguard check --changed --base origin/main
 dornguard check --module :api
 dornguard check --format sarif
+dornguard check --only-profile format
 dornguard rules explain java.stdout-usage
 dornguard doctor
 ```
 
 The check exit codes are 0 for success, 1 for a policy violation, 2 for
 configuration errors, 3 for engine errors, and 4 for preparation errors.
-JSON reports identify the scan scope, whether checks completed, and which
-rules were affected by each analysis failure. See the
+Check reports include per-rule counts and identify incomplete analysis.
+JSON includes the affected rules and available file or module information for
+each failure. See the
 [report format](docs/releases.md#report-format) for location and range fields.
 
 Use `dornguard audit` for a Maven dependency vulnerability report.

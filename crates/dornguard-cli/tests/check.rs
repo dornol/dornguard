@@ -762,6 +762,15 @@ public record Book(String title) {
         "{initial}"
     );
 
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&controller)
+        .unwrap()
+        .set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(60))
+        .unwrap();
+    let unchanged = report(check(root).output().unwrap(), 0);
+    assert_eq!(unchanged["complete"], true);
+
     fs::write(&domain, "package example.api.domain; public record Book(String title) { public Class<?> type() { return example.api.adapter.BookAdapter.class; } }").unwrap();
     let moved = "common/src/main/java/example/common/Moved.java";
     let moved_to = "batch/src/main/java/example/batch/Moved.java";
@@ -2243,6 +2252,21 @@ fn malformed_ignore_entries_are_configuration_errors() {
             "{result}"
         );
     }
+
+    fs::write(
+        root.join(".dornguard.yml"),
+        format!(
+            "version: 1\nprofiles: [java-source]\nignore:\n  - path: src/Example.java\n    fingerprint: '{valid_fingerprint}'\n    reason: Require a rule\n"
+        ),
+    )
+    .unwrap();
+    let result = report(check(root).output().unwrap(), 2);
+    assert!(
+        result["failures"][0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("requires a rule")
+    );
 }
 
 #[test]
@@ -2462,14 +2486,19 @@ fn maven_tracks_effective_compile_inputs_and_checks_custom_test_sources() {
             .args(["--resolve-imports", "--module", "example:scope"])
             .output()
             .unwrap(),
-        1,
+        3,
+    );
+    assert_eq!(resolved["complete"], false);
+    assert_eq!(
+        resolved["failures"][0]["path"],
+        "src/main/java/example/Example.java"
     );
     assert!(root.join("target/classes/example/Example.class").is_file());
     assert!(
         unnecessary_import_lines(&resolved, "src/main/java/example/Example.java").is_empty(),
         "{resolved}"
     );
-    assert_eq!(resolved["files_scanned"], 3, "{resolved}");
+    assert_eq!(resolved["files_scanned"], 1, "{resolved}");
 
     fs::write(
         root.join(".dornguard.yml"),
@@ -2659,7 +2688,7 @@ fn source_diagnostics_report_utf16_ranges_and_subjects() {
         (
             "java.preserve-stack-trace",
             "e",
-            "new IllegalArgumentException()",
+            "throw new IllegalArgumentException();",
         ),
     ] {
         let item = report["diagnostics"]
@@ -2782,6 +2811,7 @@ class Example {
         try { fail(); }
         catch (IOException logged) {
             Logger.getGlobal().log(Level.WARNING, "request failed", logged);
+            System.nanoTime();
             throw new IllegalArgumentException();
         }
     }
@@ -2815,6 +2845,13 @@ class Example {
         try { fail(); }
         catch (IOException original) {
             throw new IllegalArgumentException(original);
+        }
+    }
+
+    Class<?> find(String name) throws ClassNotFoundException {
+        try { return Class.forName(name); }
+        catch (ClassNotFoundException e) {
+            throw new ClassNotFoundException(name, e);
         }
     }
 
@@ -3540,4 +3577,416 @@ fn flyway_compares_existing_versioned_migrations_against_git() {
         missing_base["failures"][0]["rule_ids"][0],
         "flyway.changed-versioned-migration"
     );
+}
+
+#[test]
+fn exclusive_format_uses_file_overrides_and_skips_vendor_sources() {
+    let project = project("class Example {}\n");
+    let root = project.path();
+    fs::create_dir_all(root.join("legacy")).unwrap();
+    fs::write(root.join("main.js"), "if (true) {\n  run();\n}\n").unwrap();
+    fs::write(root.join("legacy/main.js"), "if (true) {\n    run();\n}\n").unwrap();
+    fs::write(root.join("legacy/vendor.min.js"), [0xff]).unwrap();
+    fs::write(root.join("vendor.min.js"), [0xff]).unwrap();
+    fs::write(
+        root.join(".dornguard.yml"),
+        r#"
+version: 1
+profiles: [spring-boot]
+exclude: ["**/*.min.js"]
+format:
+  overrides:
+    - files: ["legacy/**"]
+      indent_size: 4
+"#,
+    )
+    .unwrap();
+    let clean = report(
+        check(root)
+            .args(["--only-profile", "format"])
+            .output()
+            .unwrap(),
+        0,
+    );
+    assert_eq!(clean["files_requested"], 3, "{clean}");
+    assert!(clean["analysis_notes"].is_null());
+    assert_eq!(clean["rule_counts"], serde_json::json!({}));
+    fs::write(root.join("legacy/main.js"), "if (true) {\n  run();\n}\n").unwrap();
+    let findings = report(
+        check(root)
+            .args(["--only-profile", "format"])
+            .output()
+            .unwrap(),
+        1,
+    );
+    assert_eq!(findings["diagnostics"][0]["path"], "legacy/main.js");
+    assert_eq!(findings["rule_counts"]["format.indentation"]["errors"], 1);
+}
+
+#[test]
+#[ignore = "requires the pinned Semgrep engine"]
+fn thymeleaf_allows_scoped_trusted_output_and_html_comment_suppression() {
+    let project = tempfile::tempdir().unwrap();
+    let root = project.path();
+    let dir = root.join("src/main/resources/templates");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(
+        root.join(".dornguard.yml"),
+        r#"
+version: 1
+profiles: [thymeleaf-output-review]
+thymeleaf_sanitizers: ["@htmlSanitizer.clean"]
+"#,
+    )
+    .unwrap();
+    fs::write(
+        dir.join("sample.html"),
+        r#"
+<section th:with="safe=${@htmlSanitizer.clean(value)}">
+    <div th:utext="${safe}"></div>
+    <div th:each="safe : ${items}" th:utext="${safe}"></div>
+    <div th:with="safe=${raw}" th:utext="${safe}"></div>
+</section>
+<div data-th-utext="${@htmlSanitizer.clean(value)}"></div>
+<div th:utext="${@htmlSanitizer.clean(value)} + ${raw}"></div>
+<div th:utext="${safe}"></div>
+<!-- dornguard-ignore thymeleaf.unescaped-output -- Source is reviewed -->
+<div th:utext="${reviewed}"></div>
+"#,
+    )
+    .unwrap();
+    let result = report(check(root).output().unwrap(), 1);
+    assert_eq!(result["suppressed_count"], 1, "{result}");
+    assert_eq!(
+        result["rule_counts"]["thymeleaf.restricted-bean-access"]["errors"], 2,
+        "{result}"
+    );
+    assert_eq!(
+        result["rule_counts"]["thymeleaf.unescaped-output"]["warnings"], 4,
+        "{result}"
+    );
+    let lines = result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|finding| finding["rule_id"] == "thymeleaf.unescaped-output")
+        .map(|finding| finding["line"].as_u64().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(lines, [4, 5, 8, 9], "{result}");
+
+    fs::write(
+        dir.join("broken.html"),
+        r#"<html><body><th:block th:if="${a}"><br"#,
+    )
+    .unwrap();
+    let partial = report(check(root).output().unwrap(), 3);
+    assert_eq!(partial["complete"], false);
+    assert_eq!(partial["files_requested"], 2);
+    assert_eq!(partial["files_scanned"], 1);
+    assert!(
+        partial["failures"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|failure| failure["error_type"] == "PartialParsing"
+                && failure["path"] == "src/main/resources/templates/broken.html"
+                && failure["rule_ids"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|id| id == "thymeleaf.unescaped-output")),
+        "{partial}"
+    );
+}
+
+#[test]
+#[ignore = "requires the pinned Java source engines"]
+fn equivalent_transactions_keep_only_calls_with_distinct_boundaries() {
+    let project = project(
+        r#"
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
+class Example {
+    @Transactional
+    public void outer() {
+        equivalent();
+        requiresNew();
+        readOnly();
+        Runnable deferred = () -> equivalent();
+    }
+    @Transactional(propagation = Propagation.REQUIRED, readOnly = false)
+    public void equivalent() {}
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void requiresNew() {}
+    @Transactional(readOnly = true)
+    public void readOnly() {}
+    @Transactional
+    public void catches() {
+        try {
+            equivalent();
+        } catch (RuntimeException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+}
+"#,
+    );
+    let root = project.path();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [spring-boot]\n",
+    )
+    .unwrap();
+    let result = report(check(root).output().unwrap(), 0);
+    let lines = result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|finding| finding["rule_id"] == "spring.transactional-self-invocation")
+        .map(|finding| finding["line"].as_u64().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(lines, [8, 9, 10, 21], "{result}");
+}
+
+#[test]
+#[ignore = "requires the pinned Java source engines and a JDK 21 runtime"]
+fn resources_accept_configured_ownership_and_executor_cleanup_without_hiding_leaks() {
+    let project = project(
+        r#"
+package example;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+class Example {
+    void transfers() throws SQLException {
+        Connection transferred = DriverManager.getConnection("jdbc:example");
+        Handle.take(transferred);
+    }
+    void conditional(boolean transfer) throws SQLException {
+        Connection leaked = DriverManager.getConnection("jdbc:example");
+        if (transfer) Handle.take(leaked);
+    }
+    void stopped() {
+        ExecutorService stopped = Executors.newSingleThreadExecutor();
+        try { stopped.execute(() -> {}); } finally { stopped.shutdown(); }
+    }
+    void live() {
+        ExecutorService live = Executors.newSingleThreadExecutor();
+        live.execute(() -> {});
+    }
+    void managed() throws SQLException {
+        Connection shared = AppResources.connection();
+        shared.getCatalog();
+    }
+}
+class AppResources {
+    static Connection connection() { return null; }
+}
+record Handle(Connection connection) {
+    static void take(Connection connection) {}
+}
+"#,
+    );
+    let root = project.path();
+    let config = "version: 1\nprofiles: [java]\njava_target: 21\n";
+    let findings = |extra| {
+        fs::write(root.join(".dornguard.yml"), format!("{config}{extra}")).unwrap();
+        let result = report(check(root).output().unwrap(), 0);
+        result["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|finding| finding["rule_id"] == "java.resource-not-closed")
+            .map(|finding| finding["line"].as_u64().unwrap())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(findings(""), [10, 14, 22, 26]);
+    assert_eq!(
+        findings(concat!(
+            "java_resource_owners: ['example.Handle#take(java.sql.Connection)']\n",
+            "java_managed_resource_factories: ['example.AppResources#connection()']\n",
+        )),
+        [14, 22]
+    );
+}
+
+#[test]
+#[ignore = "requires Maven 3, JDK 21 and the bundled JVM artifacts"]
+fn maven_architecture_rejects_uncompiled_sources_and_groups_the_same_dependency() {
+    let _maven = MAVEN_TEST_LOCK
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    let project = tempfile::tempdir().unwrap();
+    let root = project.path();
+    let pom = r#"<project>
+        <modelVersion>4.0.0</modelVersion>
+        <groupId>example</groupId><artifactId>coverage</artifactId><version>1</version>
+        <properties><maven.compiler.release>17</maven.compiler.release>OPTIONS</properties>
+        <build><plugins><plugin><artifactId>maven-compiler-plugin</artifactId><version>3.13.0</version></plugin></plugins></build>
+    </project>"#;
+    let config = "version: 1\nprofiles: [layered]\n";
+    let controller = "src/main/java/example/controller/Controller.java";
+    let repo = "src/main/java/example/repository/Repo.java";
+    fs::write(root.join(".dornguard.yml"), config).unwrap();
+    for path in [controller, repo] {
+        fs::create_dir_all(root.join(path).parent().unwrap()).unwrap();
+    }
+    fs::write(root.join("pom.xml"), pom.replace("OPTIONS", "")).unwrap();
+    fs::write(
+        root.join(repo),
+        "package example.repository; public class Repo { public void query() {} }\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join(controller),
+        "package example.controller; public class Controller {}\n",
+    )
+    .unwrap();
+    let clean = report(check(root).output().unwrap(), 0);
+    assert_eq!(clean["complete"], true);
+    fs::write(
+        root.join("pom.xml"),
+        pom.replace("OPTIONS", "<maven.main.skip>true</maven.main.skip>"),
+    )
+    .unwrap();
+    fs::write(
+        root.join(controller),
+        r#"package example.controller;
+import example.repository.Repo;
+public class Controller {
+    private final Repo repo;
+    Controller(Repo repo) { this.repo = repo; }
+    void query() { repo.query(); }
+}
+"#,
+    )
+    .unwrap();
+    let skipped = report(check(root).output().unwrap(), 3);
+    assert_eq!(skipped["complete"], false);
+    assert!(
+        skipped["failures"][0]["rule_ids"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|id| id == "architecture.controller-repository"),
+        "{skipped}"
+    );
+    fs::write(root.join("pom.xml"), pom.replace("OPTIONS", "")).unwrap();
+    let violation = report(check(root).output().unwrap(), 1);
+    assert_eq!(
+        violation["diagnostics"].as_array().unwrap().len(),
+        1,
+        "{violation}"
+    );
+    assert_eq!(violation["diagnostics"][0]["path"], controller);
+    assert_eq!(violation["diagnostics"][0]["line"], 6);
+
+    fs::OpenOptions::new()
+        .write(true)
+        .open(root.join(controller))
+        .unwrap()
+        .set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(60))
+        .unwrap();
+    let stale = report(check(root).output().unwrap(), 3);
+    assert_eq!(stale["complete"], false);
+    assert_eq!(stale["failures"][0]["path"], controller);
+    assert!(
+        stale["failures"][0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("older than its source"),
+        "{stale}"
+    );
+}
+
+#[test]
+fn ignore_paths_suppress_findings_by_file_folder_and_rule() {
+    let project = tempfile::tempdir().unwrap();
+    let root = project.path();
+    for path in [
+        "manual.js",
+        "vendor/nested/library.js",
+        "legacy/example.js",
+        "legacy/nested/example.js",
+        "legacy-other/example.js",
+    ] {
+        let path = root.join(path);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, "if(true) {\n   run();\n}\n").unwrap();
+    }
+    let config = root.join(".dornguard.yml");
+    fs::write(&config, "version: 1\nprofiles: [format]\n").unwrap();
+    let before = report(check(root).output().unwrap(), 1);
+    assert_eq!(before["diagnostics"].as_array().unwrap().len(), 10);
+
+    fs::write(
+        &config,
+        r#"version: 1
+profiles: [format]
+ignore:
+  - path: manual.js
+    reason: Hand-maintained compatibility script
+  - path: vendor/
+    reason: Upstream sources
+  - path: "legacy/**"
+    rule: format.indentation
+    reason: Preserve existing indentation
+"#,
+    )
+    .unwrap();
+    let local = report(check(root).output().unwrap(), 1);
+    assert_eq!(local["files_scanned"], 5);
+    assert_eq!(local["suppressed_count"], 6);
+    let findings = local["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| {
+            (
+                item["path"].as_str().unwrap(),
+                item["rule_id"].as_str().unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        findings,
+        [
+            ("legacy-other/example.js", "format.control-spacing"),
+            ("legacy-other/example.js", "format.indentation"),
+            ("legacy/example.js", "format.control-spacing"),
+            ("legacy/nested/example.js", "format.control-spacing"),
+        ]
+    );
+
+    let authority = tempfile::tempdir().unwrap();
+    let policy = authority.path().join("required.yml");
+    fs::write(&policy, "version: 1\nprofiles: [format]\n").unwrap();
+    let required = report(
+        check(root)
+            .arg("--organization-policy")
+            .arg(policy)
+            .output()
+            .unwrap(),
+        1,
+    );
+    assert_eq!(required["organization_policy_enforced"], true);
+    assert_eq!(required["diagnostics"], before["diagnostics"]);
+
+    fs::write(root.join("vendor/broken.js"), [0xff]).unwrap();
+    let incomplete = report(check(root).output().unwrap(), 3);
+    assert_eq!(incomplete["complete"], false);
+    assert_eq!(incomplete["files_requested"], 6);
+
+    let previous_config = fs::read_to_string(&config).unwrap();
+    fs::write(
+        &config,
+        format!("{previous_config}exclude: ['vendor/**']\n"),
+    )
+    .unwrap();
+    let excluded = report(check(root).output().unwrap(), 1);
+    assert_eq!(excluded["complete"], true);
+    assert_eq!(excluded["files_requested"], 4);
+    assert_eq!(excluded["diagnostics"], local["diagnostics"]);
 }

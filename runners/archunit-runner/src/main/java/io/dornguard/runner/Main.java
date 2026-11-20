@@ -12,10 +12,11 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.TreeSet;
 import java.util.List;
 
 public final class Main {
-    private static final int SCHEMA_VERSION = 3;
+    private static final int SCHEMA_VERSION = 4;
 
     private Main() {}
 
@@ -42,10 +43,16 @@ public final class Main {
         List<Failure> failures = new ArrayList<>();
         for (Module module : request.modules()) {
             try {
-                check(module, findings);
-                analyzed.add(module.path());
+                var moduleFindings = new ArrayList<Finding>();
+                Failure failure = check(module, moduleFindings);
+                if (failure == null) {
+                    findings.addAll(moduleFindings);
+                    analyzed.add(module.path());
+                } else {
+                    failures.add(failure);
+                }
             } catch (IOException | RuntimeException exception) {
-                failures.add(new Failure(module.path(), exception.getClass().getSimpleName()));
+                failures.add(new Failure(module.path(), null, exception.getClass().getSimpleName()));
             }
         }
 
@@ -60,7 +67,7 @@ public final class Main {
         }
     }
 
-    private static void check(Module module, List<Finding> findings) throws IOException {
+    private static Failure check(Module module, List<Finding> findings) throws IOException {
         List<Path> classes = module.classDirs().stream().map(Path::of).filter(Files::isDirectory).toList();
         var sourceIndex = new SourceIndex(module.sourceFiles(), classes);
         var resolverClasspath = new ArrayList<URL>();
@@ -77,10 +84,19 @@ public final class Main {
             current.setContextClassLoader(classpath);
             var imported = new ClassFileImporter().importPaths(classes);
             if (imported.isEmpty()) {
-                throw new IllegalStateException("No classes were imported");
+                return new Failure(module.path(), null, "No class files were imported. Check the compiler output directory.");
             }
+            var coveredSources = new TreeSet<String>();
             for (JavaClass origin : imported) {
-                SourceIndex.Origin source = null;
+                SourceIndex.Origin source = sourceIndex.locate(origin.getName(), origin.getPackageName());
+                if (source.path() != null) {
+                    coveredSources.add(source.path());
+                    if (module.checkClassTimestamps()
+                            && source.classTime().compareTo(Files.getLastModifiedTime(Path.of(source.path()))) < 0) {
+                        return new Failure(module.path(), source.path(),
+                                "A class file is older than its source. Recompile the module and rerun the check.");
+                    }
+                }
                 for (Rule rule : module.rules()) {
                     if (!rule.origins().isEmpty() && !matches(origin.getPackageName(), rule.origins())) {
                         continue;
@@ -88,9 +104,6 @@ public final class Main {
                     for (Dependency dependency : origin.getDirectDependenciesFromSelf()) {
                         JavaClass target = dependency.getTargetClass();
                         if (matches(target.getPackageName(), rule.forbidden())) {
-                            if (source == null) {
-                                source = sourceIndex.locate(origin.getName(), origin.getPackageName());
-                            }
                             if (source.kotlin() && !module.kotlin()) {
                                 continue;
                             }
@@ -103,6 +116,13 @@ public final class Main {
                     }
                 }
             }
+            for (String file : module.sourceFiles()) {
+                if (!coveredSources.contains(file) && sourceIndex.expectsJavaClass(Path.of(file))) {
+                    return new Failure(module.path(), file,
+                            "No class file could be matched to this Java source. Check the compiler output directory.");
+                }
+            }
+            return null;
         } finally {
             current.setContextClassLoader(previous);
         }
@@ -124,9 +144,10 @@ public final class Main {
 
     private record Request(int schemaVersion, List<Module> modules) {}
     private record Module(String path, List<String> sourceFiles, boolean kotlin,
-                          List<String> classDirs, List<String> classpath, List<Rule> rules) {}
+                          boolean checkClassTimestamps, List<String> classDirs,
+                          List<String> classpath, List<Rule> rules) {}
     private record Rule(String id, List<String> origins, List<String> forbidden) {}
     private record Finding(String module, String ruleId, String path, Integer line, String origin, String target, String identity) {}
-    private record Failure(String module, String reason) {}
+    private record Failure(String module, String path, String reason) {}
     private record Report(int schemaVersion, List<String> analyzed, List<Finding> findings, List<Failure> failures) {}
 }

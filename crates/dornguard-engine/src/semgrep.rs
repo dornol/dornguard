@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use crate::java_names::JavaNames;
 use crate::source::Sources;
+use crate::thymeleaf::SanitizedOutput;
 use dornguard_config::Rule;
 use dornguard_core::{Diagnostic, EngineName, Outcome};
 use miette::{IntoDiagnostic, Result, WrapErr};
@@ -19,17 +20,26 @@ use crate::{
 
 pub struct Semgrep {
     timeout: Duration,
+    thymeleaf_sanitizers: Vec<String>,
 }
 
 impl Default for Semgrep {
     fn default() -> Self {
         Self {
             timeout: Duration::from_secs(120),
+            thymeleaf_sanitizers: Vec::new(),
         }
     }
 }
 
 impl Semgrep {
+    pub fn with_thymeleaf_sanitizers(sanitizers: &[String]) -> Self {
+        Self {
+            thymeleaf_sanitizers: sanitizers.to_vec(),
+            ..Self::default()
+        }
+    }
+
     async fn run(&self, request: Request<'_>, outcome: &mut Outcome) -> Result<()> {
         let configs = tempfile::tempdir()
             .into_diagnostic()
@@ -46,6 +56,7 @@ impl Semgrep {
         let deadline = Instant::now() + self.timeout;
         check_version(EngineName::Semgrep, request.root, deadline).await?;
 
+        let mut sanitized = SanitizedOutput::new(&self.thymeleaf_sanitizers);
         for batch in request.files.chunk_by(budgeted_batch()) {
             let mut scan = command(EngineName::Semgrep, request.root)?;
             scan.args([
@@ -67,7 +78,14 @@ impl Semgrep {
             .args(batch);
             let output = run_command(EngineName::Semgrep, &mut scan, deadline).await?;
             let first_failure = outcome.failures.len();
-            normalize(&output, request.root, batch, &rules, outcome);
+            normalize(
+                &output,
+                request.root,
+                batch,
+                &rules,
+                &mut sanitized,
+                outcome,
+            );
             for failure in &mut outcome.failures[first_failure..] {
                 failure.file_count = Some(batch.len());
             }
@@ -144,6 +162,7 @@ fn normalize(
     root: &Path,
     batch: &[PathBuf],
     rules: &BTreeMap<&str, &Rule>,
+    sanitized: &mut SanitizedOutput<'_>,
     outcome: &mut Outcome,
 ) {
     let Ok(scan): std::result::Result<Scan, _> = serde_json::from_slice(&output.stdout) else {
@@ -177,8 +196,12 @@ fn normalize(
             .path
             .and_then(|path| relative_path(root, &path))
             .filter(|path| expected.contains(path.as_path()));
-        let mut failure =
-            engine_failure(EngineName::Semgrep, "Semgrep could not complete analysis");
+        let message = if kind == "PartialParsing" {
+            "Semgrep parsed only part of the file. Findings for this file are incomplete."
+        } else {
+            "Semgrep could not complete analysis"
+        };
+        let mut failure = engine_failure(EngineName::Semgrep, message);
         failure.error_type = Some(kind.to_owned());
         if let Some(rule) = error.rule_id.as_deref().and_then(|id| rules.get(id)) {
             failure.set_rules([rule.id.as_str()]);
@@ -259,6 +282,19 @@ fn normalize(
             continue;
         }
         let source = sources.get(root, &path);
+        if rule.id == "thymeleaf.unescaped-output"
+            && !batch_failed
+            && !failed_files.contains(&path)
+            && source.is_some_and(|source| {
+                sanitized.contains(
+                    &path,
+                    source.text(),
+                    finding.start.offset..finding.end.offset,
+                )
+            })
+        {
+            continue;
+        }
         if rule.id == "java.fully-qualified-type"
             && source.is_some_and(|source| {
                 java.starts_with_value(

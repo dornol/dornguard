@@ -186,11 +186,93 @@ fn proxy_calls(
                 && target != *caller
                 && !has_modifier(target, "static")
                 && imports.annotated(target, annotation)
+                && (annotation != TRANSACTIONAL
+                    || !covered_by_transaction(*caller, target, node, imports))
             {
                 found(node, name.to_owned());
             }
         }
     }
+}
+
+fn covered_by_transaction(
+    caller: Node<'_>,
+    target: Node<'_>,
+    call: Node<'_>,
+    imports: &Imports<'_>,
+) -> bool {
+    if !has_modifier(caller, "public") || has_modifier(caller, "final") {
+        return false;
+    }
+    let mut ancestor = call.parent();
+    while let Some(parent) = ancestor.filter(|parent| *parent != caller) {
+        if matches!(parent.kind(), "lambda_expression" | "class_body")
+            || matches!(
+                parent.kind(),
+                "try_statement" | "try_with_resources_statement"
+            ) && children(parent).any(|child| child.kind() == "catch_clause")
+        {
+            return false;
+        }
+        ancestor = parent.parent();
+    }
+    transaction_contract(caller, imports)
+        .zip(transaction_contract(target, imports))
+        .is_some_and(|(outer, inner)| outer == inner)
+}
+
+fn transaction_contract<'a>(
+    node: Node<'_>,
+    imports: &Imports<'a>,
+) -> Option<BTreeMap<&'a str, &'a str>> {
+    let annotation = imports.annotation(node, TRANSACTIONAL)?;
+    let mut settings = BTreeMap::new();
+    if let Some(arguments) = annotation.child_by_field_name("arguments") {
+        for argument in children(arguments).filter(|child| !child.is_extra()) {
+            let (key, value) = if argument.kind() == "element_value_pair" {
+                (
+                    text(argument.child_by_field_name("key")?, imports.source),
+                    argument.child_by_field_name("value")?,
+                )
+            } else {
+                ("value", argument)
+            };
+            let value_text = text(value, imports.source);
+            match key {
+                "propagation" => {
+                    let receiver = value.child_by_field_name("object")?;
+                    let member = value.child_by_field_name("field")?;
+                    if text(member, imports.source) != "REQUIRED"
+                        || !imports.matches(
+                            &qualified_name(receiver, imports.source),
+                            "org.springframework.transaction.annotation.Propagation",
+                        )
+                    {
+                        return None;
+                    }
+                }
+                "readOnly" if value_text == "false" => {}
+                "value" | "transactionManager" if value.kind() == "string_literal" => {
+                    if value_text != "\"\"" {
+                        settings.insert("transactionManager", value_text);
+                    }
+                }
+                "readOnly"
+                | "isolation"
+                | "timeout"
+                | "timeoutString"
+                | "rollbackFor"
+                | "rollbackForClassName"
+                | "noRollbackFor"
+                | "noRollbackForClassName"
+                | "label" => {
+                    settings.insert(key, value_text);
+                }
+                _ => return None,
+            }
+        }
+    }
+    Some(settings)
 }
 
 fn has_modifier(node: Node<'_>, name: &str) -> bool {
@@ -433,13 +515,17 @@ impl<'a> Imports<'a> {
     }
 
     fn annotated(&self, node: Node<'_>, canonical: &str) -> bool {
-        children(node)
-            .find(|child| child.kind() == "modifiers")
-            .is_some_and(|modifiers| {
-                children(modifiers)
-                    .filter(|child| matches!(child.kind(), "marker_annotation" | "annotation"))
-                    .filter_map(|annotation| annotation.child_by_field_name("name"))
-                    .any(|name| self.matches(&qualified_name(name, self.source), canonical))
+        self.annotation(node, canonical).is_some()
+    }
+
+    fn annotation<'node>(&self, node: Node<'node>, canonical: &str) -> Option<Node<'node>> {
+        let modifiers = children(node).find(|child| child.kind() == "modifiers")?;
+        children(modifiers)
+            .filter(|child| matches!(child.kind(), "marker_annotation" | "annotation"))
+            .find(|annotation| {
+                annotation
+                    .child_by_field_name("name")
+                    .is_some_and(|name| self.matches(&qualified_name(name, self.source), canonical))
             })
     }
 

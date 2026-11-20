@@ -25,6 +25,10 @@ module_dependencies:
 ```
 
 Project and module profiles are combined with profiles from `--profile`.
+Use `dornguard check --only-profile format` to run formatting by itself.
+The command still uses the project's format settings, rule overrides and
+source exclusions. Repeat `--only-profile` to select multiple profiles.
+Use the same option with `baseline create` to record that profile selection.
 The module's rule fields override project fields, followed by profile defaults
 and built-in values. Conflicting profile defaults require an explicit override.
 Use `enabled: false` to disable an activated rule in a project or module. For
@@ -53,15 +57,44 @@ checks or to override the discovered target. With a known target below 21,
 `java.resource-not-closed` excludes the JDK's `java.net.http.HttpClient`.
 With an unknown target, the rule uses PMD's runtime analysis. JDBC resources
 and project types named `HttpClient` remain subject to the rule.
+With a known target below 19, the rule also excludes JDK `ExecutorService`.
+For other targets, it recognizes `shutdown()` or `shutdownNow()` at the start
+of the immediately following `finally` block when the executor is unchanged.
+Returning the resource itself transfers ownership to the caller or to Spring
+for an ordinary bean factory that returns the resource. For a project wrapper
+or other ownership-taking API, list its fully qualified signature.
+
+```yaml
+java_resource_owners:
+  - "example.JdbcHandle#new(java.sql.Connection)"
+```
+
+For a factory that lends a resource that Spring or another component will
+close, register the factory under `java_managed_resource_factories`. Use this
+only for methods whose callers never own the returned resource.
+
+```yaml
+java_managed_resource_factories:
+  - "example.AppResources#connection()"
+```
+
+An ownership-taking call must take the resource as its sole argument and immediately follow
+the local declaration. It may be a standalone method call or the expression
+returned by the method. The rule still reports conditional transfers and
+other paths where it cannot establish ownership. Configured signatures must
+resolve in PMD. The report indicates when analysis uses the compiled project
+classpath. Use `check --resolve-types` for compiled PMD type resolution on
+main Java sources. `--resolve-imports` is an equivalent option.
 An `instanceof` resource binding is treated as closed when the matching
 branch begins with a direct call to that binding's `close()` method.
 
 `allow_logged_exceptions` defaults to `false`. Set it to `true` to allow a
 direct call to a resolved `java.util.logging.Logger` or `org.slf4j.Logger`
-throwable overload immediately before a direct `throw` in the same `catch`
+throwable overload before a direct `throw` in the same `catch`
 body. The log call must pass the original, unmodified catch parameter.
 Conditional logging and calls that only pass its message still produce a
-finding. Use a per-finding suppression for other intentional exceptions.
+finding. Use a per-finding suppression to document deliberate cause redaction.
+Stack trace findings point to the `throw` statement when it can be located.
 
 ## Formatting
 
@@ -82,9 +115,47 @@ format:
 ```
 
 Use the existing `rules` section to change the severity or disable individual
-[formatting rules](profiles.md#source-formatting).
+[formatting rules](profiles.md#source-formatting). Override selected settings
+by file and exclude bundled or third-party sources with project-relative globs.
+
+```yaml
+exclude:
+  - "**/*.min.js"
+  - "src/main/resources/static/vendor/**"
+format:
+  overrides:
+    - files: ["src/main/resources/static/legacy/**/*.js"]
+      indent_size: 4
+```
+
+Use forward slashes. A single `*` stays within one path segment and `**` can
+span directories. The last matching override wins for each field it sets.
+`exclude` applies to source checks. Architecture and migration checks still
+use their build and Git scopes, respectively.
 
 ## Intentional exceptions
+
+Use `ignore` to suppress results for a file or directory. A trailing slash
+matches all files under a directory, including nested directories. A glob
+such as `legacy/**/*.java` also works. Include `rule` to suppress only
+findings for that rule. Every entry requires a reason.
+
+```yaml
+ignore:
+  - path: src/main/resources/static/vendor/
+    reason: "Third-party files maintained upstream."
+  - path: src/main/resources/static/legacy/**
+    rule: format.indentation
+    reason: "Preserve indentation until these files are migrated."
+  - path: docs/scripts/JasyptTool.java
+    rule: java.stdout-usage
+    reason: "The calling script reads standard output."
+```
+
+`ignore` applies to findings with a file path. DornGuard still analyzes the
+files and reports analysis failures. Use `exclude` when source checks
+should skip the files altogether. Organization policy checks run
+independently of local ignores.
 
 To exempt a Java source finding at a specific statement, put a standalone
 comment immediately before the line the diagnostic reports. The comment
@@ -96,11 +167,39 @@ System.out.println(result);
 ```
 
 Each comment exempts one finding for the named rule on the next line.
-Move the comment with the code.
+Move the comment with the code. HTML and Thymeleaf accept the same directive
+in a standalone HTML comment.
 
-To keep an exception in `.dornguard.yml`, copy the diagnostic's `path`,
+```html
+<!-- dornguard-ignore thymeleaf.unescaped-output -- Reviewed server-side sanitization -->
+<div th:utext="${reviewedHtml}"></div>
+```
+
+The directive suppresses findings. A file the engine partially parsed still
+appears in the failures list with an incomplete result.
+
+For Thymeleaf, explicitly register a bean method that your application uses
+to sanitize HTML. This allows a whole-value call in `th:utext` or a single
+`th:with` binding used by `th:utext` in the same lexical scope.
+
+```yaml
+thymeleaf_sanitizers: ["@htmlSanitizer.clean"]
+```
+
+```html
+<section th:with="safe=${@htmlSanitizer.clean(body)}">
+  <div th:utext="${safe}"></div>
+</section>
+```
+
+Calls with simple variable or property arguments are supported. Concatenation,
+shadowed variables and unsupported scope changes still produce findings.
+The compatibility rules for restricted bean access still run.
+
+To suppress one specific occurrence in `.dornguard.yml`, copy the diagnostic's `path`,
 `rule_id`, and `fingerprint` from `dornguard check --format json`. Use
-the `rule` key for the rule ID and give a reason.
+the `rule` key for the rule ID and give a reason. Fingerprint entries match
+exact file paths.
 
 ```yaml
 ignore:
@@ -114,7 +213,7 @@ Use a project-relative path with forward slashes. Replace the example
 fingerprint with the reported value. Each entry exempts one matching
 finding when the code moves within the file. For identical code in the
 same file, use a comment to exempt a specific occurrence. The report
-includes both exception forms in its suppressed count. Baseline creation
+includes all `ignore` entries and source directives in its suppressed count. Baseline creation
 records findings that remain after these exceptions have been applied.
 
 ## Baseline

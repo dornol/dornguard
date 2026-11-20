@@ -83,13 +83,13 @@ impl Baseline {
 
     pub fn from_config(entries: &[Ignore]) -> Self {
         let mut counts = BTreeMap::new();
-        for entry in entries {
+        for (path, rule, fingerprint) in entries.iter().filter_map(Ignore::finding) {
             let identity = Entry {
-                rule_id: entry.rule.clone(),
-                path: Some(entry.path.clone()),
+                rule_id: rule.to_owned(),
+                path: Some(path.to_owned()),
                 module: None,
                 class_name: None,
-                fingerprint: entry.fingerprint.clone(),
+                fingerprint: fingerprint.to_owned(),
             };
             *counts.entry(identity).or_insert(0) += 1;
         }

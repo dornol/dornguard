@@ -21,6 +21,7 @@ mod pmd;
 mod semgrep;
 mod source;
 mod spring;
+mod thymeleaf;
 
 pub use archunit::{ArchModule, check_architecture, maven_model_path};
 pub use eslint::Eslint;

@@ -299,6 +299,7 @@ dependencies = [
  "dornguard-gradle",
  "dornguard-report",
  "dunce",
+ "html5ever",
  "ignore",
  "miette",
  "scraper",
@@ -317,6 +318,7 @@ version = "0.0.3"
 dependencies = [
  "dornguard-core",
  "dunce",
+ "globset",
  "miette",
  "serde",
  "serde-saphyr",
@@ -349,6 +351,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tree-sitter",
+ "tree-sitter-html",
  "tree-sitter-java",
  "tree-sitter-javascript",
  "tree-sitter-kotlin-ng",
@@ -1246,6 +1249,16 @@ dependencies = [
  "regex-syntax",
  "serde_json",
  "streaming-iterator",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-html"
+version = "0.23.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "261b708e5d92061ede329babaaa427b819329a9d427a1d710abb0f67bbef63ee"
+dependencies = [
+ "cc",
  "tree-sitter-language",
 ]
 

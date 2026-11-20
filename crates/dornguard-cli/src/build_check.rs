@@ -2,12 +2,9 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use dornguard_config::{
-    FLYWAY_RULE, PRESERVE_STACK_TRACE_RULE, ProjectConfig, RESOURCE_RULE, Registry, Rule,
-    UNNECESSARY_IMPORT_RULE,
-};
+use dornguard_config::{FLYWAY_RULE, ProjectConfig, RESOURCE_RULE, Registry, Rule};
 use dornguard_core::{
-    Diagnostic, EngineName, FailureKind, FailureStage, Module, Outcome, ProjectModel,
+    Diagnostic, EngineName, Failure, FailureKind, FailureStage, Module, Outcome, ProjectModel,
     SourceLanguage, TEMPLATE_DIR, fingerprint,
 };
 use dornguard_engine::{ArchModule, Engine, Pmd, Request, check_architecture};
@@ -133,7 +130,7 @@ pub async fn check(check: Check<'_>) -> Outcome {
         .collect::<BTreeMap<_, _>>();
     let rules_for = |name: &str| overrides.get(name).map_or(global, Vec::as_slice);
     let rule_needs_compile = |rule: &Rule| {
-        rule.engine == EngineName::Archunit || resolve_imports && rule.id == UNNECESSARY_IMPORT_RULE
+        rule.engine == EngineName::Archunit || resolve_imports && rule.uses_pmd_classpath()
     };
     let build_failure = |error, stage, modules: &[String]| {
         let mut outcome = preparation_error(error);
@@ -341,6 +338,7 @@ pub async fn check(check: Check<'_>) -> Outcome {
     let mut source_groups = BTreeMap::new();
     let mut pmd_modules = Vec::new();
     let mut mapped_files = BTreeSet::new();
+    let mut excluded_source = false;
     let mut architecture = Vec::new();
     for module in selected {
         let rules = rules_for(&module.path);
@@ -382,12 +380,38 @@ pub async fn check(check: Check<'_>) -> Outcome {
             if !all_files.is_empty() {
                 if compile_failed && needs_compile(rules) {
                     outcome.record_coverage(&all_files);
+                } else if let Some(file) =
+                    all_files
+                        .iter()
+                        .find(|file| match SourceLanguage::of(file) {
+                            Some(SourceLanguage::Java) => {
+                                !module.compile_sources.contains(&root.join(file))
+                            }
+                            Some(SourceLanguage::Kotlin) => !module.kotlin_compiled,
+                            _ => false,
+                        })
+                {
+                    let mut failure = Failure::new(
+                        FailureKind::EngineError,
+                        "The build did not compile this source. Check the compiler's skip and exclude settings.",
+                    );
+                    failure.engine = Some(EngineName::Archunit);
+                    failure.stage = Some(FailureStage::Engine);
+                    failure.path = Some(file.to_string_lossy().replace('\\', "/"));
+                    failure.modules.push(module.path.clone());
+                    failure.file_count = Some(all_files.len());
+                    failure.set_rules(arch_rules.iter().map(|rule| rule.id.as_str()));
+                    outcome.failures.push(failure);
+                    outcome.incomplete_files.extend(all_files.iter().cloned());
+                    outcome.record_coverage(&all_files);
                 } else {
                     architecture.push(ArchModule {
                         module,
                         rules: arch_rules,
                         files: all_files,
                         kotlin,
+                        // Gradle validates input content for up-to-date and cache hits.
+                        check_class_timestamps: build == BuildSystem::Maven,
                     });
                 }
             }
@@ -423,9 +447,12 @@ pub async fn check(check: Check<'_>) -> Outcome {
                 )
             })
             .collect::<Vec<_>>();
+        excluded_source |= files.iter().any(|file| config.excludes_source(file));
         files.retain(|file| {
-            SourceLanguage::of(file)
-                .is_some_and(|language| source_rules.iter().any(|rule| rule.applies_to(language)))
+            !config.excludes_source(file)
+                && SourceLanguage::of(file).is_some_and(|language| {
+                    source_rules.iter().any(|rule| rule.applies_to(language))
+                })
         });
         let test_rules = source_rules
             .iter()
@@ -445,7 +472,10 @@ pub async fn check(check: Check<'_>) -> Outcome {
             ) {
                 return preparation_error(error);
             }
-            tests.retain(|file| changes.is_none_or(|changes| changes.matches(file)));
+            excluded_source |= tests.iter().any(|file| config.excludes_source(file));
+            tests.retain(|file| {
+                !config.excludes_source(file) && changes.is_none_or(|changes| changes.matches(file))
+            });
             for file in &files {
                 tests.remove(file);
             }
@@ -462,26 +492,37 @@ pub async fn check(check: Check<'_>) -> Outcome {
         if include_other_sources {
             mapped_files.extend(files.iter().cloned());
         }
-        let uses_classpath = source_rules.iter().any(|rule| {
-            rule.id == UNNECESSARY_IMPORT_RULE
-                || config.allow_logged_exceptions && rule.id == PRESERVE_STACK_TRACE_RULE
-        });
+        let uses_classpath = source_rules.iter().any(|rule| rule.uses_pmd_classpath());
         let classpath = (!compile_failed
             && uses_classpath
             && (maven_compiled || compile_all || compile_names.contains(&module.path)))
         .then(|| compiled_classpath(module))
         .flatten();
-        if compile_failed
-            && resolve_imports
-            && source_rules
+        if resolve_imports && classpath.is_none() && uses_classpath {
+            let java_files = files
                 .iter()
-                .any(|rule| rule.id == UNNECESSARY_IMPORT_RULE)
-        {
-            outcome.record_coverage(
-                files
-                    .iter()
-                    .filter(|path| SourceLanguage::of(path) == Some(SourceLanguage::Java)),
-            );
+                .filter(|path| SourceLanguage::of(path) == Some(SourceLanguage::Java));
+            let count = java_files.clone().count();
+            if count > 0 {
+                if !compile_failed {
+                    let mut failure = Failure::new(
+                        FailureKind::EngineError,
+                        "The compiled classpath required by --resolve-types is unavailable.",
+                    );
+                    failure.engine = Some(EngineName::Pmd);
+                    failure.stage = Some(FailureStage::Engine);
+                    failure.modules.push(module.path.clone());
+                    failure.file_count = Some(count);
+                    failure.set_rules(
+                        source_rules
+                            .iter()
+                            .filter(|rule| rule.uses_pmd_classpath())
+                            .map(|rule| rule.id.as_str()),
+                    );
+                    outcome.failures.push(failure);
+                }
+                outcome.record_coverage(java_files);
+            }
         }
         let java_target = config.java_target.or(module.java_target);
         let needs_target = config.java_target.is_none()
@@ -509,9 +550,16 @@ pub async fn check(check: Check<'_>) -> Outcome {
             Ok(files) => files,
             Err(error) => return preparation_error(error),
         };
-        let files = files.into_iter().filter(|path| {
-            !mapped_files.contains(path) && changes.is_none_or(|changes| changes.matches(path))
-        });
+        let files = files
+            .into_iter()
+            .filter(|path| {
+                !mapped_files.contains(path) && changes.is_none_or(|changes| changes.matches(path))
+            })
+            .filter(|path| {
+                let excluded = config.excludes_source(path);
+                excluded_source |= excluded;
+                !excluded
+            });
         add_source_group(&mut source_groups, global.to_vec(), files, None);
     }
 
@@ -529,7 +577,7 @@ pub async fn check(check: Check<'_>) -> Outcome {
         if !outcome.failures.is_empty() {
             return outcome;
         }
-        if changes.is_some() {
+        if changes.is_some() || excluded_source {
             outcome.no_changes = true;
             return outcome;
         }
@@ -609,6 +657,8 @@ pub async fn check(check: Check<'_>) -> Outcome {
                 java_target,
                 java_source: config.java_source.or(module.java_source),
                 allow_logged_exceptions: config.allow_logged_exceptions,
+                resource_owners: &config.java_resource_owners,
+                managed_resource_factories: &config.java_managed_resource_factories,
             }
             .check(Request {
                 root,
@@ -665,6 +715,9 @@ fn add_source_group<'a>(
 }
 
 fn compiled_classpath(module: &Module) -> Option<Vec<PathBuf>> {
+    if module.compile_sources.is_empty() {
+        return None;
+    }
     let output = module.class_dirs.iter().filter(|path| path.is_dir());
     let mut classpath = output.cloned().collect::<Vec<_>>();
     if classpath.is_empty()

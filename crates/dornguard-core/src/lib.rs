@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -23,6 +23,8 @@ pub struct Module {
     #[serde(default)]
     pub compile_sources: BTreeSet<PathBuf>,
     pub kotlin_source_dirs: Vec<PathBuf>,
+    #[serde(default)]
+    pub kotlin_compiled: bool,
     pub class_dirs: Vec<PathBuf>,
     pub classpath: Vec<PathBuf>,
     pub java_target: Option<u16>,
@@ -223,6 +225,7 @@ pub enum Scope {
 pub struct Outcome {
     pub diagnostics: Vec<Diagnostic>,
     pub failures: Vec<Failure>,
+    pub analysis_notes: BTreeSet<String>,
     pub scanned_files: BTreeSet<PathBuf>,
     pub requested_files: BTreeSet<PathBuf>,
     pub incomplete_files: BTreeSet<PathBuf>,
@@ -237,6 +240,7 @@ impl Outcome {
     pub fn merge(&mut self, other: Self) {
         self.diagnostics.extend(other.diagnostics);
         self.failures.extend(other.failures);
+        self.analysis_notes.extend(other.analysis_notes);
         self.scanned_files.extend(other.scanned_files);
         self.requested_files.extend(other.requested_files);
         self.incomplete_files.extend(other.incomplete_files);
@@ -271,6 +275,14 @@ impl Outcome {
             None if self.no_changes => (Status::NoChanges, 0),
             None => (Status::Passed, 0),
         };
+        let mut rule_counts = BTreeMap::<String, RuleCount>::new();
+        for diagnostic in &self.diagnostics {
+            let count = rule_counts.entry(diagnostic.rule_id.clone()).or_default();
+            match diagnostic.severity {
+                Severity::Error => count.errors += 1,
+                Severity::Warning => count.warnings += 1,
+            }
+        }
         CheckReport {
             version: 3,
             status,
@@ -285,6 +297,8 @@ impl Outcome {
                 .count(),
             suppressed_count: self.suppressed_count,
             organization_policy_enforced: self.organization_policy_enforced,
+            analysis_notes: self.analysis_notes,
+            rule_counts,
             diagnostics: self.diagnostics,
             failures: self.failures,
         }
@@ -304,8 +318,17 @@ pub struct CheckReport {
     pub files_requested: usize,
     pub suppressed_count: usize,
     pub organization_policy_enforced: bool,
+    #[serde(skip_serializing_if = "BTreeSet::is_empty")]
+    pub analysis_notes: BTreeSet<String>,
+    pub rule_counts: BTreeMap<String, RuleCount>,
     pub diagnostics: Vec<Diagnostic>,
     pub failures: Vec<Failure>,
+}
+
+#[derive(Default, Serialize)]
+pub struct RuleCount {
+    pub errors: usize,
+    pub warnings: usize,
 }
 
 #[cfg(test)]

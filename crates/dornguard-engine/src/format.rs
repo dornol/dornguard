@@ -3,7 +3,7 @@ use std::fs;
 use std::ops::Range;
 use std::path::Path;
 
-use dornguard_config::{FormatConfig, LineEnding, Rule};
+use dornguard_config::{FileFormat, FormatConfig, LineEnding, Rule};
 use dornguard_core::{Diagnostic, EngineName, Outcome, SourceLanguage, fingerprint};
 use tree_sitter::{Node, Parser};
 
@@ -18,14 +18,13 @@ pub fn check(request: Request<'_>, settings: &FormatConfig) -> Outcome {
         .map(|rule| (rule.id.as_str(), *rule))
         .collect();
     for file in request.files {
-        let (grammar, width) = match SourceLanguage::of(file) {
-            Some(SourceLanguage::Java) => (tree_sitter_java::LANGUAGE, settings.java_indent),
-            Some(SourceLanguage::Kotlin) => {
-                (tree_sitter_kotlin_ng::LANGUAGE, settings.kotlin_indent)
-            }
-            Some(SourceLanguage::Javascript) => {
-                (tree_sitter_javascript::LANGUAGE, settings.javascript_indent)
-            }
+        let Some(language) = SourceLanguage::of(file) else {
+            continue;
+        };
+        let grammar = match language {
+            SourceLanguage::Java => tree_sitter_java::LANGUAGE,
+            SourceLanguage::Kotlin => tree_sitter_kotlin_ng::LANGUAGE,
+            SourceLanguage::Javascript => tree_sitter_javascript::LANGUAGE,
             _ => continue,
         };
         let source = match fs::read_to_string(request.root.join(file)) {
@@ -55,8 +54,7 @@ pub fn check(request: Request<'_>, settings: &FormatConfig) -> Outcome {
             file,
             &source,
             tree.root_node(),
-            usize::from(width),
-            settings,
+            settings.for_file(file, language),
             &rules,
             &mut outcome,
         );
@@ -102,8 +100,7 @@ fn check_layout(
     file: &Path,
     source: &str,
     root: Node<'_>,
-    width: usize,
-    settings: &FormatConfig,
+    settings: FileFormat,
     rules: &BTreeMap<&str, &Rule>,
     outcome: &mut Outcome,
 ) {
@@ -147,7 +144,14 @@ fn check_layout(
             continue;
         }
         if node == root || !node.has_error() && is_block(node.kind()) {
-            collect_indentation(node, root, source, &lines, width, &mut expected);
+            collect_indentation(
+                node,
+                root,
+                source,
+                &lines,
+                usize::from(settings.indent_size),
+                &mut expected,
+            );
         }
         if !node.is_named()
             && matches!(

@@ -14,6 +14,7 @@ pub fn write_json(report: &CheckReport, writer: &mut impl Write) -> io::Result<(
 pub fn write_text(report: &CheckReport, writer: &mut impl Write) -> io::Result<()> {
     write_summary(report, writer)?;
     write_failures(report, writer)?;
+    write_rule_counts(report, writer)?;
     for diagnostic in &report.diagnostics {
         write_diagnostic(diagnostic, writer)?;
     }
@@ -38,6 +39,7 @@ pub fn write_agent(report: &CheckReport, writer: &mut impl Write, limit: usize) 
         report.suppressed_count
     )?;
     write_failures(report, writer)?;
+    write_rule_counts(report, writer)?;
     for diagnostic in errors.chain(warnings).take(limit) {
         write_diagnostic(diagnostic, writer)?;
     }
@@ -76,6 +78,20 @@ fn write_summary(report: &CheckReport, writer: &mut impl Write) -> io::Result<()
     writeln!(writer, ")")?;
     if let Some(reason) = &report.fallback_reason {
         writeln!(writer, "Full scan: {reason}")?;
+    }
+    for note in &report.analysis_notes {
+        writeln!(writer, "  {note}")?;
+    }
+    Ok(())
+}
+
+fn write_rule_counts(report: &CheckReport, writer: &mut impl Write) -> io::Result<()> {
+    for (rule, count) in &report.rule_counts {
+        writeln!(
+            writer,
+            "  {rule}: {} errors, {} warnings",
+            count.errors, count.warnings
+        )?;
     }
     Ok(())
 }

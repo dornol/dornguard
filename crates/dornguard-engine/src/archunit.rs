@@ -12,13 +12,14 @@ use tokio::time::Instant;
 use crate::{display_path, fail, relative_path, run_command};
 
 const ENGINE: EngineName = EngineName::Archunit;
-const SCHEMA_VERSION: u32 = 3;
+const SCHEMA_VERSION: u32 = 4;
 
 pub struct ArchModule<'a> {
     pub module: &'a Module,
     pub rules: Vec<&'a Rule>,
     pub files: Vec<PathBuf>,
     pub kotlin: bool,
+    pub check_class_timestamps: bool,
 }
 
 pub async fn check_architecture(root: &Path, modules: &[ArchModule<'_>]) -> Outcome {
@@ -77,6 +78,7 @@ async fn run(root: &Path, modules: &[ArchModule<'_>], outcome: &mut Outcome) -> 
             path: &module.path,
             source_files: candidate.files.iter().map(|file| root.join(file)).collect(),
             kotlin: candidate.kotlin,
+            check_class_timestamps: candidate.check_class_timestamps,
             class_dirs: &module.class_dirs,
             classpath: &module.classpath,
             rules,
@@ -119,6 +121,7 @@ async fn run(root: &Path, modules: &[ArchModule<'_>], outcome: &mut Outcome) -> 
             result.schema_version
         );
     }
+    let mut failed = BTreeSet::new();
     for error in result.failures {
         fail(
             outcome,
@@ -129,8 +132,14 @@ async fn run(root: &Path, modules: &[ArchModule<'_>], outcome: &mut Outcome) -> 
             ),
         );
         if let Some(failure) = outcome.failures.last_mut() {
-            failure.modules.push(error.module);
+            failure.path = error
+                .path
+                .and_then(|path| relative_path(root, &path))
+                .as_deref()
+                .map(display_path);
+            failure.modules.push(error.module.clone());
         }
+        failed.insert(error.module);
     }
     let analyzed = result
         .analyzed
@@ -138,6 +147,9 @@ async fn run(root: &Path, modules: &[ArchModule<'_>], outcome: &mut Outcome) -> 
         .map(String::as_str)
         .collect::<BTreeSet<_>>();
     for candidate in modules {
+        if failed.contains(&candidate.module.path) {
+            continue;
+        }
         if !analyzed.contains(candidate.module.path.as_str()) {
             fail(
                 outcome,
@@ -158,6 +170,7 @@ async fn run(root: &Path, modules: &[ArchModule<'_>], outcome: &mut Outcome) -> 
         .iter()
         .map(|candidate| (candidate.module.path.as_str(), candidate))
         .collect();
+    let mut relationships = BTreeMap::new();
     for finding in result.findings {
         let Some(candidate) = scopes.get(finding.module.as_str()) else {
             fail(
@@ -196,7 +209,7 @@ async fn run(root: &Path, modules: &[ArchModule<'_>], outcome: &mut Outcome) -> 
             None => None,
         };
         let line = finding.line.filter(|_| path.is_some());
-        let fingerprint = if path.is_some() {
+        let legacy_fingerprint = if path.is_some() {
             fingerprint(&finding.identity)
         } else {
             fingerprint(&format!(
@@ -204,7 +217,15 @@ async fn run(root: &Path, modules: &[ArchModule<'_>], outcome: &mut Outcome) -> 
                 finding.module, finding.origin, rule.id, finding.identity
             ))
         };
-        outcome.diagnostics.push(Diagnostic {
+        let key = (
+            finding.module.clone(),
+            rule.id.clone(),
+            finding.origin.clone(),
+            finding.target.clone(),
+        );
+        let relationship_fingerprint =
+            fingerprint(&format!("{}\0{}\0{}\0{}", key.0, key.1, key.2, key.3));
+        let diagnostic = Diagnostic {
             path,
             module: Some(finding.module.clone()),
             class_name: Some(finding.origin.clone()),
@@ -222,9 +243,35 @@ async fn run(root: &Path, modules: &[ArchModule<'_>], outcome: &mut Outcome) -> 
             ),
             fix: rule.fix.clone(),
             legacy_fingerprints: Vec::new(),
-            fingerprint: Some(fingerprint),
-        });
+            fingerprint: Some(relationship_fingerprint),
+        };
+        use std::collections::btree_map::Entry;
+        match relationships.entry(key) {
+            Entry::Vacant(entry) => {
+                let mut diagnostic = diagnostic;
+                diagnostic.legacy_fingerprints.push(legacy_fingerprint);
+                entry.insert(diagnostic);
+            }
+            Entry::Occupied(mut entry) => {
+                let representative = entry.get_mut();
+                if (
+                    diagnostic.path.is_none(),
+                    diagnostic.line.is_none(),
+                    diagnostic.line,
+                ) < (
+                    representative.path.is_none(),
+                    representative.line.is_none(),
+                    representative.line,
+                ) {
+                    let legacy = std::mem::take(&mut representative.legacy_fingerprints);
+                    *representative = diagnostic;
+                    representative.legacy_fingerprints = legacy;
+                }
+                representative.legacy_fingerprints.push(legacy_fingerprint);
+            }
+        }
     }
+    outcome.diagnostics.extend(relationships.into_values());
     Ok(())
 }
 
@@ -281,6 +328,7 @@ struct ModuleInput<'a> {
     path: &'a str,
     source_files: Vec<PathBuf>,
     kotlin: bool,
+    check_class_timestamps: bool,
     class_dirs: &'a [PathBuf],
     classpath: &'a [PathBuf],
     rules: Vec<RuleInput<'a>>,
@@ -316,5 +364,6 @@ struct Finding {
 #[derive(Deserialize)]
 struct RunnerFailure {
     module: String,
+    path: Option<PathBuf>,
     reason: String,
 }

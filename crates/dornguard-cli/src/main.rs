@@ -6,7 +6,7 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand, ValueEnum};
 use dornguard_config::{
     BUILTIN_VERSION, CONFIG_FILE, DEFAULT_CONFIG, FLYWAY_RULE, JPA_RESPONSE_RULE, ProjectConfig,
-    Registry, UNNECESSARY_IMPORT_RULE,
+    Registry,
 };
 use dornguard_core::{EngineName, Failure, FailureKind, Outcome, Scope, SourceLanguage};
 use dornguard_engine::{
@@ -39,6 +39,8 @@ For coding agents, run from the project root.
       Include committed branch changes when reviewing a pull request. Use its actual base ref.
   dornguard check --changed --format json
       Get all diagnostics in the same scope as JSON. Omit --changed to scan the full project.
+  dornguard check --only-profile format
+      Run formatting checks with this project’s formatting settings.
   dornguard rules explain RULE_ID
       Look up a diagnostic's rule and suggested fix.
 
@@ -60,8 +62,12 @@ enum Action {
     Check {
         #[arg(default_value = ".")]
         target: PathBuf,
-        #[arg(long)]
+        /// Add a profile to the project and module profiles
+        #[arg(long, conflicts_with = "only_profile")]
         profile: Vec<String>,
+        /// Use these profiles in place of the configured project and module profiles
+        #[arg(long, value_name = "PROFILE")]
+        only_profile: Vec<String>,
         /// Output format for the check report. Use --format json for machine-readable results
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
@@ -69,8 +75,8 @@ enum Action {
         config: Option<PathBuf>,
         #[arg(long, value_name = "MODULE")]
         module: Option<String>,
-        /// Compile build modules to resolve unused Java wildcard imports
-        #[arg(long)]
+        /// Compile main Java sources for PMD type resolution, including wildcard imports
+        #[arg(long, visible_alias = "resolve-types")]
         resolve_imports: bool,
         /// Limit the check to changes in the index and working tree
         #[arg(long, conflicts_with = "module")]
@@ -165,10 +171,14 @@ enum BaselineAction {
     Create {
         #[arg(long, default_value = ".dornguard-baseline.json")]
         output: PathBuf,
-        #[arg(long)]
+        /// Add a profile to the project and module profiles
+        #[arg(long, conflicts_with = "only_profile")]
         profile: Vec<String>,
+        /// Use these profiles in place of the configured project and module profiles
+        #[arg(long, value_name = "PROFILE")]
+        only_profile: Vec<String>,
         /// Record violations using the compiled main Java classpath
-        #[arg(long)]
+        #[arg(long, visible_alias = "resolve-types")]
         resolve_imports: bool,
         /// Replace an existing baseline
         #[arg(long)]
@@ -217,6 +227,7 @@ async fn dispatch(action: Action) -> Result<u8> {
         Action::Check {
             target,
             profile,
+            only_profile,
             format,
             config,
             module,
@@ -237,7 +248,7 @@ async fn dispatch(action: Action) -> Result<u8> {
                 };
                 let mut outcome = check(
                     &target,
-                    &profile,
+                    ProfileSelection::from_cli(&profile, &only_profile),
                     config.as_deref(),
                     module.as_deref(),
                     changed.then_some(changed::Request {
@@ -257,7 +268,7 @@ async fn dispatch(action: Action) -> Result<u8> {
             if let Some(policy) = &organization_policy {
                 let mut required = check(
                     &target,
-                    &[],
+                    ProfileSelection::default(),
                     config.as_deref(),
                     None,
                     changed.then_some(changed::Request {
@@ -314,13 +325,14 @@ async fn dispatch(action: Action) -> Result<u8> {
                 BaselineAction::Create {
                     output,
                     profile,
+                    only_profile,
                     resolve_imports,
                     force,
                 },
         } => {
             let outcome = check(
                 Path::new("."),
-                &profile,
+                ProfileSelection::from_cli(&profile, &only_profile),
                 None,
                 None,
                 None,
@@ -435,6 +447,34 @@ async fn dispatch(action: Action) -> Result<u8> {
                 RuleAction::Explain { id } => {
                     let rule = registry.rule(&id)?;
                     println!("{}  {}\nFix: {}", rule.id, rule.description, rule.fix);
+                    let options = match rule.id.as_str() {
+                        "format.indentation" => Some(
+                            "format.java_indent (4), format.kotlin_indent (4), format.javascript_indent (2), format.overrides[].indent_size",
+                        ),
+                        "format.line-ending" => {
+                            Some("format.line_ending (lf), format.overrides[].line_ending")
+                        }
+                        "format.blank-lines" => {
+                            Some("format.max_blank_lines (1), format.overrides[].max_blank_lines")
+                        }
+                        "java.resource-not-closed" => Some(
+                            "java_target, java_resource_owners, java_managed_resource_factories",
+                        ),
+                        "java.preserve-stack-trace" => Some("allow_logged_exceptions (false)"),
+                        "thymeleaf.unescaped-output" => Some("thymeleaf_sanitizers"),
+                        _ if rule.options.is_some() => {
+                            Some("rules.<id>.options.from, rules.<id>.options.forbidden")
+                        }
+                        _ => None,
+                    };
+                    if let Some(options) = options {
+                        println!("Configuration keys: {options}");
+                    }
+                    if rule.is_format_rule() {
+                        println!(
+                            "Use exclude for source globs or check --only-profile format to run formatting alone."
+                        );
+                    }
                 }
             }
             Ok(0)
@@ -442,9 +482,24 @@ async fn dispatch(action: Action) -> Result<u8> {
     }
 }
 
+#[derive(Default)]
+struct ProfileSelection<'a> {
+    names: &'a [String],
+    exclusive: bool,
+}
+
+impl<'a> ProfileSelection<'a> {
+    fn from_cli(additional: &'a [String], only: &'a [String]) -> Self {
+        Self {
+            names: if only.is_empty() { additional } else { only },
+            exclusive: !only.is_empty(),
+        }
+    }
+}
+
 async fn check(
     target: &Path,
-    profiles: &[String],
+    selection: ProfileSelection<'_>,
     config: Option<&Path>,
     module: Option<&str>,
     changed: Option<changed::Request<'_>>,
@@ -475,10 +530,14 @@ async fn check(
     } else {
         project.clone()
     };
-    let config = match Registry::load(&policy) {
+    let mut config = match Registry::load(&policy) {
         Ok(config) => config,
         Err(error) => return config_error(error),
     };
+    if selection.exclusive {
+        config.use_only_cli_profiles();
+    }
+    let profiles = selection.names;
     let registry = match Registry::for_config(&policy, &config) {
         Ok(registry) => registry,
         Err(error) => return config_error(error),
@@ -574,8 +633,7 @@ async fn check(
         || !config.modules.is_empty()
         || !config.module_dependencies.forbid.is_empty()
         || rules.iter().any(|rule| rule.engine == EngineName::Archunit);
-    if uses_build || resolve_imports && rules.iter().any(|rule| rule.id == UNNECESSARY_IMPORT_RULE)
-    {
+    if uses_build || resolve_imports && rules.iter().any(|rule| rule.uses_pmd_classpath()) {
         let (module_git_outcome, git_outcome) = if module.is_some() {
             (git_outcome, Outcome::default())
         } else {
@@ -666,6 +724,8 @@ async fn check(
         }
         return scoped_prep_error(miette!("No source files apply to this check"));
     }
+    let previous_count = files.len();
+    files.retain(|file| !config.excludes_source(file));
     let mut outcome = run_source_engines(
         root,
         &files,
@@ -677,6 +737,7 @@ async fn check(
     )
     .await;
     outcome.merge(git_outcome);
+    outcome.no_changes = previous_count > 0 && files.is_empty() && flyway_rule.is_none();
     outcome.scope = scope;
     outcome.fallback_reason = fallback_reason;
     if organization.is_none() {
@@ -724,12 +785,18 @@ async fn run_source_engines(
             required,
         };
         match engine {
-            EngineName::Semgrep => Semgrep::default().check(request).await,
+            EngineName::Semgrep => {
+                Semgrep::with_thymeleaf_sanitizers(&config.thymeleaf_sanitizers)
+                    .check(request)
+                    .await
+            }
             EngineName::Pmd => {
                 Pmd {
                     java_target: config.java_target,
                     java_source: config.java_source.or(java_source),
                     allow_logged_exceptions: config.allow_logged_exceptions,
+                    resource_owners: &config.java_resource_owners,
+                    managed_resource_factories: &config.java_managed_resource_factories,
                     ..Pmd::default()
                 }
                 .check(request)

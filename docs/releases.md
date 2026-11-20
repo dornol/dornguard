@@ -52,6 +52,15 @@ that completed every requested analysis for the file. A failed invocation
 can contain diagnostics from the
 engines that produced results. Exit codes retain their documented meanings.
 
+The development version adds `rule_counts` with error and warning counts by
+rule, and optional `analysis_notes` describing PMD classpath use. ArchUnit
+reports one finding per module, rule, origin class and forbidden target class.
+Existing dependency fingerprints still match the grouped finding.
+The current runner uses protocol 4 and must be installed with the matching CLI.
+A compiler-skipped input or a missing Java bytecode mapping is reported as
+incomplete. Maven checks also reject class files older than the matched
+source. Gradle checks use the compile tasks' up-to-date and cache state.
+
 For reproducible CI, pin the CLI archive,
 the built-in Ruleset version or external Ruleset commit, and the engine versions.
 

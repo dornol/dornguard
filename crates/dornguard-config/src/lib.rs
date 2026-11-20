@@ -3,6 +3,7 @@ use std::fs;
 use std::path::Path;
 
 use dornguard_core::{EngineName, Severity, SourceLanguage, valid_fingerprint};
+use globset::{GlobBuilder, GlobMatcher};
 use miette::{IntoDiagnostic, Result, WrapErr, bail, miette};
 use serde::Deserialize;
 
@@ -36,10 +37,18 @@ pub struct ProjectConfig {
     pub ignore: Vec<Ignore>,
     #[serde(default)]
     pub format: FormatConfig,
+    #[serde(default)]
+    exclude: Vec<PathGlob>,
     pub java_target: Option<u16>,
     pub java_source: Option<u16>,
     #[serde(default)]
     pub allow_logged_exceptions: bool,
+    #[serde(default)]
+    pub java_resource_owners: Vec<String>,
+    #[serde(default)]
+    pub java_managed_resource_factories: Vec<String>,
+    #[serde(default)]
+    pub thymeleaf_sanitizers: Vec<String>,
     #[serde(default)]
     rules: BTreeMap<String, RuleOverride>,
 }
@@ -52,6 +61,107 @@ pub struct FormatConfig {
     pub javascript_indent: u8,
     pub line_ending: LineEnding,
     pub max_blank_lines: u8,
+    overrides: Vec<FormatOverride>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FormatOverride {
+    files: Vec<PathGlob>,
+    indent_size: Option<u8>,
+    line_ending: Option<LineEnding>,
+    max_blank_lines: Option<u8>,
+}
+
+#[derive(Clone, Copy)]
+pub struct FileFormat {
+    pub indent_size: u8,
+    pub line_ending: LineEnding,
+    pub max_blank_lines: u8,
+}
+
+struct PathGlob(GlobMatcher);
+
+impl PathGlob {
+    fn new(pattern: &str) -> std::result::Result<Self, String> {
+        if !project_relative(pattern) {
+            return Err("Expected a project-relative glob with forward slashes".into());
+        }
+        GlobBuilder::new(pattern)
+            .literal_separator(true)
+            .build()
+            .map(|glob| Self(glob.compile_matcher()))
+            .map_err(|error| error.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for PathGlob {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        let pattern = String::deserialize(deserializer)?;
+        Self::new(&pattern).map_err(serde::de::Error::custom)
+    }
+}
+
+fn project_relative(path: &str) -> bool {
+    !path.contains(['\\', ':']) && path.split('/').all(|part| !matches!(part, "" | "." | ".."))
+}
+
+fn identifier(name: &str) -> bool {
+    let mut bytes = name.bytes();
+    bytes
+        .next()
+        .is_some_and(|byte| byte.is_ascii_alphabetic() || matches!(byte, b'_' | b'$'))
+        && bytes.all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'$'))
+}
+
+fn qualified_identifier(name: &str) -> bool {
+    name.split('.').all(identifier)
+}
+
+fn resource_signature(signature: &str) -> Option<(&str, &str)> {
+    let (member, parameters) = signature.strip_suffix(')')?.split_once('(')?;
+    let (owner, method) = member.rsplit_once('#')?;
+    (qualified_identifier(owner) && owner.contains('.') && identifier(method))
+        .then_some((method, parameters))
+}
+
+impl ProjectConfig {
+    pub fn excludes_source(&self, file: &Path) -> bool {
+        self.exclude.iter().any(|glob| glob.0.is_match(file))
+    }
+
+    pub fn use_only_cli_profiles(&mut self) {
+        self.profiles.clear();
+        self.module_dependencies.forbid.clear();
+        for module in self.modules.values_mut() {
+            module.profiles.clear();
+        }
+    }
+}
+
+impl FormatConfig {
+    pub fn for_file(&self, file: &Path, language: SourceLanguage) -> FileFormat {
+        let mut settings = FileFormat {
+            indent_size: match language {
+                SourceLanguage::Java => self.java_indent,
+                SourceLanguage::Kotlin => self.kotlin_indent,
+                _ => self.javascript_indent,
+            },
+            line_ending: self.line_ending,
+            max_blank_lines: self.max_blank_lines,
+        };
+        for entry in &self.overrides {
+            if entry.files.iter().any(|glob| glob.0.is_match(file)) {
+                settings.indent_size = entry.indent_size.unwrap_or(settings.indent_size);
+                settings.line_ending = entry.line_ending.unwrap_or(settings.line_ending);
+                settings.max_blank_lines =
+                    entry.max_blank_lines.unwrap_or(settings.max_blank_lines);
+            }
+        }
+        settings
+    }
 }
 
 #[derive(Clone, Copy, Default, Deserialize)]
@@ -70,17 +180,84 @@ impl Default for FormatConfig {
             javascript_indent: 2,
             line_ending: LineEnding::Lf,
             max_blank_lines: 1,
+            overrides: Vec::new(),
         }
     }
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(try_from = "IgnoreEntry")]
 pub struct Ignore {
-    pub path: String,
-    pub rule: String,
-    pub fingerprint: String,
+    rule: Option<String>,
+    selector: IgnoreSelector,
+}
+
+enum IgnoreSelector {
+    Finding { path: String, fingerprint: String },
+    Path(PathGlob),
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct IgnoreEntry {
+    path: String,
+    rule: Option<String>,
+    fingerprint: Option<String>,
     reason: String,
+}
+
+impl TryFrom<IgnoreEntry> for Ignore {
+    type Error = String;
+
+    fn try_from(entry: IgnoreEntry) -> std::result::Result<Self, Self::Error> {
+        let IgnoreEntry {
+            path,
+            rule,
+            fingerprint,
+            reason,
+        } = entry;
+        if reason.trim().is_empty() {
+            return Err(format!("Ignore entry for {path} requires a reason"));
+        }
+        let selector = if let Some(fingerprint) = fingerprint {
+            if !project_relative(&path) {
+                return Err(format!(
+                    "Ignore path must be a project-relative file path with forward slashes: {path}"
+                ));
+            }
+            if !valid_fingerprint(&fingerprint) {
+                return Err(format!(
+                    "Ignore fingerprint for {path} must be a lowercase SHA-256 digest"
+                ));
+            }
+            if rule.is_none() {
+                return Err(format!("Ignore fingerprint for {path} requires a rule"));
+            }
+            IgnoreSelector::Finding { path, fingerprint }
+        } else {
+            let pattern = if path.ends_with('/') {
+                format!("{path}**")
+            } else {
+                path
+            };
+            IgnoreSelector::Path(PathGlob::new(&pattern)?)
+        };
+        Ok(Self { rule, selector })
+    }
+}
+
+impl Ignore {
+    pub fn matches_path(&self, path: &Path, rule: &str) -> bool {
+        matches!(&self.selector, IgnoreSelector::Path(pattern) if pattern.0.is_match(path))
+            && self.rule.as_deref().is_none_or(|selected| selected == rule)
+    }
+
+    pub fn finding(&self) -> Option<(&str, &str, &str)> {
+        let IgnoreSelector::Finding { path, fingerprint } = &self.selector else {
+            return None;
+        };
+        Some((path, self.rule.as_deref()?, fingerprint))
+    }
 }
 
 #[derive(Deserialize)]
@@ -170,6 +347,13 @@ impl Rule {
             }),
             _ => false,
         }
+    }
+
+    pub fn uses_pmd_classpath(&self) -> bool {
+        matches!(
+            self.id.as_str(),
+            UNNECESSARY_IMPORT_RULE | RESOURCE_RULE | PRESERVE_STACK_TRACE_RULE
+        )
     }
 
     pub fn is_format_rule(&self) -> bool {
@@ -451,8 +635,12 @@ impl Registry {
         if let Some(source) = Source::open(path, &config.ruleset)? {
             registry.extend(source)?;
         }
-        for entry in &config.ignore {
-            registry.rule(&entry.rule).wrap_err("Invalid ignore rule")?;
+        for rule in config
+            .ignore
+            .iter()
+            .filter_map(|entry| entry.rule.as_deref())
+        {
+            registry.rule(rule).wrap_err("Invalid ignore rule")?;
         }
         Ok(registry)
     }
@@ -609,20 +797,48 @@ impl Registry {
                 bail!("format.{name} must be between 1 and 16");
             }
         }
-        for entry in &config.ignore {
-            let path = &entry.path;
-            if path.contains(['\\', ':'])
-                || path.split('/').any(|part| matches!(part, "" | "." | ".."))
+        for entry in &config.format.overrides {
+            if entry.files.is_empty() {
+                bail!("format.overrides.files must contain at least one glob");
+            }
+            if entry
+                .indent_size
+                .is_some_and(|width| !(1..=16).contains(&width))
             {
+                bail!("format.overrides.indent_size must be between 1 and 16");
+            }
+        }
+        for signature in &config.java_resource_owners {
+            if !resource_signature(signature).is_some_and(|(_, parameters)| {
+                qualified_identifier(parameters.trim_end_matches("[]"))
+            }) {
                 bail!(
-                    "Ignore path must be a project-relative file path with forward slashes: {path}"
+                    "java_resource_owners requires a fully qualified signature with one resource argument, e.g. example.Handle#new(java.sql.Connection)"
                 );
             }
-            if !valid_fingerprint(&entry.fingerprint) {
-                bail!("Ignore fingerprint for {path} must be a lowercase SHA-256 digest");
+        }
+        for signature in &config.java_managed_resource_factories {
+            if !resource_signature(signature).is_some_and(|(method, parameters)| {
+                method != "new"
+                    && (parameters.is_empty()
+                        || parameters.split(',').all(|parameter| {
+                            qualified_identifier(parameter.trim_end_matches("[]"))
+                        }))
+            }) {
+                bail!(
+                    "java_managed_resource_factories requires fully qualified method signatures, e.g. example.AppResources#connection()"
+                );
             }
-            if entry.reason.trim().is_empty() {
-                bail!("Ignore entry for {path} requires a reason");
+        }
+        for sanitizer in &config.thymeleaf_sanitizers {
+            if !sanitizer
+                .strip_prefix('@')
+                .and_then(|callee| callee.split_once('.'))
+                .is_some_and(|(bean, method)| identifier(bean) && identifier(method))
+            {
+                bail!(
+                    "thymeleaf_sanitizers requires bean method names such as @htmlSanitizer.clean"
+                );
             }
         }
         Ok(config)

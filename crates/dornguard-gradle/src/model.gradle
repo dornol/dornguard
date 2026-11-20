@@ -28,6 +28,8 @@ gradle.projectsEvaluated {
                 def compileTest = test == null ? null : project.tasks.named(test.compileJavaTaskName).get()
                 def kotlinMain = project.plugins.hasPlugin('org.jetbrains.kotlin.jvm') ?
                     project.extensions.getByName('kotlin').sourceSets.getByName('main') : null
+                def compileKotlin = main == null || kotlinMain == null ? null :
+                    project.tasks.findByName(main.getCompileTaskName('kotlin'))
                 def dependencies = ['api', 'implementation', 'compileOnly', 'compileOnlyApi', 'runtimeOnly'].collectMany { name ->
                     def configuration = project.configurations.findByName(name)
                     configuration == null ? [] : configuration.allDependencies.withType(ProjectDependency).collect { it.path }
@@ -38,10 +40,9 @@ gradle.projectsEvaluated {
                     projectDir: project.projectDir.canonicalPath,
                     sourceDirs: main == null ? [] : main.java.srcDirs*.canonicalPath.sort(),
                     testSourceDirs: test == null ? [] : test.java.srcDirs*.canonicalPath.sort(),
-                    compileSources: compile != null && project in compileProjects && compile.enabled &&
-                        compile.state.executed && !compile.state.noSource &&
-                        (!compile.state.skipped || compile.state.skipMessage in ['UP-TO-DATE', 'FROM-CACHE']) ?
+                    compileSources: project in compileProjects && hasCompileOutput(compile) ?
                         compile.source.files*.canonicalPath.sort() : [],
+                    kotlinCompiled: project in compileProjects && hasCompileOutput(compileKotlin),
                     kotlinSourceDirs: kotlinMain == null ? [] : kotlinMain.kotlin.srcDirs*.canonicalPath.sort(),
                     classDirs: main == null ? [] : main.output.classesDirs.files*.canonicalPath.sort(),
                     classpath: main != null && project in compileProjects ? main.compileClasspath.files*.canonicalPath : [],
@@ -77,4 +78,9 @@ Integer javaVersion(compile, String option, String compatibility) {
 Integer parseJavaVersion(String value) {
     def version = value?.replaceFirst('^1\\.', '')
     return version?.isInteger() ? version.toInteger() : null
+}
+
+boolean hasCompileOutput(task) {
+    task != null && task.enabled && task.state.executed && !task.state.noSource &&
+        (!task.state.skipped || task.state.skipMessage in ['UP-TO-DATE', 'FROM-CACHE'])
 }
