@@ -1,0 +1,6 @@
+rules:
+  - id: kotlin-print-stack-trace
+    languages: [kotlin]
+    message: Log the exception with the project logger.
+    severity: ERROR
+    pattern: $E.printStackTrace()

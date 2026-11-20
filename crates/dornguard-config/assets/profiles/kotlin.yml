@@ -8,3 +8,4 @@ rules:
   - kotlin.fully-qualified-type
   - kotlin.thread-sleep-in-suspend
   - kotlin.run-catching-cancellation
+  - kotlin.print-stack-trace

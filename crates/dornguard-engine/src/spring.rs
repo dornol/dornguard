@@ -1,7 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use dornguard_config::{ASYNC_SELF_RULE, JPA_RESPONSE_RULE, Rule, TRANSACTIONAL_SELF_RULE};
+use dornguard_config::{
+    ASYNC_SELF_RULE, CACHE_SELF_RULE, JPA_RESPONSE_RULE, RETRY_SELF_RULE, Rule,
+    TRANSACTIONAL_SELF_RULE,
+};
 use dornguard_core::{Diagnostic, EngineName, Outcome, SourceLanguage};
 use ignore::WalkBuilder;
 use miette::{IntoDiagnostic, Result, WrapErr, bail};
@@ -13,6 +16,13 @@ use crate::{Request, diagnostic_message, display_path, fail};
 
 const TRANSACTIONAL: &str = "org.springframework.transaction.annotation.Transactional";
 const ASYNC: &str = "org.springframework.scheduling.annotation.Async";
+const CACHING: [&str; 4] = [
+    "org.springframework.cache.annotation.Cacheable",
+    "org.springframework.cache.annotation.CacheEvict",
+    "org.springframework.cache.annotation.CachePut",
+    "org.springframework.cache.annotation.Caching",
+];
+const RETRY: &str = "org.springframework.retry.annotation.Retryable";
 const WEB: &str = "org.springframework.web.bind.annotation";
 
 pub(super) fn check(request: Request<'_>, required: bool) -> Outcome {
@@ -73,17 +83,21 @@ fn scan(request: Request<'_>, required: bool, outcome: &mut Outcome) -> Result<(
                 .collect::<Vec<_>>();
             for rule in request.rules {
                 match rule.id.as_str() {
-                    TRANSACTIONAL_SELF_RULE | ASYNC_SELF_RULE => proxy_calls(
+                    TRANSACTIONAL_SELF_RULE
+                    | ASYNC_SELF_RULE
+                    | CACHE_SELF_RULE
+                    | RETRY_SELF_RULE => proxy_calls(
                         class,
                         &methods,
                         &imports,
                         |node, name| {
                             emit(outcome, file, &source, rule, node, name);
                         },
-                        if rule.id == TRANSACTIONAL_SELF_RULE {
-                            TRANSACTIONAL
-                        } else {
-                            ASYNC
+                        match rule.id.as_str() {
+                            TRANSACTIONAL_SELF_RULE => &[TRANSACTIONAL],
+                            ASYNC_SELF_RULE => &[ASYNC],
+                            CACHE_SELF_RULE => &CACHING,
+                            _ => &[RETRY],
                         },
                     ),
                     JPA_RESPONSE_RULE => {
@@ -113,12 +127,14 @@ fn proxy_calls(
     methods: &[Node<'_>],
     imports: &Imports<'_>,
     mut found: impl FnMut(Node<'_>, String),
-    annotation: &str,
+    annotations: &[&str],
 ) {
-    if !methods
-        .iter()
-        .any(|method| imports.annotated(*method, annotation))
-    {
+    let advised = |method: Node<'_>| {
+        annotations
+            .iter()
+            .any(|annotation| imports.annotated(method, annotation))
+    };
+    if !methods.iter().any(|method| advised(*method)) {
         return;
     }
     let inherited = class.child_by_field_name("superclass").is_some()
@@ -185,8 +201,8 @@ fn proxy_calls(
             if let Some(target) = target
                 && target != *caller
                 && !has_modifier(target, "static")
-                && imports.annotated(target, annotation)
-                && (annotation != TRANSACTIONAL
+                && advised(target)
+                && (annotations != [TRANSACTIONAL]
                     || !covered_by_transaction(*caller, target, node, imports))
             {
                 found(node, name.to_owned());

@@ -8,3 +8,5 @@ rules:
   - spring.shared-simple-date-format
   - spring.singleton-request-state
   - spring.async-self-invocation
+  - spring.cache-self-invocation
+  - spring.retry-self-invocation

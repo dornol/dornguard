@@ -100,6 +100,7 @@ make it blocking.
 | `java.return-from-finally` | A return inside a `finally` block that can override an earlier return or suppress an exception, as reported by PMD |
 | `java.broken-null-check` | A null check that fails to guard a subsequent dereference, as reported by PMD |
 | `java.equals-hashcode-contract` | Overriding only one of `equals` and `hashCode`, as reported by PMD |
+| `java.print-stack-trace` and `kotlin.print-stack-trace` | A call to `printStackTrace()` that writes the stack trace to standard error |
 | `java.ignored-interrupt` | An `InterruptedException` catch with a single logging call, optionally followed by a bare return |
 | `kotlin.run-blocking-in-suspend` | `kotlinx.coroutines.runBlocking` inside a Kotlin suspend function |
 | `kotlin.thread-sleep-in-suspend` | `Thread.sleep` inside a Kotlin suspend function |
@@ -111,9 +112,11 @@ make it blocking.
 | `spring.private-transactional` | A private Java method with Spring's `@Transactional` |
 | `spring.transactional-self-invocation` | A direct Java call to a same-class Spring `@Transactional` method |
 | `spring.async-self-invocation` | A direct Java call to a same-class Spring `@Async` method |
+| `spring.cache-self-invocation` | A direct Java call to a same-class method with Spring `@Cacheable`, `@CacheEvict`, `@CachePut`, or `@Caching` |
+| `spring.retry-self-invocation` | A direct Java call to a same-class method with Spring Retry's `@Retryable` |
 
-The Spring self-invocation checks apply to proxy-based transactions and async
-execution. They check unqualified calls and calls through `this`. For calls
+The Spring self-invocation checks apply to proxy-based transactions, async
+execution, caching, and retries. They check unqualified calls and calls through `this`. For calls
 with arguments, the rule requires an unambiguous declared method by name
 and arity. Classes with explicit supertypes, competing overloads of the
 same arity, and varargs candidates are skipped for parameterized calls.

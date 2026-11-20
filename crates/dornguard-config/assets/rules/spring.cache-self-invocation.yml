@@ -1,0 +1,5 @@
+id: spring.cache-self-invocation
+engine: builtin
+severity: warning
+description: This direct call bypasses the target method's cache advice in Spring proxy mode.
+fix: Call the cached operation through another Spring bean.

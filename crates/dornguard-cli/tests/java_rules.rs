@@ -561,3 +561,17 @@ class LocalAssertions {
         "{result}"
     );
 }
+
+#[test]
+#[ignore = "requires the pinned Semgrep engine"]
+fn print_stack_trace_is_reported_in_java_source() {
+    let project = project(
+        "class Example {\n    void run(Exception e) {\n        e.printStackTrace();\n        log.error(\"failed\", e);\n    }\n}\n",
+    );
+    let result = report(check(project.path()).output().unwrap(), 1);
+    assert_eq!(result["complete"], true, "{result}");
+    let findings = result["diagnostics"].as_array().unwrap();
+    assert_eq!(findings.len(), 1, "{result}");
+    assert_eq!(findings[0]["rule_id"], "java.print-stack-trace");
+    assert_eq!(findings[0]["line"], 3);
+}

@@ -1,0 +1,5 @@
+id: spring.retry-self-invocation
+engine: builtin
+severity: warning
+description: This direct call bypasses the target method's retry advice in Spring proxy mode.
+fix: Call the retryable operation through another Spring bean.

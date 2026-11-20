@@ -1,0 +1,8 @@
+id: java.print-stack-trace
+engine: semgrep
+severity: error
+description: Avoid printing stack traces to standard error.
+fix: Log the exception with the project logger and pass it as the last argument.
+implementation:
+  config: rules/semgrep/java/print-stack-trace.yml
+  rule_id: java-print-stack-trace

@@ -1,0 +1,6 @@
+rules:
+  - id: java-print-stack-trace
+    languages: [java]
+    message: Log the exception with the project logger.
+    severity: ERROR
+    pattern: $E.printStackTrace()

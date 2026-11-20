@@ -4,3 +4,4 @@ rules:
   - java.stdout-usage
   - java.ignored-interrupt
   - java.fully-qualified-type
+  - java.print-stack-trace

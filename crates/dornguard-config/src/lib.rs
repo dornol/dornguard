@@ -24,6 +24,8 @@ pub const FLYWAY_RULE: &str = "flyway.changed-versioned-migration";
 pub const JPA_RESPONSE_RULE: &str = "spring.jpa-entity-response";
 pub const TRANSACTIONAL_SELF_RULE: &str = "spring.transactional-self-invocation";
 pub const ASYNC_SELF_RULE: &str = "spring.async-self-invocation";
+pub const CACHE_SELF_RULE: &str = "spring.cache-self-invocation";
+pub const RETRY_SELF_RULE: &str = "spring.retry-self-invocation";
 pub const IGNORED_RETURN_VALUE_RULE: &str = "java.ignored-return-value";
 pub const UNNECESSARY_IMPORT_RULE: &str = "java.unnecessary-import";
 pub const RESOURCE_RULE: &str = "java.resource-not-closed";
@@ -344,6 +346,10 @@ impl Registry {
             include_str!("../assets/rules/java.bigdecimal-from-floating-point-literal.yml"),
             include_str!("../assets/rules/java.return-from-finally.yml"),
             include_str!("../assets/rules/spring.async-self-invocation.yml"),
+            include_str!("../assets/rules/spring.cache-self-invocation.yml"),
+            include_str!("../assets/rules/spring.retry-self-invocation.yml"),
+            include_str!("../assets/rules/java.print-stack-trace.yml"),
+            include_str!("../assets/rules/kotlin.print-stack-trace.yml"),
             include_str!("../assets/rules/kotlin.thread-sleep-in-suspend.yml"),
             include_str!("../assets/rules/thymeleaf.unescaped-output.yml"),
             include_str!("../assets/rules/java.broken-null-check.yml"),
@@ -401,6 +407,14 @@ impl Registry {
             (
                 "rules/semgrep/java/stdout-usage.yml",
                 include_str!("../assets/rules/semgrep/java/stdout-usage.yml"),
+            ),
+            (
+                "rules/semgrep/java/print-stack-trace.yml",
+                include_str!("../assets/rules/semgrep/java/print-stack-trace.yml"),
+            ),
+            (
+                "rules/semgrep/kotlin/print-stack-trace.yml",
+                include_str!("../assets/rules/semgrep/kotlin/print-stack-trace.yml"),
             ),
             (
                 "rules/pmd/java/empty-catch.xml",

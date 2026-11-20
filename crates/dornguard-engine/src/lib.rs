@@ -4,7 +4,8 @@ use std::process::{Output, Stdio};
 use std::time::Duration;
 
 use dornguard_config::{
-    ASYNC_SELF_RULE, FormatConfig, JPA_RESPONSE_RULE, Registry, Rule, TRANSACTIONAL_SELF_RULE,
+    ASYNC_SELF_RULE, CACHE_SELF_RULE, FormatConfig, JPA_RESPONSE_RULE, RETRY_SELF_RULE, Registry,
+    Rule, TRANSACTIONAL_SELF_RULE,
 };
 use dornguard_core::{EngineName, Failure, FailureKind, FailureStage, Outcome, SourceLanguage};
 use miette::{IntoDiagnostic, Result, WrapErr, bail};
@@ -79,7 +80,11 @@ pub async fn check_builtin(request: Request<'_>, settings: &FormatConfig) -> Out
             java_rules.into_iter().partition(|rule| {
                 matches!(
                     rule.id.as_str(),
-                    ASYNC_SELF_RULE | TRANSACTIONAL_SELF_RULE | JPA_RESPONSE_RULE
+                    ASYNC_SELF_RULE
+                        | CACHE_SELF_RULE
+                        | RETRY_SELF_RULE
+                        | TRANSACTIONAL_SELF_RULE
+                        | JPA_RESPONSE_RULE
                 )
             });
         if !jspecify_rules.is_empty() {

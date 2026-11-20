@@ -801,3 +801,63 @@ class Example {
         .collect::<Vec<_>>();
     assert_eq!(lines, [8, 9, 10, 21], "{result}");
 }
+
+#[test]
+#[ignore = "requires the pinned Semgrep and PMD versions on PATH"]
+fn spring_cache_and_retry_self_calls_bypass_their_proxies() {
+    let project = project(
+        r#"import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.retry.annotation.Retryable;
+
+class Example {
+    @Cacheable("users")
+    String load(String id) { return id; }
+
+    @CacheEvict("users")
+    void evict() {}
+
+    @Retryable
+    void fetch() {}
+
+    void plain() {}
+
+    void run(Example other) {
+        load("a");
+        this.evict();
+        fetch();
+        plain();
+        other.load("b");
+    }
+}
+"#,
+    );
+    let result = report(
+        check(project.path())
+            .args(["--profile", "spring-boot"])
+            .output()
+            .unwrap(),
+        0,
+    );
+    assert_eq!(result["complete"], true, "{result}");
+    let findings = result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|finding| {
+            (
+                finding["rule_id"].as_str().unwrap(),
+                finding["line"].as_u64().unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        findings,
+        [
+            ("spring.cache-self-invocation", 18),
+            ("spring.cache-self-invocation", 19),
+            ("spring.retry-self-invocation", 20),
+        ],
+        "{result}"
+    );
+}
