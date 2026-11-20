@@ -49,6 +49,8 @@ to find profiles and dornguard profiles show NAME to see what a profile includes
       Run just the formatting profile with the project's settings.
   dornguard rules explain RULE_ID
       Look up a finding's rule, suggested fix and available settings.
+Use --report-rule RULE_ID or --report-path PATH to focus the report while keeping
+the original check scope and exit code.
 
 Read the result before acting on findings. In JSON, check complete, scope and rule_counts.
 If complete is false, inspect failures. If a changed check reports full scope, read
@@ -93,6 +95,12 @@ With --changed, build-backed Maven checks report full scope.")]
         /// Report format. Use agent for a compact review or json for every finding and failure
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
+        /// Show findings for this rule without changing the check or exit status. Repeat to include more rules
+        #[arg(long, value_name = "RULE_ID")]
+        report_rule: Vec<String>,
+        /// Show findings under this project-relative file or directory. Repeat to include more paths
+        #[arg(long, value_name = "PATH", value_parser = report_path)]
+        report_path: Vec<PathBuf>,
         /// Use a specific configuration file
         #[arg(long, value_name = "PATH")]
         config: Option<PathBuf>,
@@ -266,6 +274,21 @@ enum TextOrJson {
     Json,
 }
 
+fn report_path(value: &str) -> std::result::Result<PathBuf, &'static str> {
+    let path = PathBuf::from(value);
+    if path.as_os_str().is_empty()
+        || path.components().any(|part| {
+            !matches!(
+                part,
+                std::path::Component::Normal(_) | std::path::Component::CurDir
+            )
+        })
+    {
+        return Err("report paths must be inside the project");
+    }
+    Ok(path)
+}
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
     let _ = tracing_subscriber::fmt()
@@ -289,6 +312,8 @@ async fn dispatch(action: Action) -> Result<u8> {
             profile,
             only_profile,
             format,
+            report_rule,
+            report_path,
             config,
             module,
             resolve_imports,
@@ -349,7 +374,8 @@ async fn dispatch(action: Action) -> Result<u8> {
                 }
                 outcome.merge(required);
             }
-            let report = outcome.finish();
+            let mut report = outcome.finish();
+            report.filter_diagnostics(report_rule, report_path);
             let mut out = io::stdout().lock();
             match format {
                 Format::Text => dornguard_report::write_text(&report, &mut out),

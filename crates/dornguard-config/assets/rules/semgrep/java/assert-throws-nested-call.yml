@@ -1,0 +1,39 @@
+rules:
+  - id: junit-assert-throws-nested-call
+    languages: [java]
+    message: Prepare the argument before assertThrows so the assertion exercises the intended operation.
+    severity: WARNING
+    patterns:
+      - pattern-either:
+          - pattern: org.junit.jupiter.api.Assertions.assertThrows($TYPE, $CHECK, ...)
+          - pattern: org.junit.jupiter.api.Assertions.assertThrowsExactly($TYPE, $CHECK, ...)
+          - pattern: org.junit.Assert.assertThrows($TYPE, $CHECK)
+          - pattern: org.junit.Assert.assertThrows($MESSAGE, $TYPE, $CHECK)
+      - metavariable-pattern:
+          metavariable: $CHECK
+          pattern-either:
+            - pattern: () -> $TARGET(..., $SETUP(...), ...)
+            - pattern: () -> $TARGET(..., $OBJECT.$SETUP(...), ...)
+            - pattern: () -> $RECEIVER.$TARGET(..., $SETUP(...), ...)
+            - pattern: () -> $RECEIVER.$TARGET(..., $OBJECT.$SETUP(...), ...)
+            - pattern: () -> new $TYPE_UNDER_TEST(..., $SETUP(...), ...)
+            - pattern: () -> new $TYPE_UNDER_TEST(..., $OBJECT.$SETUP(...), ...)
+            - pattern: '() -> { $TARGET(..., $SETUP(...), ...); }'
+            - pattern: '() -> { $TARGET(..., $OBJECT.$SETUP(...), ...); }'
+            - pattern: '() -> { $RECEIVER.$TARGET(..., $SETUP(...), ...); }'
+            - pattern: '() -> { $RECEIVER.$TARGET(..., $OBJECT.$SETUP(...), ...); }'
+            - pattern: '() -> { new $TYPE_UNDER_TEST(..., $SETUP(...), ...); }'
+            - pattern: '() -> { new $TYPE_UNDER_TEST(..., $OBJECT.$SETUP(...), ...); }'
+      - pattern-not-inside: |
+          class $CLASS {
+            ...
+            $RETURN assertThrows(...) { ... }
+            ...
+          }
+      - pattern-not-inside: |
+          class $CLASS {
+            ...
+            $RETURN assertThrowsExactly(...) { ... }
+            ...
+          }
+      - focus-metavariable: $CHECK

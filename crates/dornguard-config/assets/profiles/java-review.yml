@@ -1,0 +1,5 @@
+name: java-review
+description: Opt-in Java and JUnit checks for recurring review findings
+rules:
+  - java.ignored-return-value
+  - java.assert-throws-nested-call

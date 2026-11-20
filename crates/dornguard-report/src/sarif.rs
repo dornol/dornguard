@@ -87,6 +87,9 @@ pub fn write_sarif(report: &CheckReport, writer: &mut impl Write) -> io::Result<
         "suppressedCount": report.suppressed_count,
         "organizationPolicyEnforced": report.organization_policy_enforced
     });
+    if let Some(filter) = &report.report_filter {
+        properties["reportFilter"] = json!(filter);
+    }
     if let Some(scope) = report.project_scope {
         properties["projectScope"] = json!(scope);
     }

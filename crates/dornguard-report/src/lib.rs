@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::io::{self, Write};
 
 use dornguard_core::{CheckReport, FailureStage, Scope, Severity, Status};
@@ -23,24 +24,31 @@ pub fn write_text(report: &CheckReport, writer: &mut impl Write) -> io::Result<(
 
 pub fn write_agent(report: &CheckReport, writer: &mut impl Write, limit: usize) -> io::Result<()> {
     write_summary(report, writer)?;
-    let errors = report
-        .diagnostics
-        .iter()
-        .filter(|item| item.severity == Severity::Error);
-    let warnings = report
-        .diagnostics
-        .iter()
-        .filter(|item| item.severity == Severity::Warning);
+    let errors: usize = report.rule_counts.values().map(|count| count.errors).sum();
+    let warnings: usize = report
+        .rule_counts
+        .values()
+        .map(|count| count.warnings)
+        .sum();
     writeln!(
         writer,
-        "{} errors, {} warnings, {} baselined",
-        errors.clone().count(),
-        warnings.clone().count(),
+        "{errors} errors, {warnings} warnings, {} suppressed",
         report.suppressed_count
     )?;
     write_failures(report, writer)?;
     write_rule_counts(report, writer)?;
-    for diagnostic in errors.chain(warnings).take(limit) {
+    let ordered = [Severity::Error, Severity::Warning]
+        .into_iter()
+        .flat_map(|severity| {
+            let mut seen = BTreeSet::new();
+            let (representatives, remaining): (Vec<_>, Vec<_>) = report
+                .diagnostics
+                .iter()
+                .filter(|item| item.severity == severity)
+                .partition(|item| seen.insert(item.rule_id.as_str()));
+            representatives.into_iter().chain(remaining)
+        });
+    for diagnostic in ordered.take(limit) {
         write_diagnostic(diagnostic, writer)?;
     }
     if report.diagnostics.len() > limit {
@@ -90,6 +98,13 @@ fn write_summary(report: &CheckReport, writer: &mut impl Write) -> io::Result<()
     }
     if let Some(reason) = &report.fallback_reason {
         writeln!(writer, "Full scan: {reason}")?;
+    }
+    if let Some(filter) = &report.report_filter {
+        writeln!(
+            writer,
+            "  Report filter omitted {} findings. Counts and exit status cover the full check.",
+            filter.omitted
+        )?;
     }
     for note in &report.analysis_notes {
         writeln!(writer, "  {note}")?;

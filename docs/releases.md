@@ -63,6 +63,11 @@ A compiler-skipped input or a missing Java bytecode mapping is reported as
 incomplete. Maven checks also reject class files older than the matched
 source. Gradle checks use the compile tasks' up-to-date and cache state.
 
+JSON findings can include an optional `edit` with UTF-8 byte offsets,
+replacement text, and the input file's SHA-256 digest. When result filters are
+used, JSON adds `report_filter` with the filters and omitted finding count.
+Rule counts and exit codes cover the original check.
+
 For reproducible CI, pin the CLI archive,
 the built-in Ruleset version or external Ruleset commit, and the engine versions.
 

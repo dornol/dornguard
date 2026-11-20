@@ -17,6 +17,7 @@ pub const FLYWAY_RULE: &str = "flyway.changed-versioned-migration";
 pub const JPA_RESPONSE_RULE: &str = "spring.jpa-entity-response";
 pub const TRANSACTIONAL_SELF_RULE: &str = "spring.transactional-self-invocation";
 pub const ASYNC_SELF_RULE: &str = "spring.async-self-invocation";
+pub const IGNORED_RETURN_VALUE_RULE: &str = "java.ignored-return-value";
 pub const UNNECESSARY_IMPORT_RULE: &str = "java.unnecessary-import";
 pub const RESOURCE_RULE: &str = "java.resource-not-closed";
 pub const PRESERVE_STACK_TRACE_RULE: &str = "java.preserve-stack-trace";
@@ -352,7 +353,10 @@ impl Rule {
     pub fn uses_pmd_classpath(&self) -> bool {
         matches!(
             self.id.as_str(),
-            UNNECESSARY_IMPORT_RULE | RESOURCE_RULE | PRESERVE_STACK_TRACE_RULE
+            UNNECESSARY_IMPORT_RULE
+                | RESOURCE_RULE
+                | PRESERVE_STACK_TRACE_RULE
+                | IGNORED_RETURN_VALUE_RULE
         )
     }
 
@@ -410,6 +414,7 @@ impl Registry {
         let profile_sources = [
             include_str!("../assets/profiles/java-source.yml"),
             include_str!("../assets/profiles/java.yml"),
+            include_str!("../assets/profiles/java-review.yml"),
             include_str!("../assets/profiles/format.yml"),
             include_str!("../assets/profiles/jspecify.yml"),
             include_str!("../assets/profiles/kotlin.yml"),
@@ -440,6 +445,8 @@ impl Registry {
             include_str!("../assets/rules/flyway.changed-versioned-migration.yml"),
             include_str!("../assets/rules/spring.jpa-entity-response.yml"),
             include_str!("../assets/rules/java.empty-catch.yml"),
+            include_str!("../assets/rules/java.ignored-return-value.yml"),
+            include_str!("../assets/rules/java.assert-throws-nested-call.yml"),
             include_str!("../assets/rules/java.jspecify-null-marked.yml"),
             include_str!("../assets/rules/kotlin.stdout-usage.yml"),
             include_str!("../assets/rules/security.cors-wildcard.yml"),
@@ -485,6 +492,14 @@ impl Registry {
             include_str!("../assets/rules/kotlin.run-catching-cancellation.yml"),
         ];
         let engine_configs = BTreeMap::from([
+            (
+                "rules/pmd/java/ignored-return-value.xml",
+                include_str!("../assets/rules/pmd/java/ignored-return-value.xml"),
+            ),
+            (
+                "rules/semgrep/java/assert-throws-nested-call.yml",
+                include_str!("../assets/rules/semgrep/java/assert-throws-nested-call.yml"),
+            ),
             (
                 "rules/pmd/java/broken-null-check.xml",
                 include_str!("../assets/rules/pmd/java/broken-null-check.xml"),

@@ -64,6 +64,7 @@ dornguard check --changed --base origin/main
 dornguard check --module :api
 dornguard check --format sarif
 dornguard check --only-profile format
+dornguard check --changed --format json --report-rule java.stdout-usage
 dornguard rules explain java.stdout-usage
 dornguard doctor
 ```
@@ -76,6 +77,8 @@ profiles, including the ArchUnit runner protocol when architecture checks apply.
 JSON includes the affected rules and available file or module information for
 each failure. See the
 [report format](docs/releases.md#report-format) for location and range fields.
+See [CI quality gate](docs/ci.md) for using a baseline and applying suggested
+edits.
 
 Use `dornguard audit` for a Maven dependency vulnerability report.
 See [Maven dependency audit](docs/dependency-audit.md) for setup and scope.

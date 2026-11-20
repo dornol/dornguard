@@ -129,6 +129,7 @@ fn check_file(
                     severity: rule.severity,
                     message: rule.description.clone(),
                     fix: rule.fix.clone(),
+                    edit: None,
                     legacy_fingerprints: Vec::new(),
                     fingerprint: Some(fingerprint(&declaration_identity(node, &source))),
                 });

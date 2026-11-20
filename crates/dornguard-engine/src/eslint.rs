@@ -145,6 +145,7 @@ async fn scan(request: Request<'_>, outcome: &mut Outcome) -> Result<()> {
                     severity: rule.severity,
                     message: rule.description.clone(),
                     fix: rule.fix.clone(),
+                    edit: None,
                     legacy_fingerprints: Vec::new(),
                     fingerprint: finding
                         .end_line

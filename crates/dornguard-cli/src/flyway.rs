@@ -80,6 +80,7 @@ pub async fn check(root: &Path, target: &Path, base: Option<&str>, rule: &Rule) 
             message: format!("{} The file was {action}.", rule.description),
             fix: rule.fix.clone(),
             fingerprint: Some(fingerprint(&String::from_utf8_lossy(&patch))),
+            edit: None,
             legacy_fingerprints: Vec::new(),
         });
     }

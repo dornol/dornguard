@@ -381,6 +381,7 @@ async fn scan(request: Request<'_>, settings: &Pmd<'_>, outcome: &mut Outcome) -
                 severity: rule.severity,
                 fix: rule.fix.clone(),
                 fingerprint,
+                edit: None,
                 legacy_fingerprints,
             });
         }

@@ -122,9 +122,19 @@ pub struct Diagnostic {
     pub severity: Severity,
     pub message: String,
     pub fix: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub edit: Option<SourceEdit>,
     pub fingerprint: Option<String>,
     #[serde(skip)]
     pub legacy_fingerprints: Vec<String>,
+}
+
+#[derive(Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct SourceEdit {
+    pub start_byte: usize,
+    pub end_byte: usize,
+    pub replacement: String,
+    pub source_sha256: String,
 }
 
 pub const PMD_JAVA_DEFAULT: u16 = 21;
@@ -303,6 +313,7 @@ impl Outcome {
             organization_policy_enforced: self.organization_policy_enforced,
             analysis_notes: self.analysis_notes,
             rule_counts,
+            report_filter: None,
             diagnostics: self.diagnostics,
             failures: self.failures,
         }
@@ -329,8 +340,44 @@ pub struct CheckReport {
     #[serde(skip_serializing_if = "BTreeSet::is_empty")]
     pub analysis_notes: BTreeSet<String>,
     pub rule_counts: BTreeMap<String, RuleCount>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub report_filter: Option<ReportFilter>,
     pub diagnostics: Vec<Diagnostic>,
     pub failures: Vec<Failure>,
+}
+
+#[derive(Serialize)]
+pub struct ReportFilter {
+    pub rules: Vec<String>,
+    pub paths: Vec<String>,
+    pub omitted: usize,
+}
+
+impl CheckReport {
+    pub fn filter_diagnostics(&mut self, rules: Vec<String>, paths: Vec<PathBuf>) {
+        if rules.is_empty() && paths.is_empty() {
+            return;
+        }
+        let total = self.diagnostics.len();
+        self.diagnostics.retain(|finding| {
+            (rules.is_empty() || rules.contains(&finding.rule_id))
+                && (paths.is_empty()
+                    || finding.path.as_deref().is_some_and(|path| {
+                        paths.iter().any(|filter| {
+                            let relative = filter.strip_prefix(".").unwrap_or(filter);
+                            Path::new(path).starts_with(relative)
+                        })
+                    }))
+        });
+        self.report_filter = Some(ReportFilter {
+            rules,
+            paths: paths
+                .iter()
+                .map(|path| path.to_string_lossy().replace('\\', "/"))
+                .collect(),
+            omitted: total - self.diagnostics.len(),
+        });
+    }
 }
 
 #[derive(Default, Serialize)]

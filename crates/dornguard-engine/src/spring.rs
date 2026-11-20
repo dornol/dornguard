@@ -620,6 +620,7 @@ fn emit(
         severity: rule.severity,
         fix: rule.fix.clone(),
         fingerprint: fragment_fingerprint(text(node, source.text())),
+        edit: None,
         legacy_fingerprints: Vec::new(),
     });
 }

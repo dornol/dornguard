@@ -263,6 +263,7 @@ async fn run(root: &Path, modules: &[ArchModule<'_>], outcome: &mut Outcome) -> 
                 rule.description, finding.origin, finding.target, finding.module
             ),
             fix: rule.fix.clone(),
+            edit: None,
             legacy_fingerprints: Vec::new(),
             fingerprint: Some(relationship_fingerprint),
         };

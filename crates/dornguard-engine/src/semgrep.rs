@@ -337,6 +337,7 @@ fn normalize(
             engine: rule.engine,
             severity: rule.severity,
             fix: rule.fix.clone(),
+            edit: None,
             legacy_fingerprints: Vec::new(),
             fingerprint: sources.offsets(root, &path, finding.start.offset, finding.end.offset),
         });

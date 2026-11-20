@@ -4165,3 +4165,160 @@ fn doctor_validates_the_archunit_runner_for_active_profiles() {
         .unwrap();
     assert_eq!(wrong.status.code(), Some(3));
 }
+
+#[test]
+fn agent_preview_spreads_findings_across_rules_and_filters_only_the_report() {
+    let project = tempfile::tempdir().unwrap();
+    let root = project.path();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [format]\n",
+    )
+    .unwrap();
+    fs::write(root.join("a.js"), "if(true) {}\n".repeat(25)).unwrap();
+    fs::write(root.join("z.js"), "run();").unwrap();
+
+    let agent = Command::new(env!("CARGO_BIN_EXE_dornguard"))
+        .current_dir(root)
+        .args(["check", "--format", "agent"])
+        .output()
+        .unwrap();
+    assert_eq!(agent.status.code(), Some(1));
+    let text = String::from_utf8(agent.stdout).unwrap();
+    assert!(
+        text.contains("z.js:1:7: error[format.final-newline]"),
+        "{text}"
+    );
+    assert_eq!(text.matches("error[format.control-spacing]").count(), 19);
+
+    let focused = report(
+        check(root)
+            .args([
+                "--report-rule",
+                "format.final-newline",
+                "--report-path",
+                "./z.js",
+            ])
+            .output()
+            .unwrap(),
+        1,
+    );
+    assert_eq!(focused["diagnostics"].as_array().unwrap().len(), 1);
+    assert_eq!(focused["diagnostics"][0]["path"], "z.js");
+    assert_eq!(
+        focused["rule_counts"]["format.control-spacing"]["errors"],
+        25
+    );
+    assert_eq!(focused["report_filter"]["omitted"], 25);
+    let empty = report(
+        check(root)
+            .args(["--report-path", "elsewhere"])
+            .output()
+            .unwrap(),
+        1,
+    );
+    assert_eq!(empty["diagnostics"].as_array().unwrap().len(), 0);
+    assert_eq!(empty["report_filter"]["omitted"], 26);
+}
+
+#[test]
+fn format_edits_are_byte_ranges_tied_to_the_exact_source() {
+    let project = tempfile::tempdir().unwrap();
+    let root = project.path();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [format]\nformat: {line_ending: crlf}\n",
+    )
+    .unwrap();
+    let file = root.join("fixture.js");
+    let source = "const label = `머리  \r\n몸통`;  ";
+    fs::write(&file, source).unwrap();
+    let report = report(check(root).output().unwrap(), 1);
+    let findings = report["diagnostics"].as_array().unwrap();
+    assert_eq!(findings.len(), 2, "{report}");
+    let mut edits: Vec<_> = findings.iter().map(|finding| &finding["edit"]).collect();
+    edits.sort_by_key(|edit| std::cmp::Reverse(edit["start_byte"].as_u64().unwrap()));
+    let mut next = source.to_owned();
+    for edit in edits {
+        assert_eq!(edit["source_sha256"], dornguard_core::fingerprint(source));
+        let start = edit["start_byte"].as_u64().unwrap() as usize;
+        let end = edit["end_byte"].as_u64().unwrap() as usize;
+        next.replace_range(start..end, edit["replacement"].as_str().unwrap());
+    }
+    assert_eq!(next, "const label = `머리  \r\n몸통`;\r\n");
+    assert_ne!(
+        dornguard_core::fingerprint(&next),
+        dornguard_core::fingerprint(source)
+    );
+    fs::write(&file, next).unwrap();
+    assert!(check(root).output().unwrap().status.success());
+}
+
+#[test]
+#[ignore = "requires the pinned PMD and Semgrep engines"]
+fn java_review_finds_discarded_results_and_nested_junit_calls() {
+    let project = project(
+        r#"import static org.junit.jupiter.api.Assertions.assertThrows;
+import org.junit.jupiter.api.Assertions;
+import java.math.BigDecimal;
+class Example {
+    void test(String name, BigDecimal amount, BigDecimal fee, Mapper mapper, Request request) {
+        name.trim();
+        amount.add(fee);
+        mapper.updateStatus(1);
+        assertThrows(Exception.class, () -> approve(makeRequest()));
+        Assertions.assertThrows(Exception.class, () -> mapper.approve(mapper.build()));
+        org.junit.jupiter.api.Assertions.assertThrowsExactly(Exception.class, () -> new Request(makeRequest()));
+        assertThrows(Exception.class, () -> { approve(makeRequest()); });
+        assertThrows(Exception.class, () -> approve(request));
+        Other.assertThrows(Exception.class, () -> approve(makeRequest()));
+        String normalized = name.trim();
+        BigDecimal charged = amount.add(fee);
+    }
+}
+class Mapper {
+    private int status;
+    int updateStatus(int id) { status = id; return status; }
+    Request build() { return new Request(); }
+    void approve(Request request) {}
+}
+class LocalAssertions {
+    void assertThrows(Class<?> exception, Runnable test) { test.run(); }
+    void test() { assertThrows(Exception.class, () -> handle(prepare())); }
+    void handle(Request request) {}
+    Request prepare() { return new Request(); }
+}
+"#,
+    );
+    let root = project.path();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [java-review]\n",
+    )
+    .unwrap();
+    let result = report(check(root).output().unwrap(), 0);
+    let findings = result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| {
+            (
+                item["rule_id"].as_str().unwrap(),
+                item["line"].as_u64().unwrap(),
+                item["severity"].as_str().unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        findings,
+        [
+            ("java.ignored-return-value", 6, "warning"),
+            ("java.ignored-return-value", 7, "warning"),
+            ("java.assert-throws-nested-call", 9, "warning"),
+            ("java.assert-throws-nested-call", 10, "warning"),
+            ("java.assert-throws-nested-call", 11, "warning"),
+            ("java.assert-throws-nested-call", 12, "warning"),
+        ],
+        "{result}"
+    );
+}

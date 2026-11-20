@@ -8,6 +8,7 @@ Use `dornguard rules explain ID` for the reason and guidance for a rule.
 | --- | --- |
 | `java-source` | Semgrep Java source rules |
 | `java` | Semgrep and PMD Java source rules |
+| `java-review` | Opt-in Java and JUnit checks for recurring review findings |
 | `format` | Java, Kotlin, and JavaScript source formatting |
 | `jspecify` | Requires all checked Java types to be in a JSpecify `@NullMarked` scope |
 | `kotlin` | Semgrep output and coroutine checks for Gradle Kotlin/JVM production sources |
@@ -245,3 +246,15 @@ Review and commit `.dornguard-ruleset.lock.json` after resolving a tag.
 Subsequent checks use the recorded commit and reuse the local Git object
 cache. A full commit SHA can also be configured directly. Use
 `DORNGUARD_CACHE_DIR` to move the cache.
+
+
+## Java review checks
+
+Add `java-review` to a project's existing profiles to try these checks. They
+start as warnings. Adjust severity after measuring the findings on the
+project's changes.
+
+| Rule | Finding |
+|---|---|
+| `java.ignored-return-value` | PMD recognizes a method whose result should be used, such as `String.trim()` or `BigDecimal.add()`, and the caller discards it |
+| `java.assert-throws-nested-call` | A JUnit `assertThrows` or `assertThrowsExactly` lambda passes the result of another method call directly to the operation under test, so argument preparation may satisfy the assertion first |

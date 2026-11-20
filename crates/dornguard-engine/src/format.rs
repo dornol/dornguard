@@ -1,10 +1,11 @@
+use std::cell::LazyCell;
 use std::collections::BTreeMap;
 use std::fs;
 use std::ops::Range;
 use std::path::Path;
 
 use dornguard_config::{FileFormat, FormatConfig, LineEnding, Rule};
-use dornguard_core::{Diagnostic, EngineName, Outcome, SourceLanguage, fingerprint};
+use dornguard_core::{Diagnostic, EngineName, Outcome, SourceEdit, SourceLanguage, fingerprint};
 use tree_sitter::{Node, Parser};
 
 use crate::{Request, display_path, engine_failure, fail};
@@ -132,6 +133,11 @@ fn check_layout(
     if lines.is_empty() {
         return;
     }
+    let source_sha256 = LazyCell::new(|| fingerprint(source));
+    let ending = match settings.line_ending {
+        LineEnding::Lf => "\n",
+        LineEnding::Crlf => "\r\n",
+    };
     let mut emit = |id, row: usize, column: usize, detail: Option<String>| {
         if let Some(rule) = rules.get(id) {
             let line = &lines[row];
@@ -149,6 +155,23 @@ fn check_layout(
                 severity: rule.severity,
                 message: detail.unwrap_or_else(|| rule.description.clone()),
                 fix: rule.fix.clone(),
+                edit: if root.has_error() {
+                    None
+                } else {
+                    let start_byte = line.start + column;
+                    let end_byte = line.start + line.text.len();
+                    let replacement = match id {
+                        "format.trailing-whitespace" => Some(""),
+                        "format.final-newline" => Some(ending),
+                        _ => None,
+                    };
+                    replacement.map(|replacement| SourceEdit {
+                        start_byte,
+                        end_byte,
+                        replacement: replacement.to_owned(),
+                        source_sha256: (*source_sha256).clone(),
+                    })
+                },
                 legacy_fingerprints: Vec::new(),
                 fingerprint: Some(fingerprint(line.text.trim())),
             });
@@ -211,10 +234,6 @@ fn check_layout(
         literals
             .get(index)
             .is_some_and(|range| range.contains(&offset))
-    };
-    let ending = match settings.line_ending {
-        LineEnding::Lf => "\n",
-        LineEnding::Crlf => "\r\n",
     };
     let mut blank_lines = 0;
     let mut reported_ending = false;

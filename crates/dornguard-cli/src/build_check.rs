@@ -636,6 +636,7 @@ pub async fn check(check: Check<'_>) -> Outcome {
                         rule.description, dependency.from, dependency.to
                     ),
                     fix: rule.fix.clone(),
+                    edit: None,
                     legacy_fingerprints: Vec::new(),
                     fingerprint: Some(fingerprint(&format!(
                         "{}:{}",
