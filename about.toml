@@ -1,0 +1,18 @@
+# Licenses for the Rust crates linked into the release binary.
+# Regenerate THIRD_PARTY_RUST_LICENSES.md with scripts/generate-rust-notices.sh.
+accepted = [
+    "Apache-2.0",
+    "BSD-3-Clause",
+    "ISC",
+    "MIT",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Zlib",
+]
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-apple-darwin",
+]
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+workarounds = ["ring"]

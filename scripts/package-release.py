@@ -55,7 +55,8 @@ def main():
     with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
         for asset in (ROOT / "target/release" / executable, RUNNER, RUNNER.with_name("maven-model.jar"),
                       ROOT / "README.md", ROOT / "LICENSE",
-                      ROOT / "THIRD_PARTY_NOTICES.md", ROOT / "licenses/Apache-2.0.txt"):
+                      ROOT / "THIRD_PARTY_NOTICES.md", ROOT / "THIRD_PARTY_RUST_LICENSES.md",
+                      ROOT / "licenses/Apache-2.0.txt"):
             archive.write(asset, f"{name}/{asset.name}")
     with archive_path.open("rb") as archive:
         digest = hashlib.file_digest(archive, "sha256").hexdigest()

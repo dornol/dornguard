@@ -15,6 +15,10 @@ Apache License 2.0 is included in `Apache-2.0.txt` in the release archive.
 The Maven model extension also bundles Gson and Error Prone annotations.
 The dependency archives retain their META-INF notices as available.
 
+The Rust crates linked into the `dornguard` binary, with their license texts,
+are listed in `THIRD_PARTY_RUST_LICENSES.md` in the release archive. That file
+is generated with `scripts/generate-rust-notices.sh`.
+
 DornGuard also includes Tree-sitter and its HTML, Java, JavaScript, and Kotlin grammars.
 
 MIT License

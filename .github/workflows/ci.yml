@@ -19,6 +19,10 @@ jobs:
         run: cargo install cargo-deny --locked --version 0.22.0
       - name: Check advisories, licenses, bans, and sources
         run: cargo deny --locked check
+      - name: Install cargo-about
+        run: cargo install cargo-about --locked --version 0.9.3 --features cli
+      - name: Check Rust dependency notices are current
+        run: scripts/generate-rust-notices.sh --check
 
   macos:
     runs-on: macos-15
