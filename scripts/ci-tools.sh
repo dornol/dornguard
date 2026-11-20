@@ -6,3 +6,6 @@ export DORNGUARD_ENGINE_DIR="${DORNGUARD_ENGINE_DIR:-$project_root/.ci-tools/man
 cd "$project_root"
 cargo run --locked -- engines install
 examples/spring-boot-multimodule/gradlew --no-daemon --console=plain -p runners/archunit-runner jar
+mkdir -p "$project_root/.ci-tools/eslint"
+cp scripts/ci-eslint/package.json scripts/ci-eslint/package-lock.json "$project_root/.ci-tools/eslint/"
+(cd "$project_root/.ci-tools/eslint" && npm ci --no-audit --no-fund)

@@ -1,0 +1,8 @@
+{
+  "name": "dornguard-ci-eslint",
+  "private": true,
+  "description": "Pins the ESLint version used by the JavaScript profile tests.",
+  "devDependencies": {
+    "eslint": "9.39.1"
+  }
+}

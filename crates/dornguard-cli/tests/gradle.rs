@@ -297,3 +297,97 @@ fn package_cycles_report_only_dependencies_inside_a_cycle() {
         "Gamma depends on the cycle but is not part of it: {result}"
     );
 }
+
+#[test]
+#[ignore = "requires the pinned engines, JDK 21, Gradle and DORNGUARD_ARCHUNIT_RUNNER"]
+fn hexagonal_layered_and_library_profiles_each_report_their_own_violations() {
+    let fixture =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/spring-boot-multimodule");
+    let project = tempfile::tempdir().unwrap();
+    copy_gradle_fixture(&fixture, project.path());
+    let root = project.path();
+
+    let build = root.join("build.gradle.kts");
+    let script = fs::read_to_string(&build).unwrap();
+    fs::write(
+        &build,
+        format!(
+            "{script}\nconfigure(listOf(project(\":api\"), project(\":common\"))) {{\n    repositories.mavenCentral()\n    dependencies {{\n        \"implementation\"(platform(\"org.springframework.boot:spring-boot-dependencies:3.5.16\"))\n        \"implementation\"(\"org.springframework:spring-context\")\n    }}\n}}\n"
+        ),
+    )
+    .unwrap();
+    for (path, source) in [
+        (
+            "api/src/main/java/example/api/inbound/Inbound.java",
+            "package example.api.inbound;\npublic class Inbound {\n    Object other = new example.api.outbound.Outbound();\n}\n",
+        ),
+        (
+            "api/src/main/java/example/api/outbound/Outbound.java",
+            "package example.api.outbound;\npublic class Outbound {}\n",
+        ),
+        (
+            "api/src/main/java/example/api/application/Orchestrator.java",
+            "package example.api.application;\npublic class Orchestrator {\n    Object adapter = new example.api.adapter.BookAdapter();\n}\n",
+        ),
+        (
+            "api/src/main/java/example/api/domain/Managed.java",
+            "package example.api.domain;\n@org.springframework.stereotype.Component\npublic class Managed {}\n",
+        ),
+        (
+            "admin/src/main/java/example/admin/repository/AdminRepository.java",
+            "package example.admin.repository;\npublic final class AdminRepository {\n    Class<?> upward = example.admin.service.AdminService.class;\n}\n",
+        ),
+        (
+            "common/src/main/java/example/common/Managed.java",
+            "package example.common;\n@org.springframework.stereotype.Component\npublic class Managed {}\n",
+        ),
+    ] {
+        let file = root.join(path);
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(file, source).unwrap();
+    }
+
+    let result = report(check(root).output().unwrap(), 1);
+    assert_eq!(result["complete"], true, "{result}");
+    let mut findings = result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|finding| {
+            finding["rule_id"]
+                .as_str()
+                .is_some_and(|rule| rule.starts_with("architecture."))
+        })
+        .map(|finding| {
+            (
+                finding["rule_id"].as_str().unwrap().to_owned(),
+                finding["class_name"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect::<Vec<_>>();
+    findings.sort_unstable();
+    let expected = [
+        (
+            "architecture.adapter-isolation",
+            "example.api.inbound.Inbound",
+        ),
+        (
+            "architecture.application-independence",
+            "example.api.application.Orchestrator",
+        ),
+        (
+            "architecture.framework-independence",
+            "example.api.domain.Managed",
+        ),
+        (
+            "architecture.library-framework-independence",
+            "example.common.Managed",
+        ),
+        (
+            "architecture.repository-independence",
+            "example.admin.repository.AdminRepository",
+        ),
+    ]
+    .map(|(rule, class)| (rule.to_owned(), class.to_owned()));
+    assert_eq!(findings, expected, "{result}");
+}
