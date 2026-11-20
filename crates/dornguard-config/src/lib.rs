@@ -2,12 +2,19 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
-use dornguard_core::{EngineName, Severity, SourceLanguage, valid_fingerprint};
+use dornguard_core::{EngineName, Severity, SourceLanguage};
 use globset::{GlobBuilder, GlobMatcher};
 use miette::{IntoDiagnostic, Result, WrapErr, bail, miette};
 use serde::Deserialize;
 
+mod format;
+mod ignore;
 mod ruleset;
+pub use format::{
+    ControlSpacing, FileFormat, FormatConfig, IndentStyle, LineEnding, PartialParsing,
+};
+pub use ignore::Ignore;
+use ignore::ignore_rule_matches;
 use ruleset::{PolicySource, Ruleset, Source};
 
 pub const CONFIG_FILE: &str = ".dornguard.yml";
@@ -55,43 +62,7 @@ pub struct ProjectConfig {
     #[serde(default)]
     rules: BTreeMap<String, RuleOverride>,
 }
-
-#[derive(Deserialize)]
-#[serde(default, deny_unknown_fields)]
-pub struct FormatConfig {
-    pub java_indent: u8,
-    pub kotlin_indent: u8,
-    pub javascript_indent: u8,
-    pub line_ending: LineEnding,
-    pub max_blank_lines: u8,
-    pub indent_style: IndentStyle,
-    pub control_spacing: ControlSpacing,
-    include_minified: bool,
-    exclude: Vec<PathGlob>,
-    overrides: Vec<FormatOverride>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct FormatOverride {
-    files: Vec<PathGlob>,
-    indent_size: Option<u8>,
-    indent_style: Option<IndentStyle>,
-    control_spacing: Option<ControlSpacing>,
-    line_ending: Option<LineEnding>,
-    max_blank_lines: Option<u8>,
-}
-
-#[derive(Clone, Copy)]
-pub struct FileFormat {
-    pub indent_size: u8,
-    pub indent_style: IndentStyle,
-    pub control_spacing: ControlSpacing,
-    pub line_ending: LineEnding,
-    pub max_blank_lines: u8,
-}
-
-struct PathGlob(GlobMatcher);
+pub(crate) struct PathGlob(pub(crate) GlobMatcher);
 
 impl PathGlob {
     fn new(pattern: &str) -> std::result::Result<Self, String> {
@@ -115,7 +86,7 @@ impl<'de> Deserialize<'de> for PathGlob {
     }
 }
 
-fn project_relative(path: &str) -> bool {
+pub(crate) fn project_relative(path: &str) -> bool {
     !path.contains(['\\', ':']) && path.split('/').all(|part| !matches!(part, "" | "." | ".."))
 }
 
@@ -149,183 +120,6 @@ impl ProjectConfig {
         for module in self.modules.values_mut() {
             module.profiles.clear();
         }
-    }
-}
-
-impl FormatConfig {
-    pub fn excludes_file(&self, file: &Path) -> bool {
-        self.exclude.iter().any(|glob| glob.0.is_match(file))
-            || !self.include_minified
-                && SourceLanguage::of(file) == Some(SourceLanguage::Javascript)
-                && file
-                    .file_stem()
-                    .and_then(|name| name.to_str())
-                    .is_some_and(|name| name.ends_with(".min"))
-    }
-
-    pub fn for_file(&self, file: &Path, language: SourceLanguage) -> FileFormat {
-        let mut settings = FileFormat {
-            indent_size: match language {
-                SourceLanguage::Java => self.java_indent,
-                SourceLanguage::Kotlin => self.kotlin_indent,
-                _ => self.javascript_indent,
-            },
-            line_ending: self.line_ending,
-            max_blank_lines: self.max_blank_lines,
-            indent_style: self.indent_style,
-            control_spacing: self.control_spacing,
-        };
-        for entry in &self.overrides {
-            if entry.files.iter().any(|glob| glob.0.is_match(file)) {
-                settings.indent_size = entry.indent_size.unwrap_or(settings.indent_size);
-                settings.indent_style = entry.indent_style.unwrap_or(settings.indent_style);
-                settings.control_spacing =
-                    entry.control_spacing.unwrap_or(settings.control_spacing);
-                settings.line_ending = entry.line_ending.unwrap_or(settings.line_ending);
-                settings.max_blank_lines =
-                    entry.max_blank_lines.unwrap_or(settings.max_blank_lines);
-            }
-        }
-        settings
-    }
-}
-
-#[derive(Clone, Copy, Default, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum LineEnding {
-    #[default]
-    Lf,
-    Crlf,
-}
-
-#[derive(Clone, Copy, Default, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum IndentStyle {
-    #[default]
-    Spaces,
-    Tabs,
-}
-
-#[derive(Clone, Copy, Default, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ControlSpacing {
-    #[default]
-    Space,
-    None,
-}
-
-#[derive(Clone, Copy, Default, PartialEq, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum PartialParsing {
-    #[default]
-    Error,
-    Warning,
-}
-
-impl Default for FormatConfig {
-    fn default() -> Self {
-        Self {
-            java_indent: 4,
-            kotlin_indent: 4,
-            javascript_indent: 2,
-            line_ending: LineEnding::Lf,
-            max_blank_lines: 1,
-            indent_style: IndentStyle::Spaces,
-            control_spacing: ControlSpacing::Space,
-            include_minified: false,
-            exclude: Vec::new(),
-            overrides: Vec::new(),
-        }
-    }
-}
-
-#[derive(Deserialize)]
-#[serde(try_from = "IgnoreEntry")]
-pub struct Ignore {
-    rule: Option<String>,
-    selector: IgnoreSelector,
-}
-
-enum IgnoreSelector {
-    Finding { path: String, fingerprint: String },
-    Path(PathGlob),
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct IgnoreEntry {
-    path: String,
-    rule: Option<String>,
-    fingerprint: Option<String>,
-    reason: String,
-}
-
-impl TryFrom<IgnoreEntry> for Ignore {
-    type Error = String;
-
-    fn try_from(entry: IgnoreEntry) -> std::result::Result<Self, Self::Error> {
-        let IgnoreEntry {
-            path,
-            rule,
-            fingerprint,
-            reason,
-        } = entry;
-        if reason.trim().is_empty() {
-            return Err(format!("Ignore entry for {path} requires a reason"));
-        }
-        let selector = if let Some(fingerprint) = fingerprint {
-            if !project_relative(&path) {
-                return Err(format!(
-                    "Ignore path must be a project-relative file path with forward slashes: {path}"
-                ));
-            }
-            if !valid_fingerprint(&fingerprint) {
-                return Err(format!(
-                    "Ignore fingerprint for {path} must be a lowercase SHA-256 digest"
-                ));
-            }
-            if rule.as_deref().is_none_or(|rule| rule.contains('*')) {
-                return Err(format!("Ignore fingerprint for {path} requires a rule ID"));
-            }
-            IgnoreSelector::Finding { path, fingerprint }
-        } else {
-            let pattern = if path.ends_with('/') {
-                format!("{path}**")
-            } else {
-                path
-            };
-            IgnoreSelector::Path(PathGlob::new(&pattern)?)
-        };
-        Ok(Self { rule, selector })
-    }
-}
-
-fn ignore_rule_matches(pattern: &str, rule: &str) -> bool {
-    if let Some(prefix) = pattern
-        .strip_suffix(".*")
-        .filter(|prefix| !prefix.is_empty())
-    {
-        rule.strip_prefix(prefix)
-            .is_some_and(|rest| rest.starts_with('.'))
-    } else {
-        pattern == rule
-    }
-}
-
-impl Ignore {
-    pub fn matches_path(&self, path: &Path, rule: &str) -> bool {
-        matches!(&self.selector, IgnoreSelector::Path(pattern) if pattern.0.is_match(path))
-            && self
-                .rule
-                .as_deref()
-                .is_none_or(|selected| ignore_rule_matches(selected, rule))
-    }
-
-    pub fn finding(&self) -> Option<(&str, &str, &str)> {
-        let IgnoreSelector::Finding { path, fingerprint } = &self.selector else {
-            return None;
-        };
-        Some((path, self.rule.as_deref()?, fingerprint))
     }
 }
 
