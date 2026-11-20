@@ -460,31 +460,31 @@ pub async fn check(check: Check<'_>) -> Outcome {
             .copied()
             .filter(|rule| rule.applies_to_java_tests())
             .collect::<Vec<_>>();
-        if !test_rules.is_empty() {
-            let mut tests = BTreeSet::new();
-            if let Err(error) = collect_source_dirs(
+        if !test_rules.is_empty() || source_rules.iter().any(|rule| rule.skips_tests()) {
+            let tests = match module_test_sources(
                 build_name,
                 sources,
                 target,
-                SourceLanguage::Java,
-                &module.test_source_dirs,
-                &mut tests,
+                module,
+                config,
+                changes,
+                &files,
+                &mut excluded_source,
             ) {
-                return preparation_error(error);
+                Ok(tests) => tests,
+                Err(error) => return preparation_error(error),
+            };
+            if source_rules.iter().any(|rule| rule.skips_tests()) {
+                outcome.skipped_test_files.extend(tests.iter().cloned());
             }
-            excluded_source |= tests.iter().any(|file| config.excludes_source(file));
-            tests.retain(|file| {
-                !config.excludes_source(file) && changes.is_none_or(|changes| changes.matches(file))
-            });
-            for file in &files {
-                tests.remove(file);
+            if !test_rules.is_empty() {
+                add_source_group(
+                    &mut source_groups,
+                    test_rules,
+                    tests,
+                    module.java_test_source.or(module.java_source),
+                );
             }
-            add_source_group(
-                &mut source_groups,
-                test_rules,
-                tests,
-                module.java_test_source.or(module.java_source),
-            );
         }
         let uses_classpath = source_rules.iter().any(|rule| rule.uses_pmd_classpath());
         let classpath = (!compile_failed
@@ -622,88 +622,16 @@ pub async fn check(check: Check<'_>) -> Outcome {
             Ok(rule) => rule,
             Err(error) => return config_error(error),
         };
-        for dependency in dependency_checks {
-            if model.modules.iter().any(|module| {
-                module.path == dependency.from && module.dependencies.contains(&dependency.to)
-            }) {
-                let build_file = if root.join("build.gradle.kts").is_file() {
-                    "build.gradle.kts"
-                } else {
-                    "build.gradle"
-                };
-                outcome.diagnostics.push(Diagnostic {
-                    path: Some(build_file.into()),
-                    module: None,
-                    class_name: None,
-                    line: None,
-                    column: None,
-                    end_line: None,
-                    end_column: None,
-                    subject: None,
-                    rule_id: rule.id.clone(),
-                    engine: EngineName::Gradle,
-                    severity: rule.severity,
-                    message: format!(
-                        "{} {} → {}.",
-                        rule.description, dependency.from, dependency.to
-                    ),
-                    fix: rule.fix.clone(),
-                    edit: None,
-                    legacy_fingerprints: Vec::new(),
-                    fingerprint: Some(fingerprint(&format!(
-                        "{}:{}",
-                        dependency.from, dependency.to
-                    ))),
-                });
-            }
-        }
+        outcome.diagnostics.extend(module_dependency_diagnostics(
+            root,
+            &model,
+            rule,
+            &dependency_checks,
+        ));
     }
 
-    let source_checks = async {
-        let mut outcome = Outcome::default();
-        for ((_, java_source), (rules, files)) in source_groups {
-            outcome.merge(
-                run_source_engines(
-                    root,
-                    &files.into_iter().collect::<Vec<_>>(),
-                    registry,
-                    &rules,
-                    config,
-                    java_source,
-                    required,
-                )
-                .await,
-            );
-        }
-        outcome
-    };
-    let pmd_checks = async {
-        let mut outcome = Outcome::default();
-        for (module, files, rules, classpath, java_target) in pmd_modules {
-            let mut result = Pmd {
-                classpath: classpath.as_deref(),
-                compile_sources: Some(&module.compile_sources),
-                java_target,
-                java_source: config.java_source.or(module.java_source),
-                allow_logged_exceptions: config.allow_logged_exceptions,
-                resource_owners: &config.java_resource_owners,
-                managed_resource_factories: &config.java_managed_resource_factories,
-            }
-            .check(Request {
-                root,
-                files: &files,
-                rules: &rules,
-                registry,
-                required,
-            })
-            .await;
-            for failure in &mut result.failures {
-                failure.modules.push(module.path.clone());
-            }
-            outcome.merge(result);
-        }
-        outcome
-    };
+    let source_checks = run_source_groups(root, registry, config, required, source_groups);
+    let pmd_checks = run_pmd_modules(root, registry, config, required, pmd_modules);
     let (source_result, architecture_result, pmd_result) = tokio::join!(
         source_checks,
         check_architecture(root, &architecture),
@@ -712,6 +640,118 @@ pub async fn check(check: Check<'_>) -> Outcome {
     outcome.merge(source_result);
     outcome.merge(architecture_result);
     outcome.merge(pmd_result);
+    outcome
+}
+
+fn module_dependency_diagnostics(
+    root: &Path,
+    model: &ProjectModel,
+    rule: &Rule,
+    dependency_checks: &[&dornguard_config::Dependency],
+) -> Vec<Diagnostic> {
+    let build_file = if root.join("build.gradle.kts").is_file() {
+        "build.gradle.kts"
+    } else {
+        "build.gradle"
+    };
+    dependency_checks
+        .iter()
+        .filter(|dependency| {
+            model.modules.iter().any(|module| {
+                module.path == dependency.from && module.dependencies.contains(&dependency.to)
+            })
+        })
+        .map(|dependency| Diagnostic {
+            path: Some(build_file.into()),
+            module: None,
+            class_name: None,
+            line: None,
+            column: None,
+            end_line: None,
+            end_column: None,
+            subject: None,
+            rule_id: rule.id.clone(),
+            engine: EngineName::Gradle,
+            severity: rule.severity,
+            message: format!(
+                "{} {} → {}.",
+                rule.description, dependency.from, dependency.to
+            ),
+            fix: rule.fix.clone(),
+            edit: None,
+            legacy_fingerprints: Vec::new(),
+            fingerprint: Some(fingerprint(&format!(
+                "{}:{}",
+                dependency.from, dependency.to
+            ))),
+        })
+        .collect()
+}
+
+async fn run_source_groups(
+    root: &Path,
+    registry: &Registry,
+    config: &ProjectConfig,
+    required: bool,
+    source_groups: SourceGroups<'_>,
+) -> Outcome {
+    let mut outcome = Outcome::default();
+    for ((_, java_source), (rules, files)) in source_groups {
+        outcome.merge(
+            run_source_engines(
+                root,
+                &files.into_iter().collect::<Vec<_>>(),
+                registry,
+                &rules,
+                config,
+                java_source,
+                required,
+            )
+            .await,
+        );
+    }
+    outcome
+}
+
+type PmdModule<'a> = (
+    &'a Module,
+    Vec<PathBuf>,
+    Vec<&'a Rule>,
+    Option<Vec<PathBuf>>,
+    Option<u16>,
+);
+
+async fn run_pmd_modules(
+    root: &Path,
+    registry: &Registry,
+    config: &ProjectConfig,
+    required: bool,
+    pmd_modules: Vec<PmdModule<'_>>,
+) -> Outcome {
+    let mut outcome = Outcome::default();
+    for (module, files, rules, classpath, java_target) in pmd_modules {
+        let mut result = Pmd {
+            classpath: classpath.as_deref(),
+            compile_sources: Some(&module.compile_sources),
+            java_target,
+            java_source: config.java_source.or(module.java_source),
+            allow_logged_exceptions: config.allow_logged_exceptions,
+            resource_owners: &config.java_resource_owners,
+            managed_resource_factories: &config.java_managed_resource_factories,
+        }
+        .check(Request {
+            root,
+            files: &files,
+            rules: &rules,
+            registry,
+            required,
+        })
+        .await;
+        for failure in &mut result.failures {
+            failure.modules.push(module.path.clone());
+        }
+        outcome.merge(result);
+    }
     outcome
 }
 
@@ -855,6 +895,36 @@ fn module_files(
         collect_source_dirs(build_name, sources, target, language, &dirs, &mut files)?;
     }
     Ok(files.into_iter().collect())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn module_test_sources(
+    build_name: &str,
+    sources: &SourceFiles<'_>,
+    target: &Path,
+    module: &Module,
+    config: &ProjectConfig,
+    changes: Option<&Changes>,
+    main_files: &[PathBuf],
+    excluded_source: &mut bool,
+) -> Result<BTreeSet<PathBuf>> {
+    let mut tests = BTreeSet::new();
+    collect_source_dirs(
+        build_name,
+        sources,
+        target,
+        SourceLanguage::Java,
+        &module.test_source_dirs,
+        &mut tests,
+    )?;
+    *excluded_source |= tests.iter().any(|file| config.excludes_source(file));
+    tests.retain(|file| {
+        !config.excludes_source(file) && changes.is_none_or(|changes| changes.matches(file))
+    });
+    for file in main_files {
+        tests.remove(file);
+    }
+    Ok(tests)
 }
 
 fn collect_source_dirs(

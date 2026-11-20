@@ -524,6 +524,27 @@ class Example {
 }
 
 #[test]
+fn jpa_profile_keeps_changed_scope_when_no_persistence_type_changes() {
+    let project = project("class Example {}\n");
+    let root = project.path();
+    let helper = root.join("src/Helper.java");
+    fs::write(&helper, "class Helper {}\n").unwrap();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [jpa-web]\n",
+    )
+    .unwrap();
+    commit_fixture(root);
+    fs::write(&helper, "class Helper { int value; }\n").unwrap();
+    let changed = report(check(root).arg("--changed").output().unwrap(), 0);
+    assert_eq!(changed["scope"], "changed", "{changed}");
+
+    fs::remove_file(&helper).unwrap();
+    let deleted = report(check(root).arg("--changed").output().unwrap(), 0);
+    assert_eq!(deleted["scope"], "full", "{deleted}");
+}
+
+#[test]
 fn flyway_compares_existing_versioned_migrations_against_git() {
     let project = tempfile::tempdir().unwrap();
     let root = project.path();

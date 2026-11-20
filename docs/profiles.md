@@ -113,6 +113,7 @@ make it blocking.
 | `kotlin.thread-sleep-in-suspend` | `Thread.sleep` inside a Kotlin suspend function |
 | `kotlin.swallowed-cancellation` | An explicit coroutine cancellation catch that is empty, returns without a value, or only logs |
 | `kotlin.run-catching-cancellation` | A known suspending coroutine operation or a direct call to a sibling no-argument `suspend` function inside `runCatching` |
+| `kotlin.sql-injection` | A JDBC, JPA, or `JdbcTemplate` query method in Kotlin whose SQL string interpolates, concatenates, or formats a value |
 | `kotlin.transactional-suspend` | Spring `@Transactional` on a Kotlin `suspend` function, which needs a reactive transaction manager |
 | `security.sql-injection` | A JDBC, JPA, or `JdbcTemplate` query method whose SQL argument is built by concatenation or formatting. The argument must also contain SQL text (for example `select`, `update`, `drop`) in a string literal, so `signature.update("id=" + name)` is not reported |
 | `security.weak-crypto` | MD2, MD5, SHA-1, DES, RC2, RC4, and AES in ECB or default mode |
@@ -200,8 +201,14 @@ or `javax.persistence.Entity` as its response. The rule recognizes
 and supported containers, including `ResponseEntity<List<Book>>`.
 
 The rule indexes top-level entity declarations from project Java sources.
-With this profile enabled, a Java change triggers a full check because an
-entity change can affect an unchanged controller.
+With this profile enabled, `--changed` runs a full check when a changed Java
+file mentions `persistence` or can no longer be read, such as a deleted file,
+because an entity change can affect an unchanged controller. Other Java changes
+stay in changed scope. A new type that reuses an existing entity's simple name
+is not detected this way; run a full check after such a rename.
+
+When a check skips test sources, the report adds an analysis note with the number
+of files skipped.
 
 ## Flyway migration review
 

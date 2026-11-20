@@ -248,6 +248,7 @@ pub struct Outcome {
     pub no_changes: bool,
     pub fallback_reason: Option<String>,
     pub suppressed_count: usize,
+    pub skipped_test_files: BTreeSet<PathBuf>,
     pub organization_policy_enforced: bool,
 }
 
@@ -267,6 +268,7 @@ impl Outcome {
         self.requested_files.extend(other.requested_files);
         self.incomplete_files.extend(other.incomplete_files);
         self.suppressed_count += other.suppressed_count;
+        self.skipped_test_files.extend(other.skipped_test_files);
     }
 
     pub fn record_coverage<'a>(&mut self, files: impl IntoIterator<Item = &'a PathBuf>) {
@@ -279,6 +281,12 @@ impl Outcome {
     }
 
     pub fn finish(mut self) -> CheckReport {
+        if !self.skipped_test_files.is_empty() {
+            self.analysis_notes.insert(format!(
+                "{} test source files below src/test are skipped by rules that skip tests, which is the default. Set skip_java_tests: false on a rule to include them.",
+                self.skipped_test_files.len()
+            ));
+        }
         self.diagnostics.sort();
         self.diagnostics.dedup();
         self.failures.sort();

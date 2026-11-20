@@ -40,6 +40,13 @@ class Example {
 
     let result = report(check(root).output().unwrap(), 1);
     assert_eq!(result["files_scanned"], 2);
+    assert!(
+        result["analysis_notes"][0]
+            .as_str()
+            .unwrap()
+            .starts_with("1 test source files below src/test"),
+        "{result}"
+    );
     assert_eq!(
         result["diagnostics"]
             .as_array()

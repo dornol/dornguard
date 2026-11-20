@@ -1,0 +1,15 @@
+rules:
+  - id: kotlin-sql-injection
+    languages: [kotlin]
+    message: Pass values as bind parameters instead of building the SQL text.
+    severity: ERROR
+    patterns:
+      - pattern: $M.$METHOD($ARG, ...)
+      - metavariable-regex:
+          metavariable: $METHOD
+          regex: ^(query|queryForObject|queryForList|queryForMap|queryForRowSet|queryForStream|update|execute|batchUpdate|executeQuery|executeUpdate|executeLargeUpdate|createQuery|createNativeQuery|prepareStatement|prepareCall)$
+      # Method names such as update and execute are common outside SQL, so require
+      # SQL text in a string literal that also interpolates, concatenates, or formats.
+      - metavariable-regex:
+          metavariable: $ARG
+          regex: (?is)(?=.*"[^"]*\b(select|insert|update|delete|from|where|values|set|join|call|drop|alter|create|truncate|merge|kill|grant)\b).*(\$[A-Za-z_{]|"\s*\+|\+\s*"|String\.format\(|\.format\().*

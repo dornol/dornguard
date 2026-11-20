@@ -405,3 +405,38 @@ class Service {
         "{result}"
     );
 }
+
+#[test]
+#[ignore = "requires Gradle, JDK 21 and the pinned Semgrep"]
+fn kotlin_reports_sql_built_from_templates_and_concatenation() {
+    let project = kotlin_fixture("kotlin-single");
+    let root = project.path();
+    let file = "src/main/kotlin/example/Example.kt";
+    fs::write(
+        root.join(file),
+        r#"package example
+
+class Repository(val jdbc: JdbcTemplate, val signature: Signature) {
+    fun load(id: String, table: String) {
+        jdbc.query("select * from t where id = '$id'", mapper)
+        jdbc.queryForList("select * from " + table)
+        jdbc.execute("drop table %s".format(table))
+        jdbc.query("select * from t where id = ?", mapper, id)
+        signature.update("id=$id".toByteArray())
+    }
+}
+"#,
+    )
+    .unwrap();
+    let result = report(check(root).output().unwrap(), 1);
+    assert_eq!(result["complete"], true, "{result}");
+    let mut lines = result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|finding| finding["rule_id"] == "kotlin.sql-injection")
+        .map(|finding| finding["line"].as_u64().unwrap())
+        .collect::<Vec<_>>();
+    lines.sort_unstable();
+    assert_eq!(lines, [5, 6, 7], "{result}");
+}

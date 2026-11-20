@@ -10,3 +10,4 @@ rules:
   - kotlin.run-catching-cancellation
   - kotlin.print-stack-trace
   - kotlin.transactional-suspend
+  - kotlin.sql-injection

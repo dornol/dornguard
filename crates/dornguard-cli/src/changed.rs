@@ -27,6 +27,17 @@ impl Changes {
         self.source_paths.iter().map(PathBuf::as_path)
     }
 
+    /// A changed Java file can alter the set of JPA entities only when it mentions
+    /// persistence types or can no longer be read, for example after a deletion.
+    pub fn may_change_entities(&self, root: &Path) -> bool {
+        self.paths()
+            .filter(|path| SourceLanguage::of(path) == Some(SourceLanguage::Java))
+            .any(|path| {
+                std::fs::read_to_string(root.join(path))
+                    .map_or(true, |source| source.contains("persistence"))
+            })
+    }
+
     pub fn java_scope_changed(&self) -> bool {
         self.paths().any(|path| {
             matches!(

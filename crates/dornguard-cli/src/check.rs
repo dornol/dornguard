@@ -113,12 +113,7 @@ pub(crate) async fn check(
                 fallback_reason = Some("A Java package or module declaration changed".to_owned());
                 None
             }
-            Ok(changes)
-                if jpa_enabled
-                    && changes
-                        .paths()
-                        .any(|path| SourceLanguage::of(path) == Some(SourceLanguage::Java)) =>
-            {
+            Ok(changes) if jpa_enabled && changes.may_change_entities(root) => {
                 fallback_reason = Some(
                     "A Java change may affect JPA response types in unchanged controllers"
                         .to_owned(),
@@ -309,8 +304,12 @@ pub(crate) async fn run_source_engines(
         .filter(|rule| !rule.skips_tests())
         .collect::<Vec<_>>();
     let mut outcome = Outcome::default();
+    if test_rules.len() < rules.len() {
+        outcome.skipped_test_files.extend(tests.iter().cloned());
+    }
     if !main.is_empty() || tests.is_empty() || test_rules.is_empty() {
-        outcome = run_engines(root, &main, registry, rules, config, java_source, required).await;
+        outcome
+            .merge(run_engines(root, &main, registry, rules, config, java_source, required).await);
     }
     if !tests.is_empty() && !test_rules.is_empty() {
         outcome.merge(
