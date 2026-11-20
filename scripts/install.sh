@@ -20,7 +20,13 @@ printf '%s\n' "$version" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$
 kernel=$(uname -s)
 case "$kernel:$(uname -m)" in
     Linux:x86_64) target=linux-x86_64 ;;
-    Linux:aarch64) target=linux-arm64 ;;
+    Linux:aarch64)
+        case "$version" in
+            v0.0.4|v0.0.4-*)
+                printf 'DornGuard %s publishes archives for Linux x86-64 and macOS ARM64.\n' "$version" >&2
+                exit 2 ;;
+            *) target=linux-arm64 ;;
+        esac ;;
     Darwin:arm64) target=macos-arm64 ;;
     *) printf 'Unsupported DornGuard distribution target\n' >&2; exit 2 ;;
 esac
@@ -172,5 +178,11 @@ if "$with_deps"; then
         export JAVA_HOME="$engine_java_home"
     fi
     DORNGUARD_PYTHON="$engine_python" "$destination/dornguard" engines install
-    "$destination/dornguard" doctor
+    (
+        doctor_directory=$(mktemp -d)
+        trap 'rm -rf "$doctor_directory"' EXIT
+        cd "$doctor_directory"
+        DORNGUARD_ARCHUNIT_RUNNER="$destination/archunit-runner.jar" \
+            "$destination/dornguard" doctor
+    )
 fi

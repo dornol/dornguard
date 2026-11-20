@@ -15,11 +15,12 @@ Apache License 2.0 is included in `Apache-2.0.txt` in the release archive.
 The Maven model extension also bundles Gson and Error Prone annotations.
 The dependency archives retain their META-INF notices as available.
 
-DornGuard also includes Tree-sitter and its Java, JavaScript, and Kotlin grammars.
+DornGuard also includes Tree-sitter and its HTML, Java, JavaScript, and Kotlin grammars.
 
 MIT License
 
 Copyright (c) 2018-2024 Max Brunsfeld (Tree-sitter)
+Copyright (c) 2014 Max Brunsfeld (Tree-sitter HTML grammar)
 Copyright (c) 2017 Ayman Nadeem (Tree-sitter Java grammar)
 Copyright (c) 2014 Max Brunsfeld (Tree-sitter JavaScript grammar)
 Copyright (c) 2024 Amaan Qureshi <amaanq12@gmail.com> (Tree-sitter Kotlin grammar)

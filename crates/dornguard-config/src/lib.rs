@@ -12,7 +12,7 @@ use ruleset::{PolicySource, Ruleset, Source};
 
 pub const CONFIG_FILE: &str = ".dornguard.yml";
 pub const DEFAULT_CONFIG: &str = "version: 1\nprofiles: [java]\n";
-pub const BUILTIN_VERSION: &str = "1.2.0";
+pub const BUILTIN_VERSION: &str = "1.3.0";
 pub const FLYWAY_RULE: &str = "flyway.changed-versioned-migration";
 pub const JPA_RESPONSE_RULE: &str = "spring.jpa-entity-response";
 pub const TRANSACTIONAL_SELF_RULE: &str = "spring.transactional-self-invocation";

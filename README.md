@@ -12,23 +12,24 @@ through one CLI with project and module profiles.
 
 ## Install or update on Ubuntu and WSL
 
-Run these commands in Ubuntu, including Ubuntu on WSL. The same commands
+DornGuard v0.0.4 publishes Linux x86-64 (AMD64) and macOS ARM64 archives.
+Run these commands in x86-64 Ubuntu, including Ubuntu on WSL. They
 install DornGuard for the first time or update an existing `install.sh`
 installation. The installer verifies the archive checksum, links the new
 version, and installs missing dependencies and engines with `--with-deps`.
 
 ```sh
-curl -fsSLo /tmp/dornguard-install.sh https://raw.githubusercontent.com/dornol/dornguard/v0.0.3/scripts/install.sh &&
-  sh /tmp/dornguard-install.sh v0.0.3 --with-deps &&
+curl -fsSLo /tmp/dornguard-install.sh https://raw.githubusercontent.com/dornol/dornguard/v0.0.4/scripts/install.sh &&
+  sh /tmp/dornguard-install.sh v0.0.4 --with-deps &&
   "$HOME/.local/bin/dornguard" version
 ```
 
-The version command should print `dornguard 0.0.3 (built-in ruleset 1.2.0)`.
-If `.dornguard.yml` pins `ruleset.version` to `"1.1.0"`, update the pin to
-`"1.2.0"`. Keep the top-level `version: 1`.
+The version command should print `dornguard 0.0.4 (built-in ruleset 1.3.0)`.
+If `.dornguard.yml` pins the built-in `ruleset.version`, update it to
+`"1.3.0"`. Keep the top-level `version: 1`.
 
-See the [release guide](docs/releases.md) for other platforms and the
-[v0.0.3 release notes](docs/releases/v0.0.3.md) for upgrade details.
+See the [release guide](docs/releases.md) for macOS installation and the
+[v0.0.4 release notes](docs/releases/v0.0.4.md) for upgrade details.
 
 ## Run the Java example
 

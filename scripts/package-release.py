@@ -37,9 +37,7 @@ def smoke_test(archive_path, name, executable):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("platform", choices=[
-        "linux-x86_64", "linux-arm64", "macos-arm64", "macos-x86_64", "windows-x86_64",
-    ])
+    parser.add_argument("platform", choices=["linux-x86_64", "macos-arm64"])
     parser.add_argument("--output", type=Path, default=ROOT / "dist")
     parser.add_argument("--tag")
     parser.add_argument("--smoke-test", action="store_true")
@@ -50,7 +48,7 @@ def main():
     if args.tag and args.tag != f"v{version}":
         parser.error(f"tag {args.tag} does not match Cargo version {version}")
 
-    executable = "dornguard.exe" if args.platform.startswith("windows-") else "dornguard"
+    executable = "dornguard"
     args.output.mkdir(parents=True, exist_ok=True)
     name = f"dornguard-v{version}-{args.platform}"
     archive_path = args.output / f"{name}.zip"
