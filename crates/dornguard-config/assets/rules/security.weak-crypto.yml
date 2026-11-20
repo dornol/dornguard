@@ -3,6 +3,7 @@ engine: semgrep
 severity: warning
 description: This hash or cipher algorithm is weak or uses an unsafe mode.
 fix: Use SHA-256 or stronger for hashing and an authenticated mode such as AES/GCM for encryption.
+skip_java_tests: true
 implementation:
   config: rules/semgrep/security/weak-crypto.yml
   rule_id: security-weak-crypto

@@ -171,6 +171,21 @@ struct Location {
     offset: usize,
 }
 
+fn literal_markup_hint(root: &Path, path: &Path, line: u64, column: u64) -> Option<&'static str> {
+    let text = std::fs::read_to_string(root.join(path)).ok()?;
+    let line = text
+        .lines()
+        .nth(usize::try_from(line.checked_sub(1)?).ok()?)?;
+    match line
+        .chars()
+        .nth(usize::try_from(column.checked_sub(1)?).ok()?)?
+    {
+        '>' => Some("A literal `>` in text should be written as `&gt;`."),
+        '&' => Some("A literal `&` in text should be written as `&amp;`."),
+        _ => None,
+    }
+}
+
 fn normalize(
     output: &Output,
     root: &Path,
@@ -212,11 +227,39 @@ fn normalize(
             .path
             .and_then(|path| relative_path(root, &path))
             .filter(|path| expected.contains(path.as_path()));
-        let message = if kind == "PartialParsing" {
+        let template = !warn_on_thymeleaf_partial
+            && path
+                .as_ref()
+                .is_some_and(|path| SourceLanguage::of(path) == Some(SourceLanguage::Template));
+        let mut message = if kind == "PartialParsing" {
             "Semgrep parsed only part of the file. Findings for this file are incomplete."
+                .to_owned()
         } else {
-            "Semgrep could not complete analysis"
+            "Semgrep could not complete analysis".to_owned()
         };
+        if kind == "PartialParsing" {
+            let position = error
+                .kind
+                .as_array()
+                .and_then(|parts| parts.get(1)?.as_array()?.first()?.get("start"))
+                .and_then(|start| {
+                    Some((start.get("line")?.as_u64()?, start.get("col")?.as_u64()?))
+                });
+            if let Some((line, column)) = position {
+                message.push_str(&format!(
+                    " Parsing stopped at line {line}, column {column}."
+                ));
+                if let Some(path) = &path
+                    && let Some(hint) = literal_markup_hint(root, path, line, column)
+                {
+                    message.push(' ');
+                    message.push_str(hint);
+                }
+            }
+            if template {
+                message.push_str(" Set thymeleaf_partial_parsing: warning to report this as incomplete analysis without failing the check.");
+            }
+        }
         let mut failure = engine_failure(EngineName::Semgrep, message);
         failure.error_type = Some(kind.to_owned());
         if let Some(rule) = error.rule_id.as_deref().and_then(|id| rules.get(id)) {

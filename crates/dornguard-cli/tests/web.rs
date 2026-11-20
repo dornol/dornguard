@@ -458,3 +458,30 @@ fn thymeleaf_partial_warning_preserves_incomplete_status_and_other_failures() {
         "thymeleaf.restricted-bean-access"
     );
 }
+
+#[test]
+#[ignore = "requires the pinned Semgrep engine"]
+fn thymeleaf_partial_parsing_names_the_position_and_literal_markup() {
+    let project = tempfile::tempdir().unwrap();
+    let root = project.path();
+    let path = "src/main/resources/templates/title.html";
+    fs::create_dir_all(root.join(path).parent().unwrap()).unwrap();
+    fs::write(
+        root.join(path),
+        "<html>\n<head>\n<title>Admin > Detail</title>\n</head>\n<body></body>\n</html>\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [thymeleaf]\n",
+    )
+    .unwrap();
+    let result = report(check(root).output().unwrap(), 3);
+    let message = result["failures"][0]["message"].as_str().unwrap();
+    assert!(message.contains("line 3, column 14"), "{message}");
+    assert!(message.contains("`&gt;`"), "{message}");
+    assert!(
+        message.contains("thymeleaf_partial_parsing: warning"),
+        "{message}"
+    );
+}

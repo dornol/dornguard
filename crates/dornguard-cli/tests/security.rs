@@ -90,3 +90,71 @@ fn security_profile_flags_injection_weak_crypto_tls_and_csrf_patterns() {
         "{result}"
     );
 }
+
+const EXEMPT: &str = r#"class Exempt {
+    void signing(Signature signature, Mac mac, String name) throws Exception {
+        signature.update(("id=" + name).getBytes());
+        mac.update(("id=" + name).getBytes());
+    }
+
+    void tls(boolean verifySsl, Builder builder) {
+        if (!verifySsl) {
+            builder.hostnameVerifier(NoopHostnameVerifier.INSTANCE);
+        }
+    }
+
+    SecurityFilterChain stateless(HttpSecurity http) throws Exception {
+        http.csrf(AbstractHttpConfigurer::disable)
+            .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
+        return http.build();
+    }
+}
+"#;
+
+#[test]
+#[ignore = "requires the pinned Semgrep engine"]
+fn security_profile_skips_stateless_chains_toggled_tls_hashing_calls_and_tests() {
+    let project = project(EXEMPT);
+    let root = project.path();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [security]\n",
+    )
+    .unwrap();
+    let tests = root.join("src/test/java");
+    fs::create_dir_all(&tests).unwrap();
+    fs::write(tests.join("Legacy.java"), SOURCE).unwrap();
+    let result = report(check(root).output().unwrap(), 0);
+    assert_eq!(result["complete"], true, "{result}");
+    assert_eq!(result["diagnostics"], serde_json::json!([]), "{result}");
+}
+
+#[test]
+#[ignore = "requires the pinned Semgrep engine"]
+fn security_profile_keeps_reporting_lookalikes_of_the_exempt_patterns() {
+    let source = r#"class Lookalike {
+    void sql(MachineDao machineDao, Builder builder, boolean ready) {
+        machineDao.update("update machine set name = '" + name + "'");
+        machineDao.execute("DROP TABLE " + table);
+        if (ready) {
+            builder.hostnameVerifier(NoopHostnameVerifier.INSTANCE);
+        }
+    }
+}
+"#;
+    let project = project(source);
+    let root = project.path();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [security]\n",
+    )
+    .unwrap();
+    let result = report(check(root).output().unwrap(), 1);
+    let lines = result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|finding| finding["line"].as_u64().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(lines, [3, 4, 6], "{result}");
+}

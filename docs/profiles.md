@@ -34,9 +34,11 @@ between packages of the same dependency cycle within a module. Dependencies on
 packages outside the cycle are not reported. Override `options: { from:
 [example.service], cycles: true }` to consider only matching packages.
 
-The `spring.field-injection` rule skips Java test sources under
-`src/test/java` in every module. Other rules still check those files when
-they are included in the scan.
+The `spring.field-injection`, `security.sql-injection`, `security.weak-crypto`,
+`security.disabled-tls-verification`, `security.csrf-disabled`, and
+`java.fully-qualified-type` and `kotlin.fully-qualified-type` rules skip test
+sources under `src/test` in every module. Other rules still check those files
+when they are included in the scan.
 
 ## Source formatting
 
@@ -113,10 +115,10 @@ make it blocking.
 | `kotlin.swallowed-cancellation` | An explicit coroutine cancellation catch that is empty, returns without a value, or only logs |
 | `kotlin.run-catching-cancellation` | A known suspending coroutine operation or a direct call to a sibling no-argument `suspend` function inside `runCatching` |
 | `kotlin.transactional-suspend` | Spring `@Transactional` on a Kotlin `suspend` function, which needs a reactive transaction manager |
-| `security.sql-injection` | A JDBC, JPA, or `JdbcTemplate` query method whose SQL argument is built by concatenation or formatting |
+| `security.sql-injection` | A JDBC, JPA, or `JdbcTemplate` query method whose SQL argument is built by concatenation or formatting. The argument must also contain SQL text (for example `select`, `update`, `drop`) in a string literal, so `signature.update("id=" + name)` is not reported |
 | `security.weak-crypto` | MD2, MD5, SHA-1, DES, RC2, RC4, and AES in ECB or default mode |
-| `security.disabled-tls-verification` | Trust-all trust managers and host name verifiers that always return `true` |
-| `security.csrf-disabled` | Spring Security `csrf` configuration that disables CSRF protection |
+| `security.disabled-tls-verification` | Trust-all trust managers and host name verifiers that always return `true`. Code inside an `if` or conditional expression whose condition mentions `verif`, `insecure`, `trustAll`, `skip`, or `validat` is skipped, because it is an opt-in setting. The trust-all implementation itself is still reported; suppress it with a reason |
+| `security.csrf-disabled` | Spring Security `csrf` configuration that disables CSRF protection. Methods that set `SessionCreationPolicy.STATELESS` are skipped |
 | `kotlin.global-scope` | `GlobalScope.launch` or `GlobalScope.async` |
 | `spring.singleton-request-state` | A Java Spring MVC singleton controller handler that stores a parameter directly in a `this` field |
 | `spring.shared-simple-date-format` | A field of type `SimpleDateFormat` or one initialized with it in a singleton Spring component |

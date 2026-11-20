@@ -3,15 +3,29 @@ rules:
     languages: [java]
     message: Validate TLS certificates and host names.
     severity: ERROR
-    pattern-either:
-      - pattern: InsecureTrustManagerFactory.INSTANCE
-      - pattern: NoopHostnameVerifier.INSTANCE
-      - pattern: $X.setDefaultHostnameVerifier(($H, $S) -> true)
-      - pattern: $X.setHostnameVerifier(($H, $S) -> true)
-      - pattern: $X.hostnameVerifier(($H, $S) -> true)
-      - pattern: |
-          new X509TrustManager() {
-            ...
-            public void checkServerTrusted(...) {}
-            ...
-          }
+    patterns:
+      - pattern-either:
+          - pattern: InsecureTrustManagerFactory.INSTANCE
+          - pattern: NoopHostnameVerifier.INSTANCE
+          - pattern: $X.setDefaultHostnameVerifier(($H, $S) -> true)
+          - pattern: $X.setHostnameVerifier(($H, $S) -> true)
+          - pattern: $X.hostnameVerifier(($H, $S) -> true)
+          - pattern: |
+              new X509TrustManager() {
+                ...
+                public void checkServerTrusted(...) {}
+                ...
+              }
+      # Code behind an explicit verification toggle is an opt-in setting, not a default.
+      - pattern-not-inside:
+          patterns:
+            - pattern: if ($COND) { ... }
+            - metavariable-regex:
+                metavariable: $COND
+                regex: (?is).*(verif|insecure|trust.?all|skip|validat).*
+      - pattern-not-inside:
+          patterns:
+            - pattern: "$COND ? $A : $B"
+            - metavariable-regex:
+                metavariable: $COND
+                regex: (?is).*(verif|insecure|trust.?all|skip|validat).*

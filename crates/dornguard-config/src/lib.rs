@@ -233,11 +233,16 @@ impl Rule {
     }
 
     pub fn excludes_path(&self, path: &Path) -> bool {
-        self.skip_java_tests
-            && path
-                .ancestors()
-                .skip(1)
-                .any(|directory| directory.ends_with("src/test/java"))
+        self.skip_java_tests && {
+            let names = path
+                .parent()
+                .into_iter()
+                .flat_map(Path::components)
+                .collect::<Vec<_>>();
+            names
+                .windows(2)
+                .any(|pair| pair[0].as_os_str() == "src" && pair[1].as_os_str() == "test")
+        }
     }
 
     pub fn applies_to_java_tests(&self) -> bool {

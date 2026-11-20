@@ -5,6 +5,11 @@ rules:
     severity: ERROR
     patterns:
       - pattern: $M.$METHOD($ARG, ...)
+      - pattern-not: (Signature $S).$METHOD(...)
+      - pattern-not: (Mac $S).$METHOD(...)
+      - pattern-not: (MessageDigest $S).$METHOD(...)
+      - pattern-not: (Cipher $S).$METHOD(...)
+      - pattern-not: (Checksum $S).$METHOD(...)
       - metavariable-regex:
           metavariable: $METHOD
           regex: ^(query|queryForObject|queryForList|queryForMap|queryForRowSet|queryForStream|update|execute|batchUpdate|executeQuery|executeUpdate|executeLargeUpdate|createQuery|createNativeQuery|prepareStatement|prepareCall)$
@@ -17,3 +22,8 @@ rules:
                 - pattern: String.format(...)
                 - pattern: $S.formatted(...)
             - pattern-not: <... "..." + "..." ...>
+      # Method names such as update and execute are common outside SQL, so
+      # require SQL text in a literal part of the argument.
+      - metavariable-regex:
+          metavariable: $ARG
+          regex: (?is).*"[^"]*\b(select|insert|update|delete|from|where|values|set|join|call|drop|alter|create|truncate|merge|kill|grant)\b.*

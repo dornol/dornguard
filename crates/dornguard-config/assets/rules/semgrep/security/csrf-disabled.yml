@@ -3,7 +3,15 @@ rules:
     languages: [java]
     message: Keep CSRF protection enabled for browser-based sessions.
     severity: WARNING
-    pattern-either:
-      - pattern: $H.csrf().disable()
-      - pattern: $H.csrf(AbstractHttpConfigurer::disable)
-      - pattern: $H.csrf($C -> $C.disable())
+    patterns:
+      - pattern-either:
+          - pattern: $H.csrf().disable()
+          - pattern: $H.csrf(AbstractHttpConfigurer::disable)
+          - pattern: $H.csrf($C -> $C.disable())
+      # A stateless chain authenticates every request, so CSRF tokens add nothing.
+      - pattern-not-inside: |
+          $RET $NAME(...) {
+            ...
+            <... SessionCreationPolicy.STATELESS ...>;
+            ...
+          }
