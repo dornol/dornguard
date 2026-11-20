@@ -4,6 +4,26 @@ DornGuard applies quality, security, and architecture policies to Java,
 Spring Boot, and Kotlin/JVM projects through one CLI. It runs Semgrep, PMD, and ArchUnit with
 project-specific and Gradle module-specific profiles.
 
+## Install or update on Ubuntu and WSL
+
+Run these commands in Ubuntu, including Ubuntu on WSL. The same commands
+install DornGuard for the first time or update an existing `install.sh`
+installation. The installer verifies the archive checksum, links the new
+version, and installs missing dependencies and engines with `--with-deps`.
+
+```sh
+curl -fsSLo /tmp/dornguard-install.sh https://raw.githubusercontent.com/dornol/dornguard/v0.0.3/scripts/install.sh &&
+  sh /tmp/dornguard-install.sh v0.0.3 --with-deps &&
+  "$HOME/.local/bin/dornguard" version
+```
+
+The version command should print `dornguard 0.0.3 (built-in ruleset 1.2.0)`.
+If `.dornguard.yml` pins `ruleset.version` to `"1.1.0"`, update the pin to
+`"1.2.0"`. Keep the top-level `version: 1`.
+
+See the [release guide](docs/releases.md) for other platforms and the
+[v0.0.3 release notes](docs/releases/v0.0.3.md) for upgrade details.
+
 ## Run the Java example
 
 With Rust 1.89 or newer and Python 3.10–3.14 installed, run
