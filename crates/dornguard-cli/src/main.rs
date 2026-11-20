@@ -31,25 +31,37 @@ mod suppressions;
     version,
     about = "Run your project's code quality policy",
     after_help = "\
-For coding agents, run from the project root.
+Coding agent workflow
+
+Run from the project root to use its .dornguard.yml.
+For configuration examples, see dornguard init --help. Use dornguard profiles list
+to find profiles and dornguard profiles show NAME to see what a profile includes.
 
   dornguard check --changed --format agent
-      Review staged, unstaged, and untracked changes with a concise report (up to 20 diagnostics).
+      Review staged, unstaged and untracked changes. Shows counts and up to 20 findings.
   dornguard check --changed --base origin/main --format agent
-      Include committed branch changes when reviewing a pull request. Use its actual base ref.
-  dornguard check --changed --format json
-      Get all diagnostics in the same scope as JSON. Omit --changed to scan the full project.
-  dornguard check --only-profile format
-      Run formatting checks with this project’s formatting settings.
+      Review a PR, including committed branch changes. Use the PR's actual base ref.
+  dornguard check --format json
+      Scan the full project and return every finding. Keep the original scope flags when
+      switching a previous check to JSON, for example check --changed --format json.
+  dornguard check --only-profile format --format agent
+      Run just the formatting profile with the project's settings.
   dornguard rules explain RULE_ID
-      Look up a diagnostic's rule and suggested fix.
+      Look up a finding's rule, suggested fix and available settings.
 
-Build-backed Maven checks scan the full reactor even with --changed.
-Check exit codes are 0 for success, 1 for policy violations, 2 for configuration errors,
-3 for engine errors, and 4 for preparation errors.
+Read the result before acting on findings. In JSON, check complete, scope and rule_counts.
+If complete is false, inspect failures. If a changed check reports full scope, read
+fallback_reason. Build-backed Maven checks scan the full reactor.
 
-Use `dornguard <command> --help` for command options. The audit and csp commands
-also accept --format json."
+Exit codes
+  0  No blocking violations (warnings may remain), or no changes
+  1  Blocking policy violations
+  2  Invalid configuration
+  3  Incomplete engine analysis
+  4  Check preparation failed
+
+Use dornguard check --help for option details and dornguard doctor to inspect engine setup.
+The audit and csp commands also accept --format json."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -58,7 +70,16 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Action {
-    /// Check a project directory or JVM source file
+    /// Check project sources and build-backed policies
+    #[command(after_help = "\
+Examples
+  dornguard check --changed --format agent
+  dornguard check --changed --base origin/main --format json
+  dornguard check --only-profile format --format agent
+  dornguard check --resolve-types --format agent
+
+Keep the same scope and profile options when switching between agent and JSON output.
+With --changed, build-backed Maven checks report full scope.")]
     Check {
         #[arg(default_value = ".")]
         target: PathBuf,
@@ -68,17 +89,19 @@ enum Action {
         /// Use these profiles in place of the configured project and module profiles
         #[arg(long, value_name = "PROFILE")]
         only_profile: Vec<String>,
-        /// Output format for the check report. Use --format json for machine-readable results
+        /// Report format. Use agent for a compact review or json for every finding and failure
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
+        /// Use a specific configuration file
         #[arg(long, value_name = "PATH")]
         config: Option<PathBuf>,
+        /// Check one Gradle module or Maven reactor module
         #[arg(long, value_name = "MODULE")]
         module: Option<String>,
         /// Compile main Java sources for PMD type resolution, including wildcard imports
         #[arg(long, visible_alias = "resolve-types")]
         resolve_imports: bool,
-        /// Limit the check to changes in the index and working tree
+        /// Check staged, unstaged and untracked changes
         #[arg(long, conflicts_with = "module")]
         changed: bool,
         /// Compare committed changes from the merge base of HEAD and REF
@@ -109,7 +132,36 @@ enum Action {
         #[arg(long, value_enum, default_value_t = TextOrJson::Text)]
         format: TextOrJson,
     },
-    /// Create a default configuration in the current directory
+    /// Create .dornguard.yml and show configuration examples in help
+    #[command(
+        after_help = r#"Run dornguard init from the project root to create .dornguard.yml with the java profile.
+Edit the existing file if the project already has one.
+
+Example .dornguard.yml for Spring Boot with formatting checks
+
+version: 1
+profiles: [spring-boot, format]
+rules:
+  java.stdout-usage: { severity: warning }
+exclude:
+  - "**/*.min.js"
+format:
+  overrides:
+    - files: ["src/main/resources/static/legacy/**/*.js"]
+      indent_size: 4
+ignore:
+  - path: docs/scripts/
+    rule: java.stdout-usage
+    reason: "These scripts write results to standard output."
+
+Choose profiles with dornguard profiles list and inspect them with dornguard profiles show NAME.
+Use rules to change severity or disable an active rule with enabled: false.
+Use forward slashes in paths relative to the directory containing .dornguard.yml.
+Use exclude to skip source analysis. Use ignore to suppress findings in a file, directory
+or glob. Omit rule to suppress all findings in that path. Every ignore entry requires a reason.
+
+Run dornguard check --format agent to verify how the configuration applies."#
+    )]
     Init,
     /// Print the installed CLI version
     Version,
