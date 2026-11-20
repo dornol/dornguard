@@ -3,3 +3,4 @@ engine: builtin
 severity: error
 description: This file uses a different line ending than the configured format.
 fix: Save the file with the configured line ending.
+skip_java_tests: false

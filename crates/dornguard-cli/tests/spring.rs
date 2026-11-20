@@ -7,7 +7,7 @@ use common::{CLEAN, check, project, report};
 
 #[test]
 #[ignore = "requires the pinned Semgrep and PMD versions on PATH"]
-fn spring_field_injection_allows_java_test_fixtures() {
+fn rules_skip_java_test_fixtures_by_default() {
     let project = project(CLEAN);
     let root = project.path();
     fs::write(
@@ -39,7 +39,7 @@ class Example {
     }
 
     let result = report(check(root).output().unwrap(), 1);
-    assert_eq!(result["files_scanned"], 3);
+    assert_eq!(result["files_scanned"], 2);
     assert_eq!(
         result["diagnostics"]
             .as_array()
@@ -53,7 +53,6 @@ class Example {
         [
             (service, "spring.field-injection"),
             (service, "java.stdout-usage"),
-            (fixture, "java.stdout-usage"),
         ],
     );
 }

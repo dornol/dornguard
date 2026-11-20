@@ -74,7 +74,6 @@ fn jspecify_checks_effective_java_scopes_without_external_engines() {
             ("core/src/main/java/example/Example.java", 8),
             ("core/src/main/java/example/sub/Other.java", 3),
             ("core/src/main/java/example/sub/Other.java", 5),
-            ("core/src/test/java/example/ExampleTest.java", 2),
             ("jpms/src/main/java/example/b/Legacy.java", 2),
         ]
     );

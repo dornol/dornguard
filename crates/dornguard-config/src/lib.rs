@@ -183,10 +183,26 @@ pub struct Rule {
     all_html: bool,
     #[serde(default)]
     jsp_only: bool,
-    #[serde(default)]
+    #[serde(default = "default_skip_tests")]
     skip_java_tests: bool,
     #[serde(skip)]
     semgrep_languages: Vec<String>,
+}
+
+fn default_skip_tests() -> bool {
+    true
+}
+
+/// A source file below a `src/test` directory.
+pub fn is_test_source(path: &Path) -> bool {
+    let names = path
+        .parent()
+        .into_iter()
+        .flat_map(Path::components)
+        .collect::<Vec<_>>();
+    names
+        .windows(2)
+        .any(|pair| pair[0].as_os_str() == "src" && pair[1].as_os_str() == "test")
 }
 
 impl Rule {
@@ -232,17 +248,12 @@ impl Rule {
         self.semgrep_languages.iter().any(|name| name == "kotlin")
     }
 
+    pub fn skips_tests(&self) -> bool {
+        self.skip_java_tests
+    }
+
     pub fn excludes_path(&self, path: &Path) -> bool {
-        self.skip_java_tests && {
-            let names = path
-                .parent()
-                .into_iter()
-                .flat_map(Path::components)
-                .collect::<Vec<_>>();
-            names
-                .windows(2)
-                .any(|pair| pair[0].as_os_str() == "src" && pair[1].as_os_str() == "test")
-        }
+        self.skip_java_tests && is_test_source(path)
     }
 
     pub fn applies_to_java_tests(&self) -> bool {

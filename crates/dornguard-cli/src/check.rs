@@ -298,6 +298,46 @@ pub(crate) async fn run_source_engines(
     java_source: Option<u16>,
     required: bool,
 ) -> Outcome {
+    // Rules skip test sources unless they declare `skip_java_tests: false`.
+    let (tests, main): (Vec<_>, Vec<_>) = files
+        .iter()
+        .cloned()
+        .partition(|path| dornguard_config::is_test_source(path));
+    let test_rules = rules
+        .iter()
+        .copied()
+        .filter(|rule| !rule.skips_tests())
+        .collect::<Vec<_>>();
+    let mut outcome = Outcome::default();
+    if !main.is_empty() || tests.is_empty() || test_rules.is_empty() {
+        outcome = run_engines(root, &main, registry, rules, config, java_source, required).await;
+    }
+    if !tests.is_empty() && !test_rules.is_empty() {
+        outcome.merge(
+            run_engines(
+                root,
+                &tests,
+                registry,
+                &test_rules,
+                config,
+                java_source,
+                required,
+            )
+            .await,
+        );
+    }
+    outcome
+}
+
+async fn run_engines(
+    root: &Path,
+    files: &[PathBuf],
+    registry: &Registry,
+    rules: &[&dornguard_config::Rule],
+    config: &ProjectConfig,
+    java_source: Option<u16>,
+    required: bool,
+) -> Outcome {
     let warn_on_thymeleaf_partial =
         !required && config.thymeleaf_partial_parsing == PartialParsing::Warning;
     let check_group = async |engine, files: Vec<PathBuf>, accepts_rule: fn(&Rule) -> bool| {

@@ -34,11 +34,10 @@ between packages of the same dependency cycle within a module. Dependencies on
 packages outside the cycle are not reported. Override `options: { from:
 [example.service], cycles: true }` to consider only matching packages.
 
-The `spring.field-injection`, `security.sql-injection`, `security.weak-crypto`,
-`security.disabled-tls-verification`, `security.csrf-disabled`, and
-`java.fully-qualified-type` and `kotlin.fully-qualified-type` rules skip test
-sources under `src/test` in every module. Other rules still check those files
-when they are included in the scan.
+Rules skip test sources, any file below a `src/test` directory, by default.
+Rules that exist for tests (`java.assert-throws-nested-call`) and the `format.*`
+rules still check them. A custom rule can opt back in with `skip_java_tests: false`.
+Selecting a test file explicitly does not change this.
 
 ## Source formatting
 

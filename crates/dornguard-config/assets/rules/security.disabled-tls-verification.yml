@@ -3,7 +3,6 @@ engine: semgrep
 severity: error
 description: This code disables TLS certificate or host name verification.
 fix: Use the default trust store and host name verification, or trust a specific certificate.
-skip_java_tests: true
 implementation:
   config: rules/semgrep/security/disabled-tls-verification.yml
   rule_id: security-disabled-tls-verification

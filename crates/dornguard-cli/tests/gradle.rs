@@ -173,6 +173,7 @@ public record Book(String title) {
         "class OnlyTest { void exercise() { System.out.println(1); try { Integer.parseInt(\"42\"); } catch (NumberFormatException _) {} } }\n",
     )
     .unwrap();
+    // Test sources are skipped by default, so selecting one has nothing to report.
     let test = report(
         check(root)
             .args(["--module", ":api", test_path])
@@ -180,23 +181,13 @@ public record Book(String title) {
             .unwrap(),
         1,
     );
-    assert_eq!(test["files_scanned"], 1, "{test}");
-    let findings = test["diagnostics"].as_array().unwrap();
+    assert_eq!(test["files_requested"], 0, "{test}");
     assert!(
-        findings
+        test["diagnostics"]
+            .as_array()
+            .unwrap()
             .iter()
-            .any(|item| item["rule_id"] == "java.stdout-usage" && item["path"] == test_path),
-        "{test}"
-    );
-    assert!(
-        findings.iter().all(|item| item["engine"] != "archunit"),
-        "{test}"
-    );
-
-    assert!(
-        findings
-            .iter()
-            .any(|item| item["rule_id"] == "java.empty-catch"),
+            .all(|item| item["path"] != test_path),
         "{test}"
     );
 
@@ -216,7 +207,7 @@ public record Book(String title) {
             .as_array()
             .unwrap()
             .iter()
-            .any(|item| item["rule_id"] == "java.stdout-usage" && item["path"] == test_path),
+            .all(|item| item["path"] != test_path),
         "{build_failure}"
     );
     assert!(

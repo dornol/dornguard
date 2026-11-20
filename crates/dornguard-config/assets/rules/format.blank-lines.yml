@@ -3,3 +3,4 @@ engine: builtin
 severity: error
 description: This source has too many consecutive blank lines.
 fix: Remove excess blank lines.
+skip_java_tests: false

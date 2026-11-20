@@ -3,3 +3,4 @@ engine: builtin
 severity: error
 description: End nonempty files with a newline.
 fix: Add a line break after the last line.
+skip_java_tests: false

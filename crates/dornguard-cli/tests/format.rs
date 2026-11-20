@@ -261,3 +261,29 @@ ignore:
         assert_eq!(finding["path"], path);
     }
 }
+
+#[test]
+fn format_rules_still_check_test_sources() {
+    let project = project("class Example {\n}\n");
+    let root = project.path();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [format]\n",
+    )
+    .unwrap();
+    let test = root.join("src/test/java/ExampleTest.java");
+    fs::create_dir_all(test.parent().unwrap()).unwrap();
+    fs::write(test, "class ExampleTest {  \n}\n").unwrap();
+    let result = report(check(root).output().unwrap(), 1);
+    assert!(
+        result["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| {
+                item["rule_id"] == "format.trailing-whitespace"
+                    && item["path"] == "src/test/java/ExampleTest.java"
+            }),
+        "{result}"
+    );
+}

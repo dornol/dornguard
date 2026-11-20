@@ -3,6 +3,7 @@ engine: semgrep
 severity: warning
 description: A call that prepares an argument can throw before JUnit reaches the operation under test.
 fix: Prepare the argument before assertThrows and keep the operation under test in the lambda.
+skip_java_tests: false
 implementation:
   config: rules/semgrep/java/assert-throws-nested-call.yml
   rule_id: junit-assert-throws-nested-call

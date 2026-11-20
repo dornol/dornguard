@@ -3,7 +3,6 @@ engine: semgrep
 severity: warning
 description: Disabling CSRF protection is only safe for stateless APIs that do not use cookie-based sessions.
 fix: Keep CSRF enabled for browser sessions, or suppress this rule where the API is stateless.
-skip_java_tests: true
 implementation:
   config: rules/semgrep/security/csrf-disabled.yml
   rule_id: security-csrf-disabled
