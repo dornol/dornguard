@@ -93,6 +93,12 @@ jobs:
           for name, jar in (("ARCHUNIT", "archunit-runner.jar"), ("MAVEN_MODEL", "maven-model.jar")):
               print(f"DORNGUARD_{name}_SHA256={hashlib.sha256((jars / jar).read_bytes()).hexdigest()}")
           PY
+      - name: Install the pinned ESLint
+        run: |
+          mkdir -p .ci-tools/eslint
+          cp scripts/ci-eslint/package.json scripts/ci-eslint/package-lock.json .ci-tools/eslint/
+          (cd .ci-tools/eslint && npm ci --no-audit --no-fund)
+          echo "$GITHUB_WORKSPACE/.ci-tools/eslint/node_modules/.bin" >> "$GITHUB_PATH"
       - name: Build CLI
         run: |
           cargo build --release --locked
