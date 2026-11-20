@@ -1,6 +1,6 @@
 # Releases
 
-See the [v0.0.4 release notes](releases/v0.0.4.md) for upgrade details.
+See the [v0.0.5 release notes](releases/v0.0.5.md) for upgrade details.
 
 The [release workflow](../.github/workflows/release.yml) builds
 archives for Linux x86-64 (AMD64) and macOS ARM64. Each
@@ -21,7 +21,7 @@ The script reuses a supported Python with `venv` and `ensurepip` and an
 existing JDK 21 or later. It ends by running `dornguard doctor`.
 
 ```sh
-sh scripts/install.sh v0.0.4 --with-deps
+sh scripts/install.sh v0.0.5 --with-deps
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
@@ -31,7 +31,7 @@ For local installation from source, use
 
 ## Report format
 
-DornGuard v0.0.3 and v0.0.4 emit JSON check report version 3. The v0.0.2
+DornGuard v0.0.3 through v0.0.5 emit JSON check report version 3. The v0.0.2
 archive emits version 2. Project configuration remains version 1.
 
 Version 3 uses one-based lines and UTF-16 columns in text, JSON, and SARIF.
@@ -50,16 +50,14 @@ can contain diagnostics from the
 engines that produced results. Exit codes retain their documented meanings.
 
 Version 0.0.4 adds `rule_counts` with error and warning counts by rule and
-optional `analysis_notes` describing PMD classpath use. In newer builds,
-`pmd_coverage.compiled_classpath` and `pmd_coverage.source_only` list the files
-PMD scanned in each mode. Tolerated partial Thymeleaf parsing appears in
-`analysis_warnings` and sets `complete` to false. When organization policy
-runs, reports include `project_scope` and `organization_scope`. The
+optional `analysis_notes` describing PMD classpath use. When organization
+policy runs, reports include `project_scope` and `organization_scope`. The
 combined `scope` is full. SARIF exposes the same scopes as `projectScope`
 and `organizationScope`. ArchUnit
 reports one finding per module, rule, origin class and forbidden target class.
 Existing dependency fingerprints still match the grouped finding.
-The v0.0.4 runner uses protocol 4 and must be installed with the matching CLI.
+The v0.0.4 and v0.0.5 runners use protocol 4. Install the matching CLI and
+runner together.
 The v0.0.3 runner uses protocol 3.
 A compiler-skipped input or a missing Java bytecode mapping is reported as
 incomplete. Maven checks also reject class files older than the matched
@@ -69,6 +67,12 @@ JSON findings can include an optional `edit` with UTF-8 byte offsets,
 replacement text, and the input file's SHA-256 digest. When result filters are
 used, JSON adds `report_filter` with the filters and omitted finding count.
 Rule counts and exit codes cover the original check.
+
+Version 0.0.5 adds `pmd_coverage.compiled_classpath` and
+`pmd_coverage.source_only` to list the files PMD scanned in each mode.
+Tolerated partial Thymeleaf parsing appears in `analysis_warnings` and sets
+`complete` to false. When there are no blocking findings or other failures,
+this produces `status: incomplete` with `exit_code: 0`.
 
 For reproducible CI, pin the CLI archive,
 the built-in Ruleset version or external Ruleset commit, and the engine versions.
