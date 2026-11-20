@@ -1,0 +1,7 @@
+id: architecture.package-cycle
+engine: archunit
+severity: error
+description: Packages must not depend on each other in a cycle.
+fix: Break the cycle by moving shared types to a lower-level package or inverting one dependency.
+options:
+  cycles: true

@@ -155,10 +155,14 @@
           "options": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["forbidden"],
+            "oneOf": [
+              { "required": ["forbidden"], "not": { "required": ["cycles"] } },
+              { "required": ["cycles"], "not": { "required": ["forbidden"] } }
+            ],
             "properties": {
               "from": { "type": "array", "items": { "type": "string" } },
-              "forbidden": { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+              "forbidden": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+              "cycles": { "const": true }
             }
           }
         }

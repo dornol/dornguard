@@ -227,3 +227,73 @@ public record Book(String title) {
             .all(|item| item["engine"] != "archunit")
     );
 }
+
+#[test]
+#[ignore = "requires the pinned engines, JDK 21, Gradle and DORNGUARD_ARCHUNIT_RUNNER"]
+fn package_cycles_report_only_dependencies_inside_a_cycle() {
+    let fixture =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/spring-boot-multimodule");
+    let project = tempfile::tempdir().unwrap();
+    copy_gradle_fixture(&fixture, project.path());
+    let root = project.path();
+
+    let base = root.join("admin/src/main/java/example/admin");
+    for (path, source) in [
+        (
+            "alpha/Alpha.java",
+            "package example.admin.alpha;\npublic class Alpha {\n    public Object other() { return new example.admin.beta.Beta(); }\n}\n",
+        ),
+        (
+            "beta/Beta.java",
+            "package example.admin.beta;\npublic class Beta {\n    public Object other() { return new example.admin.alpha.Alpha(); }\n}\n",
+        ),
+        (
+            "gamma/Gamma.java",
+            "package example.admin.gamma;\npublic class Gamma {\n    public Object other() { return new example.admin.alpha.Alpha(); }\n}\n",
+        ),
+    ] {
+        let file = base.join(path);
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(file, source).unwrap();
+    }
+    let config = fs::read_to_string(root.join(".dornguard.yml"))
+        .unwrap()
+        .replace(
+            "profiles: [layered, rest-api]",
+            "profiles: [layered, rest-api, package-cycles]",
+        );
+    fs::write(root.join(".dornguard.yml"), config).unwrap();
+
+    let result = report(check(root).output().unwrap(), 1);
+    assert_eq!(result["complete"], true, "{result}");
+    let mut cycles = result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|finding| finding["rule_id"] == "architecture.package-cycle")
+        .map(|finding| {
+            (
+                finding["class_name"].as_str().unwrap().to_owned(),
+                finding["path"].as_str().unwrap().to_owned(),
+                finding["line"].as_u64().unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    cycles.sort_unstable();
+    assert_eq!(
+        cycles,
+        [
+            (
+                "example.admin.alpha.Alpha".to_owned(),
+                "admin/src/main/java/example/admin/alpha/Alpha.java".to_owned(),
+                3
+            ),
+            (
+                "example.admin.beta.Beta".to_owned(),
+                "admin/src/main/java/example/admin/beta/Beta.java".to_owned(),
+                3
+            ),
+        ],
+        "Gamma depends on the cycle but is not part of it: {result}"
+    );
+}

@@ -1,0 +1,4 @@
+name: package-cycles
+description: Reject dependency cycles between packages in a module
+rules:
+  - architecture.package-cycle

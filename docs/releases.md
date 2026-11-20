@@ -58,7 +58,8 @@ reports one finding per module, rule, origin class and forbidden target class.
 Existing dependency fingerprints still match the grouped finding.
 The v0.0.4 and v0.0.5 runners use protocol 4. Install the matching CLI and
 runner together.
-The v0.0.3 runner uses protocol 3.
+The v0.0.3 runner uses protocol 3. Unreleased builds use protocol 5, which adds
+the `cycles` rule option for `architecture.package-cycle`.
 A compiler-skipped input or a missing Java bytecode mapping is reported as
 incomplete. Maven checks also reject class files older than the matched
 source. Gradle checks use the compile tasks' up-to-date and cache state.

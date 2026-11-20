@@ -12,7 +12,7 @@ use tokio::time::Instant;
 use crate::{display_path, fail, relative_path, run_command};
 
 const ENGINE: EngineName = EngineName::Archunit;
-const SCHEMA_VERSION: u32 = 4;
+const SCHEMA_VERSION: u32 = 5;
 
 pub struct ArchModule<'a> {
     pub module: &'a Module,
@@ -93,6 +93,7 @@ async fn run(root: &Path, modules: &[ArchModule<'_>], outcome: &mut Outcome) -> 
                 id: &rule.id,
                 origins: &options.from,
                 forbidden: &options.forbidden,
+                cycles: options.cycles,
             });
         }
         request.modules.push(ModuleInput {
@@ -361,6 +362,7 @@ struct RuleInput<'a> {
     id: &'a str,
     origins: &'a [String],
     forbidden: &'a [String],
+    cycles: bool,
 }
 
 #[derive(Deserialize)]

@@ -256,7 +256,18 @@ impl Rule {
 pub struct ArchitectureOptions {
     #[serde(default)]
     pub from: Vec<String>,
+    #[serde(default)]
     pub forbidden: Vec<String>,
+    /// Report dependencies that form package cycles instead of forbidden packages.
+    #[serde(default)]
+    pub cycles: bool,
+}
+
+impl ArchitectureOptions {
+    /// An architecture rule names either forbidden packages or package cycles.
+    pub fn is_valid(&self) -> bool {
+        self.forbidden.is_empty() == self.cycles
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -289,6 +300,7 @@ impl Registry {
             include_str!("../assets/profiles/thymeleaf-output-review.yml"),
             include_str!("../assets/profiles/hexagonal.yml"),
             include_str!("../assets/profiles/layered.yml"),
+            include_str!("../assets/profiles/package-cycles.yml"),
             include_str!("../assets/profiles/java-library.yml"),
             include_str!("../assets/profiles/rest-api.yml"),
             include_str!("../assets/profiles/flyway.yml"),
@@ -322,6 +334,7 @@ impl Registry {
             include_str!("../assets/rules/architecture.framework-independence.yml"),
             include_str!("../assets/rules/architecture.controller-repository.yml"),
             include_str!("../assets/rules/architecture.repository-independence.yml"),
+            include_str!("../assets/rules/architecture.package-cycle.yml"),
             include_str!("../assets/rules/architecture.module-dependency.yml"),
             include_str!("../assets/rules/architecture.library-framework-independence.yml"),
             include_str!("../assets/rules/java.ignored-interrupt.yml"),
@@ -629,9 +642,11 @@ impl Registry {
                 if rule
                     .options
                     .as_ref()
-                    .is_none_or(|options| options.forbidden.is_empty()) =>
+                    .is_none_or(|options| !options.is_valid()) =>
             {
-                bail!("Rule {id} requires architecture options with forbidden packages");
+                bail!(
+                    "Rule {id} requires architecture options with either forbidden packages or cycles: true"
+                );
             }
             EngineName::Archunit | EngineName::Builtin | EngineName::Gradle => {}
         }
@@ -836,7 +851,7 @@ impl Registry {
         for (id, value) in overrides {
             let rule = self.rule(id)?;
             if let Some(options) = &value.options
-                && (rule.engine != EngineName::Archunit || options.forbidden.is_empty())
+                && (rule.engine != EngineName::Archunit || !options.is_valid())
             {
                 bail!("Rule {id} does not accept these options");
             }

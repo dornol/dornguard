@@ -24,9 +24,15 @@ Use `dornguard rules explain ID` for the reason and guidance for a rule.
 | `security` | Java CORS patterns |
 | `hexagonal` | Domain, application, and adapter dependencies |
 | `layered` | Controller, service, and repository dependencies |
+| `package-cycles` | Dependency cycles between packages in a module |
 | `rest-api` | Spring and security rules |
 | `scheduler` | Spring rules for scheduler modules |
 | `java-library` | Java and framework independence rules |
+
+`architecture.package-cycle` reports each class dependency that crosses
+between packages of the same dependency cycle within a module. Dependencies on
+packages outside the cycle are not reported. Override `options: { from:
+[example.service], cycles: true }` to consider only matching packages.
 
 The `spring.field-injection` rule skips Java test sources under
 `src/test/java` in every module. Other rules still check those files when
