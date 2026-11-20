@@ -29,7 +29,25 @@ mod suppressions;
 #[command(
     name = "dornguard",
     version,
-    about = "Run your project's code quality policy"
+    about = "Run your project's code quality policy",
+    after_help = "\
+For coding agents, run from the project root.
+
+  dornguard check --changed --format agent
+      Review staged, unstaged, and untracked changes with a concise report (up to 20 diagnostics).
+  dornguard check --changed --base origin/main --format agent
+      Include committed branch changes when reviewing a pull request. Use its actual base ref.
+  dornguard check --changed --format json
+      Get all diagnostics in the same scope as JSON. Omit --changed to scan the full project.
+  dornguard rules explain RULE_ID
+      Look up a diagnostic's rule and suggested fix.
+
+Build-backed Maven checks scan the full reactor even with --changed.
+Check exit codes are 0 for success, 1 for policy violations, 2 for configuration errors,
+3 for engine errors, and 4 for preparation errors.
+
+Use `dornguard <command> --help` for command options. The audit and csp commands
+also accept --format json."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -44,6 +62,7 @@ enum Action {
         target: PathBuf,
         #[arg(long)]
         profile: Vec<String>,
+        /// Output format for the check report. Use --format json for machine-readable results
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
         #[arg(long, value_name = "PATH")]
@@ -70,6 +89,7 @@ enum Action {
     Audit {
         #[arg(default_value = ".")]
         project: PathBuf,
+        /// Output format for the dependency audit report
         #[arg(long, value_enum, default_value_t = TextOrJson::Text)]
         format: TextOrJson,
         /// Activate Maven profiles for dependency resolution
@@ -79,6 +99,7 @@ enum Action {
     /// Inspect the enforced CSP and inline scripts of an HTML response
     Csp {
         url: String,
+        /// Output format for the CSP report
         #[arg(long, value_enum, default_value_t = TextOrJson::Text)]
         format: TextOrJson,
     },
@@ -112,7 +133,9 @@ enum Action {
 
 #[derive(Subcommand)]
 enum ProfileAction {
+    /// List the available profiles and their descriptions
     List,
+    /// Show a profile's parent profiles and directly enabled rules
     Show { name: String },
 }
 
@@ -155,15 +178,21 @@ enum BaselineAction {
 
 #[derive(Clone, Copy, ValueEnum)]
 enum Format {
+    /// Human-readable report
     Text,
+    /// Complete machine-readable report
     Json,
+    /// Compact text summary with up to 20 diagnostics
     Agent,
+    /// SARIF 2.1.0 report for code scanning tools
     Sarif,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
 enum TextOrJson {
+    /// Human-readable report
     Text,
+    /// Machine-readable JSON report
     Json,
 }
 
