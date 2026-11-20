@@ -347,3 +347,61 @@ fn kotlin_changed_base_keeps_old_module_ownership_and_checks_dependents() {
             .contains("Outside.kt")
     );
 }
+
+#[test]
+#[ignore = "requires Gradle, JDK 21 and the pinned Semgrep"]
+fn kotlin_reports_printed_stack_traces_and_transactional_suspend_functions() {
+    let project = kotlin_fixture("kotlin-single");
+    let root = project.path();
+    let file = "src/main/kotlin/example/Example.kt";
+    fs::write(
+        root.join(file),
+        r#"package example
+
+import org.springframework.transaction.annotation.Transactional
+
+class Service {
+    @Transactional
+    suspend fun saveBlock(id: Long) { store(id) }
+
+    @Transactional(readOnly = true)
+    suspend fun loadExpression(id: Long): String = read(id)
+
+    @Transactional
+    fun saveBlocking(id: Long) { store(id) }
+
+    suspend fun plain(id: Long) { store(id) }
+
+    fun report(error: Exception) {
+        error.printStackTrace()
+        logger.error("failed", error)
+    }
+}
+"#,
+    )
+    .unwrap();
+    let result = report(check(root).output().unwrap(), 1);
+    assert_eq!(result["complete"], true, "{result}");
+    let mut findings = result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|finding| {
+            (
+                finding["line"].as_u64().unwrap(),
+                finding["rule_id"].as_str().unwrap(),
+                finding["path"].as_str().unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    findings.sort_unstable();
+    assert_eq!(
+        findings,
+        [
+            (6, "kotlin.transactional-suspend", file),
+            (9, "kotlin.transactional-suspend", file),
+            (18, "kotlin.print-stack-trace", file),
+        ],
+        "{result}"
+    );
+}
