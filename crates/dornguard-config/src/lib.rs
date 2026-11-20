@@ -350,6 +350,7 @@ impl Registry {
             include_str!("../assets/rules/spring.retry-self-invocation.yml"),
             include_str!("../assets/rules/java.print-stack-trace.yml"),
             include_str!("../assets/rules/kotlin.print-stack-trace.yml"),
+            include_str!("../assets/rules/kotlin.transactional-suspend.yml"),
             include_str!("../assets/rules/kotlin.thread-sleep-in-suspend.yml"),
             include_str!("../assets/rules/thymeleaf.unescaped-output.yml"),
             include_str!("../assets/rules/java.broken-null-check.yml"),
@@ -415,6 +416,10 @@ impl Registry {
             (
                 "rules/semgrep/kotlin/print-stack-trace.yml",
                 include_str!("../assets/rules/semgrep/kotlin/print-stack-trace.yml"),
+            ),
+            (
+                "rules/semgrep/kotlin/transactional-suspend.yml",
+                include_str!("../assets/rules/semgrep/kotlin/transactional-suspend.yml"),
             ),
             (
                 "rules/pmd/java/empty-catch.xml",

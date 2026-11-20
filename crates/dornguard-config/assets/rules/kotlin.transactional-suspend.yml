@@ -1,0 +1,8 @@
+id: kotlin.transactional-suspend
+engine: semgrep
+severity: warning
+description: A Spring @Transactional suspend function needs a reactive transaction manager; a blocking one can lose its transaction across suspension points.
+fix: Use a reactive transaction manager with a TransactionalOperator, or move the transactional work into a regular function and call it from the coroutine.
+implementation:
+  config: rules/semgrep/kotlin/transactional-suspend.yml
+  rule_id: kotlin-transactional-suspend

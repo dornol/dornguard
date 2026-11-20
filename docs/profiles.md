@@ -106,6 +106,7 @@ make it blocking.
 | `kotlin.thread-sleep-in-suspend` | `Thread.sleep` inside a Kotlin suspend function |
 | `kotlin.swallowed-cancellation` | An explicit coroutine cancellation catch that is empty, returns without a value, or only logs |
 | `kotlin.run-catching-cancellation` | A known suspending coroutine operation or a direct call to a sibling no-argument `suspend` function inside `runCatching` |
+| `kotlin.transactional-suspend` | Spring `@Transactional` on a Kotlin `suspend` function, which needs a reactive transaction manager |
 | `kotlin.global-scope` | `GlobalScope.launch` or `GlobalScope.async` |
 | `spring.singleton-request-state` | A Java Spring MVC singleton controller handler that stores a parameter directly in a `this` field |
 | `spring.shared-simple-date-format` | A field of type `SimpleDateFormat` or one initialized with it in a singleton Spring component |

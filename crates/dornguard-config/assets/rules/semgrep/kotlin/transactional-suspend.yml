@@ -1,0 +1,30 @@
+rules:
+  - id: kotlin-transactional-suspend
+    languages: [kotlin]
+    severity: WARNING
+    message: Do not rely on blocking transactions across suspension points.
+    pattern-either:
+      - pattern: |
+          @Transactional
+          suspend fun $F(...) { ... }
+      - pattern: |
+          @Transactional
+          suspend fun $F(...): $T { ... }
+      - pattern: |
+          @Transactional
+          suspend fun $F(...) = $E
+      - pattern: |
+          @Transactional
+          suspend fun $F(...): $T = $E
+      - pattern: |
+          @Transactional(...)
+          suspend fun $F(...) { ... }
+      - pattern: |
+          @Transactional(...)
+          suspend fun $F(...): $T { ... }
+      - pattern: |
+          @Transactional(...)
+          suspend fun $F(...) = $E
+      - pattern: |
+          @Transactional(...)
+          suspend fun $F(...): $T = $E
