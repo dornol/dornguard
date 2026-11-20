@@ -1,0 +1,8 @@
+id: security.sql-injection
+engine: semgrep
+severity: error
+description: SQL text built by string concatenation or formatting can allow SQL injection.
+fix: Use bind parameters such as ? or :name, and pass the values separately.
+implementation:
+  config: rules/semgrep/security/sql-injection.yml
+  rule_id: security-sql-injection

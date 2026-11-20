@@ -1,0 +1,19 @@
+rules:
+  - id: security-weak-crypto
+    languages: [java]
+    message: Use a modern algorithm such as SHA-256 or AES-GCM.
+    severity: WARNING
+    pattern-either:
+      - pattern: MessageDigest.getInstance("MD2")
+      - pattern: MessageDigest.getInstance("MD5")
+      - pattern: MessageDigest.getInstance("SHA-1")
+      - pattern: MessageDigest.getInstance("SHA1")
+      - pattern: DigestUtils.md5(...)
+      - pattern: DigestUtils.md5Hex(...)
+      - pattern: DigestUtils.sha1(...)
+      - pattern: DigestUtils.sha1Hex(...)
+      - patterns:
+          - pattern: Cipher.getInstance($ALGORITHM)
+          - metavariable-regex:
+              metavariable: $ALGORITHM
+              regex: ^"(?i)(DES|DESede|RC2|RC4|Blowfish|AES|(AES|DES|DESede)/ECB/.*|(DES|DESede|RC2)/.*)"$

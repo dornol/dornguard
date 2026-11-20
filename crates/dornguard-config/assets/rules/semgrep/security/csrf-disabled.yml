@@ -1,0 +1,9 @@
+rules:
+  - id: security-csrf-disabled
+    languages: [java]
+    message: Keep CSRF protection enabled for browser-based sessions.
+    severity: WARNING
+    pattern-either:
+      - pattern: $H.csrf().disable()
+      - pattern: $H.csrf(AbstractHttpConfigurer::disable)
+      - pattern: $H.csrf($C -> $C.disable())

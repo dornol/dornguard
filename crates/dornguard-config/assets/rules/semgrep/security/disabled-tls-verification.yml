@@ -1,0 +1,17 @@
+rules:
+  - id: security-disabled-tls-verification
+    languages: [java]
+    message: Validate TLS certificates and host names.
+    severity: ERROR
+    pattern-either:
+      - pattern: InsecureTrustManagerFactory.INSTANCE
+      - pattern: NoopHostnameVerifier.INSTANCE
+      - pattern: $X.setDefaultHostnameVerifier(($H, $S) -> true)
+      - pattern: $X.setHostnameVerifier(($H, $S) -> true)
+      - pattern: $X.hostnameVerifier(($H, $S) -> true)
+      - pattern: |
+          new X509TrustManager() {
+            ...
+            public void checkServerTrusted(...) {}
+            ...
+          }

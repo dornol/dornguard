@@ -1,0 +1,19 @@
+rules:
+  - id: security-sql-injection
+    languages: [java]
+    message: Pass values as bind parameters instead of building the SQL text.
+    severity: ERROR
+    patterns:
+      - pattern: $M.$METHOD($ARG, ...)
+      - metavariable-regex:
+          metavariable: $METHOD
+          regex: ^(query|queryForObject|queryForList|queryForMap|queryForRowSet|queryForStream|update|execute|batchUpdate|executeQuery|executeUpdate|executeLargeUpdate|createQuery|createNativeQuery|prepareStatement|prepareCall)$
+      - metavariable-pattern:
+          metavariable: $ARG
+          patterns:
+            - pattern-either:
+                - pattern: <... "..." + $X ...>
+                - pattern: <... $X + "..." ...>
+                - pattern: String.format(...)
+                - pattern: $S.formatted(...)
+            - pattern-not: <... "..." + "..." ...>

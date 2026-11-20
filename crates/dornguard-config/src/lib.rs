@@ -335,6 +335,10 @@ impl Registry {
             include_str!("../assets/rules/architecture.controller-repository.yml"),
             include_str!("../assets/rules/architecture.repository-independence.yml"),
             include_str!("../assets/rules/architecture.package-cycle.yml"),
+            include_str!("../assets/rules/security.sql-injection.yml"),
+            include_str!("../assets/rules/security.weak-crypto.yml"),
+            include_str!("../assets/rules/security.disabled-tls-verification.yml"),
+            include_str!("../assets/rules/security.csrf-disabled.yml"),
             include_str!("../assets/rules/architecture.module-dependency.yml"),
             include_str!("../assets/rules/architecture.library-framework-independence.yml"),
             include_str!("../assets/rules/java.ignored-interrupt.yml"),
@@ -445,6 +449,22 @@ impl Registry {
             (
                 "rules/semgrep/security/cors-wildcard.yml",
                 include_str!("../assets/rules/semgrep/security/cors-wildcard.yml"),
+            ),
+            (
+                "rules/semgrep/security/sql-injection.yml",
+                include_str!("../assets/rules/semgrep/security/sql-injection.yml"),
+            ),
+            (
+                "rules/semgrep/security/weak-crypto.yml",
+                include_str!("../assets/rules/semgrep/security/weak-crypto.yml"),
+            ),
+            (
+                "rules/semgrep/security/disabled-tls-verification.yml",
+                include_str!("../assets/rules/semgrep/security/disabled-tls-verification.yml"),
+            ),
+            (
+                "rules/semgrep/security/csrf-disabled.yml",
+                include_str!("../assets/rules/semgrep/security/csrf-disabled.yml"),
             ),
             (
                 "rules/semgrep/thymeleaf/restricted-bean-access.yml",

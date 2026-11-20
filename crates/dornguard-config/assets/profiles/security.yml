@@ -2,3 +2,7 @@ name: security
 description: Java web security checks
 rules:
   - security.cors-wildcard
+  - security.sql-injection
+  - security.weak-crypto
+  - security.disabled-tls-verification
+  - security.csrf-disabled
