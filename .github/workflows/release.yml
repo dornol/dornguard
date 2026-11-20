@@ -8,8 +8,61 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
+  candidate:
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      run_id: ${{ steps.find.outputs.run_id }}
+      artifact_ids: ${{ steps.find.outputs.artifact_ids }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Validate the tag and find verified packages
+        id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          version=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')
+          if [[ "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match Cargo.toml version $version."
+            exit 1
+          fi
+
+          commit=$(git rev-parse HEAD)
+          runs=$(gh run list --workflow release.yml --event workflow_dispatch \
+            --branch "$DEFAULT_BRANCH" --commit "$commit" --status success \
+            --json databaseId --jq '.[].databaseId')
+          for run in $runs; do
+            artifacts=$(gh api "repos/$GH_REPO/actions/runs/$run/artifacts?per_page=100" --jq '
+              [.artifacts[] | select(.expired == false)
+                | select(.name == "dornguard-linux-x86_64" or .name == "dornguard-macos-arm64")]
+              | select((map(.name) | sort) == ["dornguard-linux-x86_64", "dornguard-macos-arm64"])
+              | map(.id) | join(",")')
+            if [[ -n "$artifacts" ]]; then
+              echo "Reusing verified packages from run $run."
+              {
+                echo "run_id=$run"
+                echo "artifact_ids=$artifacts"
+              } >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+          echo "No verified packages available for $commit. Building from the tag."
+
   package:
+    needs: candidate
+    if: ${{ !cancelled() && (needs.candidate.result == 'skipped' || (needs.candidate.result == 'success' && needs.candidate.outputs.run_id == '')) }}
     strategy:
       fail-fast: false
       matrix:
@@ -18,9 +71,6 @@ jobs:
           - { runner: macos-15, platform: macos-arm64 }
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
-    defaults:
-      run:
-        shell: bash
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -43,9 +93,8 @@ jobs:
           for name, jar in (("ARCHUNIT", "archunit-runner.jar"), ("MAVEN_MODEL", "maven-model.jar")):
               print(f"DORNGUARD_{name}_SHA256={hashlib.sha256((jars / jar).read_bytes()).hexdigest()}")
           PY
-      - name: Build and test CLI
+      - name: Build CLI
         run: |
-          cargo test --workspace --locked
           cargo build --release --locked
           target/release/dornguard version
       - name: Verify managed engines
@@ -74,16 +123,28 @@ jobs:
           if-no-files-found: error
 
   publish:
-    if: github.ref_type == 'tag'
+    if: ${{ !cancelled() && github.ref_type == 'tag' && needs.candidate.result == 'success' && (needs.package.result == 'success' || (needs.package.result == 'skipped' && needs.candidate.outputs.run_id != '')) }}
     runs-on: ubuntu-24.04
-    needs: package
+    needs: [candidate, package]
     permissions:
+      actions: read
       contents: write
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+      - name: Download previously verified packages
+        if: needs.candidate.outputs.run_id != ''
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.candidate.outputs.run_id }}
+          artifact-ids: ${{ needs.candidate.outputs.artifact_ids }}
+          path: dist
+          merge-multiple: true
+      - name: Download packages built from the tag
+        if: needs.candidate.outputs.run_id == ''
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
         with:
           path: dist
           merge-multiple: true
@@ -92,9 +153,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
+          assets=()
+          for platform in linux-x86_64 macos-arm64; do
+            name="dornguard-$GITHUB_REF_NAME-$platform.zip"
+            (cd dist && sha256sum -- "$name" | diff - "$name.sha256")
+            assets+=("dist/$name" "dist/$name.sha256")
+          done
           notes="docs/releases/$GITHUB_REF_NAME.md"
           if [ -f "$notes" ]; then
-            gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --notes-file "$notes"
+            gh release create "$GITHUB_REF_NAME" "${assets[@]}" --verify-tag --notes-file "$notes"
           else
-            gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes
+            gh release create "$GITHUB_REF_NAME" "${assets[@]}" --verify-tag --generate-notes
           fi

@@ -2,7 +2,7 @@
 
 See the [v0.0.4 release notes](releases/v0.0.4.md) for upgrade details.
 
-The [release workflow](../.github/workflows/release.yml) builds v0.0.4
+The [release workflow](../.github/workflows/release.yml) builds
 archives for Linux x86-64 (AMD64) and macOS ARM64. Each
 archive includes the native CLI, the ArchUnit runner and the Maven model
 extension, and is published with a SHA-256 file. Each job extracts its
@@ -75,6 +75,12 @@ the built-in Ruleset version or external Ruleset commit, and the engine versions
 
 ## Release verification
 
-Run the release workflow on the candidate commit to verify the Linux x86-64
-and macOS ARM64 packages. It runs the pinned engines and the integration
-suite, then extracts and smoke-tests each archive.
+1. Push the version bump to the default branch. Run `gh workflow run release.yml --ref main`
+   and wait for both platform jobs to pass. Each job runs the integration suite
+   with the pinned engines, then extracts and smoke-tests its release archive.
+2. Create and push the version tag on that exact commit. The workflow checks
+   the tag against Cargo.toml and reuses both archives from a successful
+   manually triggered run on the default branch with the same commit SHA.
+3. The publish job verifies both SHA-256 files and uploads the four assets.
+   If a matching run or either package is missing or expired, the tag workflow
+   builds and verifies both packages before publishing.
