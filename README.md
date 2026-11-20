@@ -1,8 +1,14 @@
 # DornGuard
 
+DornGuard turns recurring code review findings into static checks for AI
+coding agents. Agents can check their changes, fix the reported issues, and
+rerun the checks before handing off. Running the same project policy in CI
+keeps a consistent minimum standard for code quality, including for changes
+that receive no manual review.
+
 DornGuard applies quality, security, and architecture policies to Java,
-Spring Boot, and Kotlin/JVM projects through one CLI. It runs Semgrep, PMD, and ArchUnit with
-project-specific and Gradle module-specific profiles.
+Spring Boot, and Kotlin/JVM projects. It runs Semgrep, PMD, and ArchUnit
+through one CLI with project and module profiles.
 
 ## Install or update on Ubuntu and WSL
 
