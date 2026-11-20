@@ -20,6 +20,18 @@ jobs:
       - name: Check advisories, licenses, bans, and sources
         run: cargo deny --locked check
 
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Lint and test without external engines
+        run: |
+          cargo clippy --locked --workspace --all-targets -- -D warnings
+          cargo test --locked --workspace
+
   verify:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
