@@ -1,6 +1,6 @@
 # Releases
 
-See the [v0.0.5 release notes](releases/v0.0.5.md) for upgrade details.
+See the [v0.0.6 release notes](releases/v0.0.6.md) for upgrade details.
 
 The [release workflow](../.github/workflows/release.yml) builds
 archives for Linux x86-64 (AMD64) and macOS ARM64. Each
@@ -21,7 +21,7 @@ The script reuses a supported Python with `venv` and `ensurepip` and an
 existing JDK 21 or later. It ends by running `dornguard doctor`.
 
 ```sh
-sh scripts/install.sh v0.0.5 --with-deps
+sh scripts/install.sh v0.0.6 --with-deps
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
@@ -31,7 +31,7 @@ For local installation from source, use
 
 ## Report format
 
-DornGuard v0.0.3 through v0.0.5 emit JSON check report version 3. The v0.0.2
+DornGuard v0.0.3 through v0.0.6 emit JSON check report version 3. The v0.0.2
 archive emits version 2. Project configuration remains version 1.
 
 Version 3 uses one-based lines and UTF-16 columns in text, JSON, and SARIF.
@@ -56,10 +56,10 @@ combined `scope` is full. SARIF exposes the same scopes as `projectScope`
 and `organizationScope`. ArchUnit
 reports one finding per module, rule, origin class and forbidden target class.
 Existing dependency fingerprints still match the grouped finding.
-The v0.0.4 and v0.0.5 runners use protocol 4. Install the matching CLI and
-runner together.
-The v0.0.3 runner uses protocol 3. Unreleased builds use protocol 5, which adds
-the `cycles` rule option for `architecture.package-cycle`.
+The v0.0.6 runner uses protocol 5, which adds the `cycles` rule option for
+`architecture.package-cycle`. The v0.0.4 and v0.0.5 runners use protocol 4.
+Install the matching CLI and runner together.
+The v0.0.3 runner uses protocol 3.
 A compiler-skipped input or a missing Java bytecode mapping is reported as
 incomplete. Maven checks also reject class files older than the matched
 source. Gradle checks use the compile tasks' up-to-date and cache state.
