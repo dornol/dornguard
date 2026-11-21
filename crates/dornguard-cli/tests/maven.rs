@@ -441,7 +441,8 @@ fn maven_tracks_effective_compile_inputs_and_skips_custom_test_sources() {
         unnecessary_import_lines(&resolved, "src/main/java/example/Example.java").is_empty(),
         "{resolved}"
     );
-    assert_eq!(resolved["files_scanned"], 1, "{resolved}");
+    // The only file that completed analysis was the custom test source, which is now skipped.
+    assert_eq!(resolved["files_scanned"], 0, "{resolved}");
 
     fs::write(
         root.join(".dornguard.yml"),
