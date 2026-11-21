@@ -8,3 +8,9 @@ Use `dornguard check --changed --format agent` for a concise report that shows
 the first 20 diagnostics. Use `--format json` for every result and
 `dornguard rules explain RULE_ID` for the rule's guidance. Exit codes match
 those used by the full CI check.
+
+A finding from a rule with `medium` confidence carries a `Review:` line in the
+text and agent reports. The rule infers intent from code shape, so confirm the
+finding before fixing it, and suppress it with a reason when the code is
+correct. Findings without that line are policy violations that need a code
+change. See [rule confidence](profiles.md#rule-confidence).
