@@ -492,7 +492,9 @@ async fn run_engines(
                 .await
             }
             EngineName::Eslint => Eslint.check(request).await,
-            EngineName::Builtin => check_builtin(request, &config.format).await,
+            EngineName::Builtin => {
+                check_builtin(request, &config.format, &config.partial_parsing_policy()).await
+            }
             _ => unreachable!("source runner requires a source engine"),
         }
     };

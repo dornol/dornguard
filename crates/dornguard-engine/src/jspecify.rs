@@ -3,14 +3,18 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use dornguard_config::PartialParsingPolicy;
 use dornguard_core::{Diagnostic, EngineName, Outcome, fingerprint};
 use tree_sitter::{Node, Parser, Tree};
 
-use crate::{Engine, Request, display_path, fail};
+use crate::{Engine, Request, display_path, engine_failure, fail};
 
 const ANNOTATIONS: &str = "org.jspecify.annotations";
 
-pub struct JSpecify;
+#[derive(Default)]
+pub struct JSpecify {
+    pub partial: PartialParsingPolicy,
+}
 
 impl Engine for JSpecify {
     async fn check(&self, request: Request<'_>) -> Outcome {
@@ -23,7 +27,14 @@ impl Engine for JSpecify {
         }
         let mut descriptors = BTreeMap::new();
         for file in request.files {
-            match check_file(&mut parser, &mut descriptors, &request, file, &mut outcome) {
+            match check_file(
+                &mut parser,
+                &mut descriptors,
+                &request,
+                &self.partial,
+                file,
+                &mut outcome,
+            ) {
                 Ok(()) => {
                     outcome.scanned_files.insert(file.clone());
                 }
@@ -47,6 +58,7 @@ fn check_file(
     parser: &mut Parser,
     descriptors: &mut Descriptors,
     request: &Request<'_>,
+    partial: &PartialParsingPolicy,
     file: &Path,
     outcome: &mut Outcome,
 ) -> Result<(), String> {
@@ -57,7 +69,24 @@ fn check_file(
         descriptor(parser, descriptors, request.root, file)?;
         return Ok(());
     }
-    let (source, tree) = parse(parser, request.root, file)?;
+    let (source, tree) = match parse(parser, request.root, file) {
+        Ok(parsed) => parsed,
+        Err(error) if !request.required && partial.tolerates(file) => {
+            // Keep the best-effort tree and say that this file's result may be incomplete.
+            let Some((source, tree)) = parse_with_errors(parser, request.root, file) else {
+                return Err(error);
+            };
+            let mut failure = engine_failure(
+                EngineName::Builtin,
+                "The Java declaration parser stopped on a syntax it does not support. Findings for this file are incomplete.".to_owned(),
+            );
+            failure.path = Some(display_path(file));
+            failure.error_type = Some("PartialParsing".to_owned());
+            outcome.analysis_warnings.push(failure);
+            (source, tree)
+        }
+        Err(error) => return Err(error),
+    };
     let unit = tree.root_node();
     let names = Names::new(unit, &source);
     let directory = file.parent().unwrap_or(Path::new(""));
@@ -199,6 +228,12 @@ fn descriptor<'a>(
         })
         .as_ref()
         .map_err(Clone::clone)
+}
+
+fn parse_with_errors(parser: &mut Parser, root: &Path, file: &Path) -> Option<(String, Tree)> {
+    let source = fs::read_to_string(root.join(file)).ok()?;
+    let tree = parser.parse(&source, None)?;
+    Some((source, tree))
 }
 
 fn parse(parser: &mut Parser, root: &Path, file: &Path) -> Result<(String, Tree), String> {

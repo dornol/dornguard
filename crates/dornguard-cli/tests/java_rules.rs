@@ -634,3 +634,48 @@ fn listed_files_may_be_partially_parsed_without_failing_the_check() {
         "PartialParsing"
     );
 }
+
+#[test]
+#[ignore = "requires the pinned Semgrep and PMD engines"]
+fn listed_files_may_defeat_the_declaration_parser_too() {
+    let project = project(
+        "class Example {\n    void run(String @org.jspecify.annotations.Nullable ... levels) {}\n}\n",
+    );
+    let root = project.path();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [jspecify]\n",
+    )
+    .unwrap();
+    let failed = report(check(root).output().unwrap(), 3);
+    assert!(
+        failed["failures"][0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("Could not parse Java declarations"),
+        "{failed}"
+    );
+
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [jspecify]\npartial_parsing_files:\n  - path: src/Example.java\n    reason: Grammar lacks type-use annotations on varargs\n",
+    )
+    .unwrap();
+    let output = check(root).output().unwrap();
+    let tolerated: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        tolerated["failures"].as_array().unwrap().len(),
+        0,
+        "{tolerated}"
+    );
+    assert_eq!(tolerated["complete"], false);
+    assert_eq!(
+        tolerated["analysis_warnings"][0]["error_type"],
+        "PartialParsing"
+    );
+    // The best-effort tree still reports the unmarked class.
+    assert_eq!(
+        tolerated["diagnostics"][0]["rule_id"], "java.jspecify-null-marked",
+        "{tolerated}"
+    );
+}

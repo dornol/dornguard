@@ -239,8 +239,8 @@ Suppressions for rules that are not active in a run, such as with
 
 ## Incomplete analysis of valid code
 
-When Semgrep's parser stops partway through a valid file, the check ends with
-an engine error. Report such a file as incomplete analysis instead, with a
+When Semgrep's parser, or the built-in parser behind the JSpecify rule, stops
+partway through a valid file, the check ends with an engine error. Report such a file as incomplete analysis instead, with a
 reason that explains why the parser is wrong.
 
 ```yaml

@@ -4,8 +4,8 @@ use std::process::{Output, Stdio};
 use std::time::Duration;
 
 use dornguard_config::{
-    ASYNC_SELF_RULE, CACHE_SELF_RULE, FormatConfig, JPA_RESPONSE_RULE, RETRY_SELF_RULE, Registry,
-    Rule, TRANSACTIONAL_SELF_RULE,
+    ASYNC_SELF_RULE, CACHE_SELF_RULE, FormatConfig, JPA_RESPONSE_RULE, PartialParsingPolicy,
+    RETRY_SELF_RULE, Registry, Rule, TRANSACTIONAL_SELF_RULE,
 };
 use dornguard_core::{EngineName, Failure, FailureKind, FailureStage, Outcome, SourceLanguage};
 use miette::{IntoDiagnostic, Result, WrapErr, bail};
@@ -62,7 +62,11 @@ pub trait Engine {
     fn check(&self, request: Request<'_>) -> impl Future<Output = Outcome> + Send;
 }
 
-pub async fn check_builtin(request: Request<'_>, settings: &FormatConfig) -> Outcome {
+pub async fn check_builtin(
+    request: Request<'_>,
+    settings: &FormatConfig,
+    partial: &PartialParsingPolicy,
+) -> Outcome {
     let (format_rules, java_rules): (Vec<_>, Vec<_>) = request
         .rules
         .iter()
@@ -89,13 +93,15 @@ pub async fn check_builtin(request: Request<'_>, settings: &FormatConfig) -> Out
             });
         if !jspecify_rules.is_empty() {
             outcome.merge(
-                jspecify::JSpecify
-                    .check(Request {
-                        files: &java_files,
-                        rules: &jspecify_rules,
-                        ..request
-                    })
-                    .await,
+                jspecify::JSpecify {
+                    partial: partial.clone(),
+                }
+                .check(Request {
+                    files: &java_files,
+                    rules: &jspecify_rules,
+                    ..request
+                })
+                .await,
             );
         }
         if !spring_rules.is_empty() {
