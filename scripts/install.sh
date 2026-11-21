@@ -22,7 +22,7 @@ case "$kernel:$(uname -m)" in
     Linux:x86_64) target=linux-x86_64 ;;
     Linux:aarch64)
         case "$version" in
-            v0.0.4|v0.0.4-*|v0.0.5|v0.0.5-*|v0.0.6|v0.0.6-*)
+            v0.0.4|v0.0.4-*|v0.0.5|v0.0.5-*|v0.0.6|v0.0.6-*|v0.0.7|v0.0.7-*)
                 printf 'DornGuard %s publishes archives for Linux x86-64 and macOS ARM64.\n' "$version" >&2
                 exit 2 ;;
             *) target=linux-arm64 ;;
