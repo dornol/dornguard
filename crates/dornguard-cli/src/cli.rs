@@ -107,6 +107,8 @@ or glob. Use rule: "format.*" to select the formatting rule family. Every ignore
 requires a reason.
 For the thymeleaf profile, set thymeleaf_partial_parsing: warning to tolerate partial
 template parsing while reporting incomplete coverage.
+For valid code that the parser rejects, list the file in partial_parsing_files with a reason,
+or set partial_parsing: warning for every file.
 
 Run dornguard check --format agent to verify how the configuration applies."#
     )]

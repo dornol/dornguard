@@ -11,7 +11,7 @@ use html5ever::tokenizer::{BufferQueue, TagKind, Token, TokenSink, TokenSinkResu
 
 use crate::baseline::Baseline;
 
-pub fn apply(root: &Path, config: &[Ignore], outcome: &mut Outcome) {
+pub fn apply(root: &Path, config: &[Ignore], active_rules: &BTreeSet<&str>, outcome: &mut Outcome) {
     outcome.diagnostics.sort();
     outcome.diagnostics.dedup();
     let mut files = BTreeMap::new();
@@ -75,6 +75,7 @@ pub fn apply(root: &Path, config: &[Ignore], outcome: &mut Outcome) {
     unused.extend(
         unmatched_fingerprints
             .into_iter()
+            .filter(|(rule, _)| active_rules.contains(rule.as_str()))
             .map(|(rule, path)| format!("ignore entry for {rule} in {path}")),
     );
     for path in outcome
@@ -91,7 +92,9 @@ pub fn apply(root: &Path, config: &[Ignore], outcome: &mut Outcome) {
     {
         for (line, rule) in read_directives(&root.join(&path)) {
             // A directive sits on the line before the finding it exempts.
-            if !used_comments.contains(&(path.clone(), line)) {
+            if active_rules.contains(rule.as_str())
+                && !used_comments.contains(&(path.clone(), line))
+            {
                 unused.push(format!(
                     "comment for {rule} at {}:{}",
                     path.display(),
@@ -276,6 +279,46 @@ System.out.println(result);
         assert_eq!(
             directive_rule(" dornguard-ignore java.stdout-usage --   "),
             None
+        );
+    }
+
+    fn scan_with_directive(rule: &str, active: &[&str]) -> Outcome {
+        let project = tempfile::tempdir().unwrap();
+        fs::write(
+            project.path().join("Example.java"),
+            format!("// dornguard-ignore {rule} -- Reviewed\nint x;\n"),
+        )
+        .unwrap();
+        let mut outcome = Outcome {
+            scope: Scope::Full,
+            ..Outcome::default()
+        };
+        outcome.scanned_files.insert("Example.java".into());
+        let active = active.iter().copied().collect();
+        apply(project.path(), &[], &active, &mut outcome);
+        outcome
+    }
+
+    #[test]
+    fn unused_comment_for_an_active_rule_is_reported_as_obsolete() {
+        let outcome = scan_with_directive("java.stdout-usage", &["java.stdout-usage"]);
+        assert!(
+            outcome
+                .analysis_notes
+                .iter()
+                .any(|note| note.contains("comment for java.stdout-usage")),
+            "{:?}",
+            outcome.analysis_notes
+        );
+    }
+
+    #[test]
+    fn unused_comment_for_an_inactive_rule_is_not_reported() {
+        let outcome = scan_with_directive("java.stdout-usage", &["architecture.package-cycle"]);
+        assert!(
+            outcome.analysis_notes.is_empty(),
+            "{:?}",
+            outcome.analysis_notes
         );
     }
 }

@@ -65,4 +65,6 @@ The report still has `complete: false` and lists the affected files and
 rules in `analysis_warnings`. The status is `incomplete` with exit code 0
 when there are no blocking findings or other failures. Confirmed violations
 and incomplete results from HTML or organization rules still block the check.
-Baseline creation requires complete analysis.
+Baseline creation requires complete analysis. See
+[Configuration](configuration.md#incomplete-analysis-of-valid-code) for
+`partial_parsing` and `partial_parsing_files`, which cover all languages.

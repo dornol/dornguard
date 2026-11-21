@@ -61,6 +61,12 @@ pub struct ProjectConfig {
     pub thymeleaf_sanitizers: Vec<String>,
     #[serde(default)]
     pub thymeleaf_partial_parsing: PartialParsing,
+    /// Tolerate partial parsing of any source file when set to `warning`.
+    #[serde(default)]
+    pub partial_parsing: PartialParsing,
+    /// Files whose partial parsing is a known limitation of the parser.
+    #[serde(default)]
+    partial_parsing_files: Vec<PartialParsingFile>,
     #[serde(default)]
     rules: BTreeMap<String, RuleOverride>,
 }
@@ -85,6 +91,58 @@ impl<'de> Deserialize<'de> for PathGlob {
     ) -> std::result::Result<Self, D::Error> {
         let pattern = String::deserialize(deserializer)?;
         Self::new(&pattern).map_err(serde::de::Error::custom)
+    }
+}
+
+/// A file allowed to be analyzed only partly, with the reason it is acceptable.
+#[derive(Deserialize)]
+#[serde(try_from = "PartialParsingEntry")]
+pub struct PartialParsingFile(PathGlob);
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PartialParsingEntry {
+    path: PathGlob,
+    reason: String,
+}
+
+impl TryFrom<PartialParsingEntry> for PartialParsingFile {
+    type Error = String;
+
+    fn try_from(entry: PartialParsingEntry) -> std::result::Result<Self, Self::Error> {
+        if entry.reason.trim().is_empty() {
+            return Err(format!(
+                "partial_parsing_files entry for {} requires a reason",
+                entry.path.0.glob()
+            ));
+        }
+        Ok(Self(entry.path))
+    }
+}
+
+/// Which files may be reported as incompletely analyzed without failing the check.
+#[derive(Clone, Default)]
+pub struct PartialParsingPolicy {
+    all: bool,
+    files: Vec<globset::GlobMatcher>,
+}
+
+impl PartialParsingPolicy {
+    pub fn tolerates(&self, path: &Path) -> bool {
+        self.all || self.files.iter().any(|file| file.is_match(path))
+    }
+}
+
+impl ProjectConfig {
+    pub fn partial_parsing_policy(&self) -> PartialParsingPolicy {
+        PartialParsingPolicy {
+            all: self.partial_parsing == PartialParsing::Warning,
+            files: self
+                .partial_parsing_files
+                .iter()
+                .map(|file| file.0.0.clone())
+                .collect(),
+        }
     }
 }
 
@@ -997,6 +1055,46 @@ impl ProjectConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn partial_parsing_files_tolerate_only_listed_paths() {
+        let config = Registry::parse(
+            "version: 1\npartial_parsing_files:\n  - path: src/Odd.java\n    reason: Parser rejects valid syntax\n",
+        )
+        .unwrap();
+        let policy = config.partial_parsing_policy();
+        assert!(policy.tolerates(Path::new("src/Odd.java")));
+        assert!(!policy.tolerates(Path::new("src/Other.java")));
+    }
+
+    #[test]
+    fn partial_parsing_warning_tolerates_every_file() {
+        let config = Registry::parse("version: 1\npartial_parsing: warning\n").unwrap();
+        assert!(
+            config
+                .partial_parsing_policy()
+                .tolerates(Path::new("src/Any.java"))
+        );
+        let strict = Registry::parse("version: 1\n").unwrap();
+        assert!(
+            !strict
+                .partial_parsing_policy()
+                .tolerates(Path::new("src/Any.java"))
+        );
+    }
+
+    #[test]
+    fn partial_parsing_files_require_a_reason() {
+        let error = Registry::parse(
+            "version: 1\npartial_parsing_files:\n  - path: src/Odd.java\n    reason: ' '\n",
+        )
+        .err()
+        .expect("blank reason must be rejected");
+        assert!(
+            format!("{error:?}").contains("requires a reason"),
+            "{error:?}"
+        );
+    }
 
     /// Rules whose findings need a judgment. Adding to this list is a decision:
     /// a rule belongs here when it infers intent from code shape.

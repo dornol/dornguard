@@ -5,9 +5,7 @@ use std::path::Path;
 
 use dornguard_config::Registry;
 use dornguard_core::EngineName;
-use dornguard_engine::{
-    inspect, inspect_archunit, inspect_java, maven_model_path, supported_version,
-};
+use dornguard_engine::{inspect, inspect_archunit, maven_model_path, supported_version};
 use miette::{IntoDiagnostic, Result};
 
 pub(crate) async fn doctor(profiles: &[String], config: Option<&Path>) -> Result<u8> {
@@ -70,9 +68,15 @@ pub(crate) async fn doctor(profiles: &[String], config: Option<&Path>) -> Result
             }
         }
     } else if config.is_none() && profiles.is_empty() {
-        match inspect_java(root).await {
-            Ok(java) => println!("ArchUnit runtime (Java 21+): {java}"),
-            Err(error) => eprintln!("Optional ArchUnit runtime: {error:#}"),
+        // Profiles that need the runner are chosen later, so report the bundled
+        // components now without failing the default checks.
+        match inspect_archunit(root).await {
+            Ok(details) => println!("ArchUnit runner OK ({details})"),
+            Err(error) => eprintln!("Optional ArchUnit runner: {error:#}"),
+        }
+        match maven_model_path() {
+            Ok(path) => println!("Maven model extension OK ({})", path.display()),
+            Err(error) => eprintln!("Optional Maven model extension: {error:#}"),
         }
     }
     if needs_build_model

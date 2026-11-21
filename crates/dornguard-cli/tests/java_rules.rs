@@ -575,3 +575,62 @@ fn print_stack_trace_is_reported_in_java_source() {
     assert_eq!(findings[0]["rule_id"], "java.print-stack-trace");
     assert_eq!(findings[0]["line"], 3);
 }
+
+#[test]
+#[ignore = "requires the pinned Semgrep and PMD engines"]
+fn empty_catch_allows_a_commented_block_but_not_a_bare_one() {
+    let project = project(
+        "class Example {\n    void a() { try { run(); } catch (Exception e) { /* shutdown race is harmless */ } }\n    void b() { try { run(); } catch (Exception e) { } }\n    void run() {}\n}\n",
+    );
+    let root = project.path();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [java]\n",
+    )
+    .unwrap();
+    let result = report(check(root).output().unwrap(), 1);
+    let lines: Vec<_> = result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|diagnostic| diagnostic["rule_id"] == "java.empty-catch")
+        .map(|diagnostic| diagnostic["line"].as_u64().unwrap())
+        .collect();
+    assert_eq!(lines, [3], "{result}");
+}
+
+#[test]
+#[ignore = "requires the pinned Semgrep and PMD engines"]
+fn listed_files_may_be_partially_parsed_without_failing_the_check() {
+    let project = project(
+        "class Example {\n    void run(String @org.jspecify.annotations.Nullable ... levels) {}\n}\n",
+    );
+    let root = project.path();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [java]\n",
+    )
+    .unwrap();
+    let failed = report(check(root).output().unwrap(), 3);
+    assert_eq!(
+        failed["failures"][0]["error_type"], "PartialParsing",
+        "{failed}"
+    );
+
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [java]\npartial_parsing_files:\n  - path: src/Example.java\n    reason: Parser rejects valid type-use annotations\n",
+    )
+    .unwrap();
+    let tolerated = report(check(root).output().unwrap(), 0);
+    assert_eq!(
+        tolerated["failures"].as_array().unwrap().len(),
+        0,
+        "{tolerated}"
+    );
+    assert_eq!(tolerated["complete"], false);
+    assert_eq!(
+        tolerated["analysis_warnings"][0]["error_type"],
+        "PartialParsing"
+    );
+}

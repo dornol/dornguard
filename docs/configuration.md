@@ -234,6 +234,28 @@ remove them when the code no longer needs them. Path-only entries, which are
 broad exclusions, are not listed. Baseline creation
 records findings that remain after these exceptions have been applied.
 
+Suppressions for rules that are not active in a run, such as with
+`--only-profile`, are not reported as obsolete.
+
+## Incomplete analysis of valid code
+
+When Semgrep's parser stops partway through a valid file, the check ends with
+an engine error. Report such a file as incomplete analysis instead, with a
+reason that explains why the parser is wrong.
+
+```yaml
+partial_parsing_files:
+  - path: src/main/java/example/ColumnStyleConfig.java
+    reason: Semgrep cannot parse a type-use annotation on varargs.
+```
+
+Use `partial_parsing: warning` to apply this to every file. Prefer the file
+list, because it keeps other parse failures visible. The report still has
+`complete: false` and lists the file in `analysis_warnings`. The status is
+`incomplete` with exit code 0 when there are no blocking findings or other
+failures. Baseline creation requires complete analysis. Organization policy runs ignore
+these settings. `thymeleaf_partial_parsing` remains available for templates.
+
 ## Baseline
 
 Run `dornguard baseline create` from the project root, review the result, then

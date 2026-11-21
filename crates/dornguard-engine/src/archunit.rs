@@ -336,12 +336,43 @@ async fn run(root: &Path, modules: &[ArchModule<'_>], outcome: &mut Outcome) -> 
     Ok(())
 }
 
+/// The running executable with symlinks resolved, so bundled files are found
+/// next to the real binary even when it is installed through a link.
+fn installed_exe() -> Result<PathBuf> {
+    Ok(resolve_links(std::env::current_exe().into_diagnostic()?))
+}
+
+fn resolve_links(path: PathBuf) -> PathBuf {
+    dunce::canonicalize(&path).unwrap_or(path)
+}
+
+#[cfg(all(test, unix))]
+mod symlink_tests {
+    use super::*;
+
+    #[test]
+    fn bundled_files_are_found_next_to_the_real_executable() {
+        let dir = tempfile::tempdir().unwrap();
+        let release = dir.path().join("releases");
+        let bin = dir.path().join("bin");
+        std::fs::create_dir_all(&release).unwrap();
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::write(release.join("dornguard"), "").unwrap();
+        std::os::unix::fs::symlink(release.join("dornguard"), bin.join("dornguard")).unwrap();
+        let resolved = resolve_links(bin.join("dornguard")).with_file_name("archunit-runner.jar");
+        assert_eq!(
+            resolved,
+            dunce::canonicalize(&release)
+                .unwrap()
+                .join("archunit-runner.jar")
+        );
+    }
+}
+
 fn runner_path() -> Result<PathBuf> {
     let path = match std::env::var_os("DORNGUARD_ARCHUNIT_RUNNER") {
         Some(path) => PathBuf::from(path),
-        None => std::env::current_exe()
-            .into_diagnostic()?
-            .with_file_name("archunit-runner.jar"),
+        None => installed_exe()?.with_file_name("archunit-runner.jar"),
     };
     let path = dunce::canonicalize(&path).into_diagnostic().wrap_err_with(|| {
         format!(
@@ -359,9 +390,7 @@ fn runner_path() -> Result<PathBuf> {
 pub fn maven_model_path() -> Result<PathBuf> {
     let path = match std::env::var_os("DORNGUARD_ARCHUNIT_RUNNER") {
         Some(runner) => PathBuf::from(runner).with_file_name("maven-model.jar"),
-        None => std::env::current_exe()
-            .into_diagnostic()?
-            .with_file_name("maven-model.jar"),
+        None => installed_exe()?.with_file_name("maven-model.jar"),
     };
     let path = dunce::canonicalize(&path).into_diagnostic().wrap_err_with(|| {
         format!(

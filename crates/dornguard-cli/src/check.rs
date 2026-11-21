@@ -152,7 +152,8 @@ struct Prepared<'a> {
 impl Prepared<'_> {
     fn apply_suppressions(&self, outcome: &mut Outcome) {
         if !self.required {
-            suppressions::apply(self.root, &self.config.ignore, outcome);
+            let active = self.rules.iter().map(|rule| rule.id.as_str()).collect();
+            suppressions::apply(self.root, &self.config.ignore, &active, outcome);
         }
     }
 
@@ -474,6 +475,7 @@ async fn run_engines(
         match engine {
             EngineName::Semgrep => {
                 Semgrep::with_thymeleaf(&config.thymeleaf_sanitizers, warn_on_thymeleaf_partial)
+                    .with_partial_parsing(config.partial_parsing_policy())
                     .check(request)
                     .await
             }

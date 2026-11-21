@@ -7,7 +7,7 @@ use std::time::Duration;
 use crate::java_names::JavaNames;
 use crate::source::Sources;
 use crate::thymeleaf::SanitizedOutput;
-use dornguard_config::Rule;
+use dornguard_config::{PartialParsingPolicy, Rule};
 use dornguard_core::{Diagnostic, EngineName, Outcome, SourceLanguage};
 use miette::{IntoDiagnostic, Result, WrapErr};
 use serde::Deserialize;
@@ -22,6 +22,7 @@ pub struct Semgrep {
     timeout: Duration,
     thymeleaf_sanitizers: Vec<String>,
     warn_on_thymeleaf_partial: bool,
+    partial_policy: PartialParsingPolicy,
 }
 
 impl Default for Semgrep {
@@ -30,11 +31,20 @@ impl Default for Semgrep {
             timeout: Duration::from_secs(120),
             thymeleaf_sanitizers: Vec::new(),
             warn_on_thymeleaf_partial: false,
+            partial_policy: PartialParsingPolicy::default(),
         }
     }
 }
 
 impl Semgrep {
+    /// Report partial parsing of the files this policy covers as incomplete analysis
+    /// instead of a failure.
+    #[must_use]
+    pub fn with_partial_parsing(mut self, policy: PartialParsingPolicy) -> Self {
+        self.partial_policy = policy;
+        self
+    }
+
     pub fn with_thymeleaf(sanitizers: &[String], warn_on_thymeleaf_partial: bool) -> Self {
         Self {
             thymeleaf_sanitizers: sanitizers.to_vec(),
@@ -66,6 +76,11 @@ impl Semgrep {
                 .rules
                 .iter()
                 .all(|rule| rule.id.starts_with("thymeleaf."));
+        let partial_policy = if request.required {
+            PartialParsingPolicy::default()
+        } else {
+            self.partial_policy.clone()
+        };
         for batch in request.files.chunk_by(budgeted_batch()) {
             let mut scan = command(EngineName::Semgrep, request.root)?;
             scan.args([
@@ -94,7 +109,10 @@ impl Semgrep {
                 batch,
                 &rules,
                 &mut sanitized,
-                warn_on_thymeleaf_partial,
+                &Tolerance {
+                    thymeleaf: warn_on_thymeleaf_partial,
+                    policy: &partial_policy,
+                },
                 outcome,
             );
             for failure in outcome.failures[first_failure..]
@@ -240,9 +258,17 @@ fn analysis_error_message(
         }
         if template {
             message.push_str(" Set thymeleaf_partial_parsing: warning to report this as incomplete analysis without failing the check.");
+        } else {
+            message.push_str(" If the file is valid and the parser is wrong, list it in partial_parsing_files with a reason, or set partial_parsing: warning.");
         }
     }
     message
+}
+
+/// Which partially parsed files are reported as warnings rather than failures.
+struct Tolerance<'a> {
+    thymeleaf: bool,
+    policy: &'a PartialParsingPolicy,
 }
 
 #[derive(Default)]
@@ -257,7 +283,7 @@ fn record_scan_errors(
     root: &Path,
     expected: &BTreeSet<&Path>,
     rules: &BTreeMap<&str, &Rule>,
-    warn_on_thymeleaf_partial: bool,
+    tolerance: &Tolerance<'_>,
     state: &mut ScanState,
     outcome: &mut Outcome,
 ) {
@@ -271,7 +297,7 @@ fn record_scan_errors(
             .path
             .and_then(|path| relative_path(root, &path))
             .filter(|path| expected.contains(path.as_path()));
-        let template = !warn_on_thymeleaf_partial
+        let template = !tolerance.thymeleaf
             && path
                 .as_ref()
                 .is_some_and(|path| SourceLanguage::of(path) == Some(SourceLanguage::Template));
@@ -283,9 +309,10 @@ fn record_scan_errors(
         }
         if let Some(path) = path {
             failure.path = Some(display_path(&path));
-            if warn_on_thymeleaf_partial
-                && kind == "PartialParsing"
-                && SourceLanguage::of(&path) == Some(SourceLanguage::Template)
+            if kind == "PartialParsing"
+                && (tolerance.policy.tolerates(&path)
+                    || (tolerance.thymeleaf
+                        && SourceLanguage::of(&path) == Some(SourceLanguage::Template)))
             {
                 state.warning_files.insert(path.clone());
                 state.failed_files.insert(path);
@@ -411,7 +438,7 @@ fn normalize(
     batch: &[PathBuf],
     rules: &BTreeMap<&str, &Rule>,
     sanitized: &mut SanitizedOutput<'_>,
-    warn_on_thymeleaf_partial: bool,
+    tolerance: &Tolerance<'_>,
     outcome: &mut Outcome,
 ) {
     let Ok(scan): std::result::Result<Scan, _> = serde_json::from_slice(&output.stdout) else {
@@ -442,7 +469,7 @@ fn normalize(
         root,
         &expected,
         rules,
-        warn_on_thymeleaf_partial,
+        tolerance,
         &mut state,
         outcome,
     );

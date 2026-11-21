@@ -20,6 +20,19 @@
       "items": { "type": "string", "minLength": 1 }
     },
     "thymeleaf_partial_parsing": { "enum": ["error", "warning"], "default": "error" },
+    "partial_parsing": { "enum": ["error", "warning"], "default": "error" },
+    "partial_parsing_files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "reason"],
+        "additionalProperties": false,
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "reason": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
     "thymeleaf_sanitizers": {
       "type": "array",
       "items": { "type": "string", "pattern": "^@[A-Za-z_$][A-Za-z0-9_$]*\\.[A-Za-z_$][A-Za-z0-9_$]*$" }
