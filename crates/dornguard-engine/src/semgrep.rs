@@ -209,38 +209,59 @@ fn duplicate_closing_tag(text: &str, line_index: usize, rest: &str) -> Option<St
     })
 }
 
-fn normalize(
-    output: &Output,
+/// Describe a Semgrep analysis error, locating where partial parsing stopped.
+fn analysis_error_message(
     root: &Path,
-    batch: &[PathBuf],
+    kind: &str,
+    detail: &serde_json::Value,
+    path: Option<&PathBuf>,
+    template: bool,
+) -> String {
+    let mut message = if kind == "PartialParsing" {
+        "Semgrep parsed only part of the file. Findings for this file are incomplete.".to_owned()
+    } else {
+        "Semgrep could not complete analysis".to_owned()
+    };
+    if kind == "PartialParsing" {
+        let position = detail
+            .as_array()
+            .and_then(|parts| parts.get(1)?.as_array()?.first()?.get("start"))
+            .and_then(|start| Some((start.get("line")?.as_u64()?, start.get("col")?.as_u64()?)));
+        if let Some((line, column)) = position {
+            message.push_str(&format!(
+                " Parsing stopped at line {line}, column {column}."
+            ));
+            if let Some(path) = path
+                && let Some(hint) = literal_markup_hint(root, path, line, column)
+            {
+                message.push(' ');
+                message.push_str(&hint);
+            }
+        }
+        if template {
+            message.push_str(" Set thymeleaf_partial_parsing: warning to report this as incomplete analysis without failing the check.");
+        }
+    }
+    message
+}
+
+#[derive(Default)]
+struct ScanState {
+    failed_files: BTreeSet<PathBuf>,
+    warning_files: BTreeSet<PathBuf>,
+    batch_failed: bool,
+}
+
+fn record_scan_errors(
+    errors: Vec<ScanError>,
+    root: &Path,
+    expected: &BTreeSet<&Path>,
     rules: &BTreeMap<&str, &Rule>,
-    sanitized: &mut SanitizedOutput<'_>,
     warn_on_thymeleaf_partial: bool,
+    state: &mut ScanState,
     outcome: &mut Outcome,
 ) {
-    let Ok(scan): std::result::Result<Scan, _> = serde_json::from_slice(&output.stdout) else {
-        fail(
-            outcome,
-            EngineName::Semgrep,
-            format!(
-                "Semgrep returned missing or invalid JSON ({})",
-                output.status
-            ),
-        );
-        return;
-    };
-    let expected: BTreeSet<&Path> = batch.iter().map(PathBuf::as_path).collect();
-    let mut failed_files = BTreeSet::new();
-    let mut warning_files = BTreeSet::new();
-    let mut batch_failed = !output.status.success() && scan.errors.is_empty();
-    if batch_failed {
-        fail(
-            outcome,
-            EngineName::Semgrep,
-            format!("Semgrep scan failed ({})", output.status),
-        );
-    }
-    for error in scan.errors {
+    for error in errors {
         let kind = error
             .kind
             .as_str()
@@ -254,35 +275,7 @@ fn normalize(
             && path
                 .as_ref()
                 .is_some_and(|path| SourceLanguage::of(path) == Some(SourceLanguage::Template));
-        let mut message = if kind == "PartialParsing" {
-            "Semgrep parsed only part of the file. Findings for this file are incomplete."
-                .to_owned()
-        } else {
-            "Semgrep could not complete analysis".to_owned()
-        };
-        if kind == "PartialParsing" {
-            let position = error
-                .kind
-                .as_array()
-                .and_then(|parts| parts.get(1)?.as_array()?.first()?.get("start"))
-                .and_then(|start| {
-                    Some((start.get("line")?.as_u64()?, start.get("col")?.as_u64()?))
-                });
-            if let Some((line, column)) = position {
-                message.push_str(&format!(
-                    " Parsing stopped at line {line}, column {column}."
-                ));
-                if let Some(path) = &path
-                    && let Some(hint) = literal_markup_hint(root, path, line, column)
-                {
-                    message.push(' ');
-                    message.push_str(&hint);
-                }
-            }
-            if template {
-                message.push_str(" Set thymeleaf_partial_parsing: warning to report this as incomplete analysis without failing the check.");
-            }
-        }
+        let message = analysis_error_message(root, kind, &error.kind, path.as_ref(), template);
         let mut failure = engine_failure(EngineName::Semgrep, message);
         failure.error_type = Some(kind.to_owned());
         if let Some(rule) = error.rule_id.as_deref().and_then(|id| rules.get(id)) {
@@ -294,55 +287,31 @@ fn normalize(
                 && kind == "PartialParsing"
                 && SourceLanguage::of(&path) == Some(SourceLanguage::Template)
             {
-                warning_files.insert(path.clone());
-                failed_files.insert(path);
+                state.warning_files.insert(path.clone());
+                state.failed_files.insert(path);
                 outcome.analysis_warnings.push(failure);
                 continue;
             }
-            failed_files.insert(path);
+            state.failed_files.insert(path);
         } else {
-            batch_failed = true;
+            state.batch_failed = true;
         }
         outcome.failures.push(failure);
     }
-    if !scan.skipped_rules.is_empty() {
-        batch_failed = true;
-        fail(
-            outcome,
-            EngineName::Semgrep,
-            format!(
-                "Semgrep skipped {} required rules",
-                scan.skipped_rules.len()
-            ),
-        );
-    }
+}
 
-    let scanned: BTreeSet<PathBuf> = scan
-        .paths
-        .scanned
-        .iter()
-        .filter_map(|path| relative_path(root, path))
-        .filter(|path| expected.contains(path.as_path()))
-        .collect();
-    let mut missing = expected
-        .iter()
-        .filter(|path| !scanned.contains(**path) && !warning_files.contains(**path));
-    if let Some(first) = missing.next() {
-        fail(
-            outcome,
-            EngineName::Semgrep,
-            format!(
-                "Semgrep skipped {} required files (first: {})",
-                missing.count() + 1,
-                first.display()
-            ),
-        );
-    }
-
-    let first_finding_failure = outcome.failures.len();
+fn record_findings(
+    results: Vec<Finding>,
+    root: &Path,
+    expected: &BTreeSet<&Path>,
+    rules: &BTreeMap<&str, &Rule>,
+    sanitized: &mut SanitizedOutput<'_>,
+    state: &ScanState,
+    outcome: &mut Outcome,
+) {
     let mut sources = Sources::default();
     let mut java = JavaNames::default();
-    for finding in scan.results {
+    for finding in results {
         let Some(rule) = rules.get(finding.check_id.as_str()) else {
             fail(
                 outcome,
@@ -374,8 +343,8 @@ fn normalize(
         }
         let source = sources.get(root, &path);
         if rule.id == "thymeleaf.unescaped-output"
-            && !batch_failed
-            && !failed_files.contains(&path)
+            && !state.batch_failed
+            && !state.failed_files.contains(&path)
             && source.is_some_and(|source| {
                 sanitized.contains(
                     &path,
@@ -433,9 +402,96 @@ fn normalize(
             fingerprint: sources.offsets(root, &path, finding.start.offset, finding.end.offset),
         });
     }
-    if !batch_failed && first_finding_failure == outcome.failures.len() {
+}
+
+fn normalize(
+    output: &Output,
+    root: &Path,
+    batch: &[PathBuf],
+    rules: &BTreeMap<&str, &Rule>,
+    sanitized: &mut SanitizedOutput<'_>,
+    warn_on_thymeleaf_partial: bool,
+    outcome: &mut Outcome,
+) {
+    let Ok(scan): std::result::Result<Scan, _> = serde_json::from_slice(&output.stdout) else {
+        fail(
+            outcome,
+            EngineName::Semgrep,
+            format!(
+                "Semgrep returned missing or invalid JSON ({})",
+                output.status
+            ),
+        );
+        return;
+    };
+    let expected: BTreeSet<&Path> = batch.iter().map(PathBuf::as_path).collect();
+    let mut state = ScanState {
+        batch_failed: !output.status.success() && scan.errors.is_empty(),
+        ..ScanState::default()
+    };
+    if state.batch_failed {
+        fail(
+            outcome,
+            EngineName::Semgrep,
+            format!("Semgrep scan failed ({})", output.status),
+        );
+    }
+    record_scan_errors(
+        scan.errors,
+        root,
+        &expected,
+        rules,
+        warn_on_thymeleaf_partial,
+        &mut state,
+        outcome,
+    );
+    if !scan.skipped_rules.is_empty() {
+        state.batch_failed = true;
+        fail(
+            outcome,
+            EngineName::Semgrep,
+            format!(
+                "Semgrep skipped {} required rules",
+                scan.skipped_rules.len()
+            ),
+        );
+    }
+
+    let scanned: BTreeSet<PathBuf> = scan
+        .paths
+        .scanned
+        .iter()
+        .filter_map(|path| relative_path(root, path))
+        .filter(|path| expected.contains(path.as_path()))
+        .collect();
+    let mut missing = expected
+        .iter()
+        .filter(|path| !scanned.contains(**path) && !state.warning_files.contains(**path));
+    if let Some(first) = missing.next() {
+        fail(
+            outcome,
+            EngineName::Semgrep,
+            format!(
+                "Semgrep skipped {} required files (first: {})",
+                missing.count() + 1,
+                first.display()
+            ),
+        );
+    }
+
+    let first_finding_failure = outcome.failures.len();
+    record_findings(
+        scan.results,
+        root,
+        &expected,
+        rules,
+        sanitized,
+        &state,
+        outcome,
+    );
+    if !state.batch_failed && first_finding_failure == outcome.failures.len() {
         outcome
             .scanned_files
-            .extend(scanned.difference(&failed_files).cloned());
+            .extend(scanned.difference(&state.failed_files).cloned());
     }
 }

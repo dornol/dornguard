@@ -72,15 +72,11 @@ pub async fn inspect_archunit(root: &Path) -> Result<String> {
     Ok(format!("protocol {SCHEMA_VERSION}, {java}"))
 }
 
-async fn run(root: &Path, modules: &[ArchModule<'_>], outcome: &mut Outcome) -> Result<()> {
-    let temp = tempfile::tempdir().into_diagnostic()?;
-    let request_path = temp.path().join("request.json");
-    let result_path = temp.path().join("result.json");
+fn build_request<'a>(root: &Path, modules: &'a [ArchModule<'_>]) -> Result<Request<'a>> {
     let mut request = Request {
         schema_version: SCHEMA_VERSION,
         modules: Vec::new(),
     };
-
     for candidate in modules {
         let module = candidate.module;
         let mut rules = Vec::new();
@@ -106,10 +102,17 @@ async fn run(root: &Path, modules: &[ArchModule<'_>], outcome: &mut Outcome) -> 
             rules,
         });
     }
+    Ok(request)
+}
 
+/// Run the ArchUnit runner on a request and read its validated result.
+async fn run_runner(root: &Path, request: &Request<'_>) -> Result<Report> {
+    let temp = tempfile::tempdir().into_diagnostic()?;
+    let request_path = temp.path().join("request.json");
+    let result_path = temp.path().join("result.json");
     fs::write(
         &request_path,
-        serde_json::to_vec(&request).into_diagnostic()?,
+        serde_json::to_vec(request).into_diagnostic()?,
     )
     .into_diagnostic()?;
     crate::inspect_java(root).await?;
@@ -143,8 +146,19 @@ async fn run(root: &Path, modules: &[ArchModule<'_>], outcome: &mut Outcome) -> 
             result.schema_version
         );
     }
+    Ok(result)
+}
+
+/// Report modules the runner could not analyze or skipped, and count the files it covered.
+fn record_module_status(
+    root: &Path,
+    modules: &[ArchModule<'_>],
+    failures: Vec<RunnerFailure>,
+    analyzed: &[String],
+    outcome: &mut Outcome,
+) {
     let mut failed = BTreeSet::new();
-    for error in result.failures {
+    for error in failures {
         fail(
             outcome,
             ENGINE,
@@ -163,11 +177,7 @@ async fn run(root: &Path, modules: &[ArchModule<'_>], outcome: &mut Outcome) -> 
         }
         failed.insert(error.module);
     }
-    let analyzed = result
-        .analyzed
-        .iter()
-        .map(String::as_str)
-        .collect::<BTreeSet<_>>();
+    let analyzed = analyzed.iter().map(String::as_str).collect::<BTreeSet<_>>();
     for candidate in modules {
         if failed.contains(&candidate.module.path) {
             continue;
@@ -187,13 +197,23 @@ async fn run(root: &Path, modules: &[ArchModule<'_>], outcome: &mut Outcome) -> 
                 .extend(candidate.files.iter().cloned());
         }
     }
+}
 
+type Relationship = (String, String, String, String);
+
+/// Turn runner findings into diagnostics, one per module relationship.
+fn record_findings(
+    root: &Path,
+    modules: &[ArchModule<'_>],
+    findings: Vec<Finding>,
+    outcome: &mut Outcome,
+) {
     let scopes: BTreeMap<_, _> = modules
         .iter()
         .map(|candidate| (candidate.module.path.as_str(), candidate))
         .collect();
     let mut relationships = BTreeMap::new();
-    for finding in result.findings {
+    for finding in findings {
         let Some(candidate) = scopes.get(finding.module.as_str()) else {
             fail(
                 outcome,
@@ -268,33 +288,50 @@ async fn run(root: &Path, modules: &[ArchModule<'_>], outcome: &mut Outcome) -> 
             legacy_fingerprints: Vec::new(),
             fingerprint: Some(relationship_fingerprint),
         };
-        use std::collections::btree_map::Entry;
-        match relationships.entry(key) {
-            Entry::Vacant(entry) => {
-                let mut diagnostic = diagnostic;
-                diagnostic.legacy_fingerprints.push(legacy_fingerprint);
-                entry.insert(diagnostic);
-            }
-            Entry::Occupied(mut entry) => {
-                let representative = entry.get_mut();
-                if (
-                    diagnostic.path.is_none(),
-                    diagnostic.line.is_none(),
-                    diagnostic.line,
-                ) < (
-                    representative.path.is_none(),
-                    representative.line.is_none(),
-                    representative.line,
-                ) {
-                    let legacy = std::mem::take(&mut representative.legacy_fingerprints);
-                    *representative = diagnostic;
-                    representative.legacy_fingerprints = legacy;
-                }
-                representative.legacy_fingerprints.push(legacy_fingerprint);
-            }
-        }
+        keep_representative(&mut relationships, key, diagnostic, legacy_fingerprint);
     }
     outcome.diagnostics.extend(relationships.into_values());
+}
+
+/// Keep the most precise finding per relationship, remembering every legacy fingerprint.
+fn keep_representative(
+    relationships: &mut BTreeMap<Relationship, Diagnostic>,
+    key: Relationship,
+    diagnostic: Diagnostic,
+    legacy_fingerprint: String,
+) {
+    use std::collections::btree_map::Entry;
+    match relationships.entry(key) {
+        Entry::Vacant(entry) => {
+            let mut diagnostic = diagnostic;
+            diagnostic.legacy_fingerprints.push(legacy_fingerprint);
+            entry.insert(diagnostic);
+        }
+        Entry::Occupied(mut entry) => {
+            let representative = entry.get_mut();
+            if (
+                diagnostic.path.is_none(),
+                diagnostic.line.is_none(),
+                diagnostic.line,
+            ) < (
+                representative.path.is_none(),
+                representative.line.is_none(),
+                representative.line,
+            ) {
+                let legacy = std::mem::take(&mut representative.legacy_fingerprints);
+                *representative = diagnostic;
+                representative.legacy_fingerprints = legacy;
+            }
+            representative.legacy_fingerprints.push(legacy_fingerprint);
+        }
+    }
+}
+
+async fn run(root: &Path, modules: &[ArchModule<'_>], outcome: &mut Outcome) -> Result<()> {
+    let request = build_request(root, modules)?;
+    let result = run_runner(root, &request).await?;
+    record_module_status(root, modules, result.failures, &result.analyzed, outcome);
+    record_findings(root, modules, result.findings, outcome);
     Ok(())
 }
 

@@ -1,4 +1,4 @@
-use std::cell::LazyCell;
+use std::cell::OnceCell;
 use std::collections::BTreeMap;
 use std::fs;
 use std::ops::Range;
@@ -121,77 +121,87 @@ fn line_index(lines: &[Line<'_>], offset: usize) -> usize {
     lines.partition_point(|line| line.start <= offset) - 1
 }
 
-fn check_layout(
-    file: &Path,
-    source: &str,
-    root: Node<'_>,
+/// Builds layout diagnostics for one file.
+struct Emitter<'a> {
+    file: &'a Path,
+    source: &'a str,
+    root: Node<'a>,
+    lines: &'a [Line<'a>],
     settings: FileFormat,
-    rules: &BTreeMap<&str, &Rule>,
-    outcome: &mut Outcome,
-) {
-    let lines = lines(source);
-    if lines.is_empty() {
-        return;
-    }
-    let source_sha256 = LazyCell::new(|| fingerprint(source));
-    let ending = match settings.line_ending {
-        LineEnding::Lf => "\n",
-        LineEnding::Crlf => "\r\n",
-    };
-    let mut emit = |id, row: usize, column: usize, detail: Option<String>| {
-        if let Some(rule) = rules.get(id) {
-            let line = &lines[row];
-            outcome.diagnostics.push(Diagnostic {
-                path: Some(display_path(file)),
-                module: None,
-                class_name: None,
-                line: Some(row as u32 + 1),
-                column: Some(line.text[..column].encode_utf16().count() as u32 + 1),
-                end_line: None,
-                end_column: None,
-                subject: None,
-                rule_id: rule.id.clone(),
-                engine: EngineName::Builtin,
-                severity: rule.severity,
-                message: detail.unwrap_or_else(|| rule.description.clone()),
-                fix: match id {
-                    "format.control-spacing"
-                        if matches!(settings.control_spacing, ControlSpacing::None) =>
-                    {
-                        "Put the opening parenthesis directly after the keyword.".to_owned()
-                    }
-                    "format.indentation" if matches!(settings.indent_style, IndentStyle::Tabs) => {
-                        "Indent each block level by one tab.".to_owned()
-                    }
-                    _ => rule.fix.clone(),
-                },
-                edit: if root.has_error() {
-                    None
-                } else {
-                    let start_byte = line.start + column;
-                    let end_byte = line.start + line.text.len();
-                    let replacement = match id {
-                        "format.trailing-whitespace" => Some(""),
-                        "format.final-newline" => Some(ending),
-                        _ => None,
-                    };
-                    replacement.map(|replacement| SourceEdit {
-                        start_byte,
-                        end_byte,
-                        replacement: replacement.to_owned(),
-                        source_sha256: (*source_sha256).clone(),
-                    })
-                },
-                legacy_fingerprints: Vec::new(),
-                fingerprint: Some(fingerprint(line.text.trim())),
-            });
-        }
-    };
+    rules: &'a BTreeMap<&'a str, &'a Rule>,
+    ending: &'static str,
+    source_sha256: OnceCell<String>,
+    outcome: &'a mut Outcome,
+}
 
-    let (indent_byte, width, indent_unit) = match settings.indent_style {
-        IndentStyle::Spaces => (b' ', usize::from(settings.indent_size), "spaces"),
-        IndentStyle::Tabs => (b'\t', 1, "tabs"),
-    };
+impl Emitter<'_> {
+    fn emit(&mut self, id: &str, row: usize, column: usize, detail: Option<String>) {
+        let Some(rule) = self.rules.get(id) else {
+            return;
+        };
+        let settings = self.settings;
+        let line = &self.lines[row];
+        let edit = if self.root.has_error() {
+            None
+        } else {
+            let replacement = match id {
+                "format.trailing-whitespace" => Some(""),
+                "format.final-newline" => Some(self.ending),
+                _ => None,
+            };
+            replacement.map(|replacement| SourceEdit {
+                start_byte: line.start + column,
+                end_byte: line.start + line.text.len(),
+                replacement: replacement.to_owned(),
+                source_sha256: self
+                    .source_sha256
+                    .get_or_init(|| fingerprint(self.source))
+                    .clone(),
+            })
+        };
+        self.outcome.diagnostics.push(Diagnostic {
+            path: Some(display_path(self.file)),
+            module: None,
+            class_name: None,
+            line: Some(row as u32 + 1),
+            column: Some(line.text[..column].encode_utf16().count() as u32 + 1),
+            end_line: None,
+            end_column: None,
+            subject: None,
+            rule_id: rule.id.clone(),
+            engine: EngineName::Builtin,
+            severity: rule.severity,
+            message: detail.unwrap_or_else(|| rule.description.clone()),
+            fix: match id {
+                "format.control-spacing"
+                    if matches!(settings.control_spacing, ControlSpacing::None) =>
+                {
+                    "Put the opening parenthesis directly after the keyword.".to_owned()
+                }
+                "format.indentation" if matches!(settings.indent_style, IndentStyle::Tabs) => {
+                    "Indent each block level by one tab.".to_owned()
+                }
+                _ => rule.fix.clone(),
+            },
+            edit,
+            legacy_fingerprints: Vec::new(),
+            fingerprint: Some(fingerprint(line.text.trim())),
+        });
+    }
+}
+
+/// Walk the syntax tree. Returns the expected indentation by row and the string literal ranges,
+/// and reports control keywords whose spacing differs from the setting.
+fn walk_syntax(
+    emitter: &mut Emitter<'_>,
+    width: usize,
+) -> (BTreeMap<usize, usize>, Vec<Range<usize>>) {
+    let (root, source, lines, settings) = (
+        emitter.root,
+        emitter.source,
+        emitter.lines,
+        emitter.settings,
+    );
     let control_spacing = match settings.control_spacing {
         ControlSpacing::Space => " ",
         ControlSpacing::None => "",
@@ -209,7 +219,7 @@ fn check_layout(
             continue;
         }
         if node == root || !node.has_error() && is_block(node.kind()) {
-            collect_indentation(node, root, source, &lines, width, &mut expected);
+            collect_indentation(node, root, source, lines, width, &mut expected);
         }
         if !node.is_named()
             && matches!(
@@ -227,8 +237,8 @@ fn check_layout(
             let tail = &source[node.end_byte()..];
             let rest = tail.trim_start_matches([' ', '\t', '\r', '\n']);
             if rest.starts_with('(') && &tail[..tail.len() - rest.len()] != control_spacing {
-                let row = line_index(&lines, node.start_byte());
-                emit(
+                let row = line_index(lines, node.start_byte());
+                emitter.emit(
                     "format.control-spacing",
                     row,
                     node.start_byte() - lines[row].start,
@@ -242,6 +252,18 @@ fn check_layout(
         pending.extend(node.children(&mut cursor));
         pending[previous..].reverse();
     }
+    (expected, literals)
+}
+
+/// Check line endings, trailing whitespace, blank lines, indentation and the final newline.
+fn check_lines(
+    emitter: &mut Emitter<'_>,
+    expected: &BTreeMap<usize, usize>,
+    literals: &[Range<usize>],
+    indent: (u8, &str),
+) {
+    let (indent_byte, indent_unit) = indent;
+    let (lines, settings, ending) = (emitter.lines, emitter.settings, emitter.ending);
     let in_literal = |offset: usize| {
         let index = literals.partition_point(|range: &Range<usize>| range.end <= offset);
         literals
@@ -253,16 +275,16 @@ fn check_layout(
     for (row, line) in lines.iter().enumerate() {
         let trimmed = line.text.trim_end_matches([' ', '\t']);
         if !reported_ending && !line.ending.is_empty() && line.ending != ending {
-            emit("format.line-ending", row, line.text.len(), None);
+            emitter.emit("format.line-ending", row, line.text.len(), None);
             reported_ending = true;
         }
         if trimmed.len() < line.text.len() && !in_literal(line.start + trimmed.len()) {
-            emit("format.trailing-whitespace", row, trimmed.len(), None);
+            emitter.emit("format.trailing-whitespace", row, trimmed.len(), None);
         }
         if trimmed.is_empty() && !in_literal(line.start) {
             blank_lines += 1;
             if blank_lines == usize::from(settings.max_blank_lines) + 1 {
-                emit("format.blank-lines", row, 0, None);
+                emitter.emit("format.blank-lines", row, 0, None);
             }
         } else {
             blank_lines = 0;
@@ -272,7 +294,7 @@ fn check_layout(
         }
         let prefix = leading_indent(line.text);
         if prefix.bytes().any(|byte| byte != indent_byte) {
-            emit(
+            emitter.emit(
                 "format.indentation",
                 row,
                 0,
@@ -281,7 +303,7 @@ fn check_layout(
         } else if let Some(&indent) = expected.get(&row)
             && prefix.len() != indent
         {
-            emit(
+            emitter.emit(
                 "format.indentation",
                 row,
                 prefix.len(),
@@ -294,8 +316,47 @@ fn check_layout(
     }
     let row = lines.len() - 1;
     if lines[row].ending.is_empty() {
-        emit("format.final-newline", row, lines[row].text.len(), None);
+        emitter.emit("format.final-newline", row, lines[row].text.len(), None);
     }
+}
+
+fn check_layout(
+    file: &Path,
+    source: &str,
+    root: Node<'_>,
+    settings: FileFormat,
+    rules: &BTreeMap<&str, &Rule>,
+    outcome: &mut Outcome,
+) {
+    let lines = lines(source);
+    if lines.is_empty() {
+        return;
+    }
+    let (indent_byte, width, indent_unit) = match settings.indent_style {
+        IndentStyle::Spaces => (b' ', usize::from(settings.indent_size), "spaces"),
+        IndentStyle::Tabs => (b'\t', 1, "tabs"),
+    };
+    let mut emitter = Emitter {
+        file,
+        source,
+        root,
+        lines: &lines,
+        settings,
+        rules,
+        ending: match settings.line_ending {
+            LineEnding::Lf => "\n",
+            LineEnding::Crlf => "\r\n",
+        },
+        source_sha256: OnceCell::new(),
+        outcome,
+    };
+    let (expected, literals) = walk_syntax(&mut emitter, width);
+    check_lines(
+        &mut emitter,
+        &expected,
+        &literals,
+        (indent_byte, indent_unit),
+    );
 }
 
 fn is_block(kind: &str) -> bool {

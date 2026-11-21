@@ -5,9 +5,9 @@ use std::io::{self, Write};
 use dornguard_core::{CheckReport, Severity};
 use serde_json::{Value, json};
 
-pub fn write_sarif(report: &CheckReport, writer: &mut impl Write) -> io::Result<()> {
+fn rules(report: &CheckReport) -> Vec<Value> {
     let mut seen = BTreeSet::new();
-    let rules = report
+    report
         .diagnostics
         .iter()
         .filter(|item| seen.insert(&item.rule_id))
@@ -18,9 +18,11 @@ pub fn write_sarif(report: &CheckReport, writer: &mut impl Write) -> io::Result<
                     "defaultConfiguration": {"level": level(item.severity)}
             })
         })
-        .collect::<Vec<_>>();
+        .collect::<Vec<_>>()
+}
 
-    let results = report
+fn results(report: &CheckReport) -> Vec<Value> {
+    report
         .diagnostics
         .iter()
         .map(|item| {
@@ -62,9 +64,11 @@ pub fn write_sarif(report: &CheckReport, writer: &mut impl Write) -> io::Result<
             }
             result
         })
-        .collect::<Vec<_>>();
+        .collect::<Vec<_>>()
+}
 
-    let notifications = report
+fn notifications(report: &CheckReport) -> Vec<Value> {
+    report
         .failures
         .iter()
         .map(|failure| ("error", failure))
@@ -86,7 +90,10 @@ pub fn write_sarif(report: &CheckReport, writer: &mut impl Write) -> io::Result<
             }
             item
         })
-        .collect::<Vec<_>>();
+        .collect::<Vec<_>>()
+}
+
+fn properties(report: &CheckReport) -> Value {
     let mut properties = json!({
         "scope": report.scope,
         "filesRequested": report.files_requested,
@@ -106,6 +113,16 @@ pub fn write_sarif(report: &CheckReport, writer: &mut impl Write) -> io::Result<
     if let Some(reason) = &report.fallback_reason {
         properties["fallbackReason"] = Value::String(reason.clone());
     }
+    properties
+}
+
+pub fn write_sarif(report: &CheckReport, writer: &mut impl Write) -> io::Result<()> {
+    let (rules, results, notifications, properties) = (
+        rules(report),
+        results(report),
+        notifications(report),
+        properties(report),
+    );
     let sarif = json!({
         "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
         "version": "2.1.0",
