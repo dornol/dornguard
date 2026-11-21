@@ -195,12 +195,18 @@ async fn acquire_model(
     root: &Path,
     filter: Option<&str>,
     changes: &mut Option<&Changes>,
-) -> std::result::Result<(Acquired, Outcome), Outcome> {
+) -> std::result::Result<(Acquired, Outcome), Box<Outcome>> {
     let build = plan.build;
     let (discovery, affected, fallback_reason) = if let Some(changes_found) = *changes {
         let model = match build.collect(root, CompileModules::Selected(&[])).await {
             Ok(model) => model,
-            Err(error) => return Err(plan.build_failure(error, FailureStage::ProjectModel, &[])),
+            Err(error) => {
+                return Err(Box::new(plan.build_failure(
+                    error,
+                    FailureStage::ProjectModel,
+                    &[],
+                )));
+            }
         };
         match affected_modules(
             root,
@@ -281,7 +287,7 @@ async fn acquire_model(
                                     FailureStage::ProjectModel,
                                     requested,
                                 ));
-                                return Err(outcome);
+                                return Err(Box::new(outcome));
                             }
                         }
                     }
@@ -293,7 +299,7 @@ async fn acquire_model(
                         FailureStage::ProjectModel,
                         &requested,
                     ));
-                    return Err(outcome);
+                    return Err(Box::new(outcome));
                 }
             }
         }
@@ -687,7 +693,7 @@ pub async fn check(check: Check<'_>) -> Outcome {
     };
     let (acquired, mut outcome) = match acquire_model(&plan, root, filter, &mut changes).await {
         Ok(acquired) => acquired,
-        Err(outcome) => return outcome,
+        Err(outcome) => return *outcome,
     };
     let model = &acquired.model;
     let build_name = build.name();
