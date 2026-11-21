@@ -148,6 +148,7 @@ make it blocking.
 | `security.disabled-tls-verification` | Trust-all trust managers and host name verifiers that always return `true`. Code inside an `if` or conditional expression whose condition mentions `verif`, `insecure`, `trustAll`, `skip`, or `validat` is skipped, because it is an opt-in setting. The trust-all implementation itself is still reported; suppress it with a reason |
 | `security.csrf-disabled` | Spring Security `csrf` configuration that disables CSRF protection. Methods that set `SessionCreationPolicy.STATELESS` are skipped |
 | `kotlin.global-scope` | `GlobalScope.launch` or `GlobalScope.async` |
+| `spring.field-injection` | A field annotated with `@Autowired`, `@Inject` or `@Resource`, with or without annotation arguments. Setter and constructor injection are not reported |
 | `spring.singleton-request-state` | A Java Spring MVC singleton controller handler that stores a parameter directly in a `this` field |
 | `spring.shared-simple-date-format` | A field of type `SimpleDateFormat` or one initialized with it in a singleton Spring component |
 | `spring.private-transactional` | A private Java method with Spring's `@Transactional` |

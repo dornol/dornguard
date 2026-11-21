@@ -8,9 +8,13 @@ rules:
           class $CLASS {
             ...
           }
-      - pattern: |
-          @$ANNOTATION
-          $TYPE $FIELD;
+      - pattern-either:
+          - pattern: |
+              @$ANNOTATION
+              $TYPE $FIELD;
+          - pattern: |
+              @$ANNOTATION(...)
+              $TYPE $FIELD;
       - metavariable-regex:
           metavariable: $ANNOTATION
-          regex: '^(org\.springframework\.beans\.factory\.annotation\.)?Autowired$'
+          regex: '^((org\.springframework\.beans\.factory\.annotation\.)?Autowired|((jakarta|javax)\.inject\.)?Inject|((jakarta|javax)\.annotation\.)?Resource)$'
