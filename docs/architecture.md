@@ -1,5 +1,20 @@
 # Architecture checks
 
+## How findings are counted
+
+A diagnostic stands for one cause, not for each class dependency.
+
+- `architecture.package-cycle` reports one diagnostic per package edge. The
+  message gives the number of class dependencies and up to three examples.
+- Forbidden-dependency rules, such as `architecture.library-framework-independence`,
+  report one diagnostic per class that has a forbidden dependency. The message
+  gives the number of forbidden types and up to three examples.
+
+The location is the earliest one that has a file and a line. A fingerprint
+identifies the package edge or the class, so a baseline or an `ignore` entry
+with a fingerprint covers every dependency in that group, including ones added
+later. Fingerprints from earlier releases still match.
+
 ## Gradle
 
 The Gradle integration runs the project's Wrapper with a DornGuard init

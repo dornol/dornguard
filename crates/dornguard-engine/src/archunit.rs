@@ -199,9 +199,28 @@ fn record_module_status(
     }
 }
 
-type Relationship = (String, String, String, String);
+/// What one diagnostic stands for: a forbidden dependency of one class, or one package
+/// edge of a cycle.
+type GroupKey = (String, String, String, String);
 
-/// Turn runner findings into diagnostics, one per module relationship.
+/// The class dependencies that share a diagnostic.
+struct Group {
+    diagnostic: Diagnostic,
+    /// The `(origin, target)` classes that gave the diagnostic its location.
+    anchor: (String, String),
+    pairs: BTreeSet<(String, String)>,
+}
+
+/// The package of a class name, or an empty string for the default package.
+fn package_of(class: &str) -> &str {
+    class.rsplit_once('.').map_or("", |(package, _)| package)
+}
+
+/// Turn runner findings into diagnostics.
+///
+/// A cycle reports one diagnostic per package edge, and a forbidden dependency one
+/// per class, so a single cause is not counted once per class dependency. Each
+/// diagnostic keeps the fingerprints of the finer diagnostics it replaces.
 fn record_findings(
     root: &Path,
     modules: &[ArchModule<'_>],
@@ -212,7 +231,7 @@ fn record_findings(
         .iter()
         .map(|candidate| (candidate.module.path.as_str(), candidate))
         .collect();
-    let mut relationships = BTreeMap::new();
+    let mut groups: BTreeMap<GroupKey, Group> = BTreeMap::new();
     for finding in findings {
         let Some(candidate) = scopes.get(finding.module.as_str()) else {
             fail(
@@ -259,14 +278,36 @@ fn record_findings(
                 finding.module, finding.origin, rule.id, finding.identity
             ))
         };
-        let key = (
-            finding.module.clone(),
-            rule.id.clone(),
-            finding.origin.clone(),
-            finding.target.clone(),
-        );
-        let relationship_fingerprint =
-            fingerprint(&format!("{}\0{}\0{}\0{}", key.0, key.1, key.2, key.3));
+        let relationship_fingerprint = fingerprint(&format!(
+            "{}\0{}\0{}\0{}",
+            finding.module, rule.id, finding.origin, finding.target
+        ));
+        let cycle = rule.options.as_ref().is_some_and(|options| options.cycles);
+        let (key, identity) = if cycle {
+            let (origin, target) = (
+                package_of(&finding.origin).to_owned(),
+                package_of(&finding.target).to_owned(),
+            );
+            let identity = format!(
+                "package-edge\0{}\0{}\0{origin}\0{target}",
+                finding.module, rule.id
+            );
+            (
+                (finding.module.clone(), rule.id.clone(), origin, target),
+                identity,
+            )
+        } else {
+            let identity = format!("class\0{}\0{}\0{}", finding.module, rule.id, finding.origin);
+            (
+                (
+                    finding.module.clone(),
+                    rule.id.clone(),
+                    finding.origin.clone(),
+                    String::new(),
+                ),
+                identity,
+            )
+        };
         let diagnostic = Diagnostic {
             path,
             module: Some(finding.module.clone()),
@@ -280,51 +321,101 @@ fn record_findings(
             engine: ENGINE,
             severity: rule.severity,
             confidence: rule.confidence,
-            message: format!(
-                "{} {} depends on {} in {}.",
-                rule.description, finding.origin, finding.target, finding.module
-            ),
+            message: String::new(),
             fix: rule.fix.clone(),
             edit: None,
-            legacy_fingerprints: Vec::new(),
-            fingerprint: Some(relationship_fingerprint),
+            legacy_fingerprints: vec![legacy_fingerprint, relationship_fingerprint],
+            fingerprint: Some(fingerprint(&identity)),
         };
-        keep_representative(&mut relationships, key, diagnostic, legacy_fingerprint);
+        let anchor = (finding.origin.clone(), finding.target.clone());
+        let pair = anchor.clone();
+        match groups.entry(key) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(Group {
+                    diagnostic,
+                    anchor,
+                    pairs: BTreeSet::from([pair]),
+                });
+            }
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                let group = entry.get_mut();
+                group.pairs.insert(pair);
+                merge_representative(group, diagnostic, anchor);
+            }
+        }
     }
-    outcome.diagnostics.extend(relationships.into_values());
+    for ((module, rule_id, _, _), mut group) in groups {
+        let Some(rule) = scopes
+            .get(module.as_str())
+            .and_then(|candidate| candidate.rules.iter().find(|rule| rule.id == rule_id))
+        else {
+            continue;
+        };
+        let cycle = rule.options.as_ref().is_some_and(|options| options.cycles);
+        group.diagnostic.message = group_message(&rule.description, &module, cycle, &group);
+        outcome.diagnostics.push(group.diagnostic);
+    }
 }
 
-/// Keep the most precise finding per relationship, remembering every legacy fingerprint.
-fn keep_representative(
-    relationships: &mut BTreeMap<Relationship, Diagnostic>,
-    key: Relationship,
-    diagnostic: Diagnostic,
-    legacy_fingerprint: String,
-) {
-    use std::collections::btree_map::Entry;
-    match relationships.entry(key) {
-        Entry::Vacant(entry) => {
-            let mut diagnostic = diagnostic;
-            diagnostic.legacy_fingerprints.push(legacy_fingerprint);
-            entry.insert(diagnostic);
-        }
-        Entry::Occupied(mut entry) => {
-            let representative = entry.get_mut();
-            if (
-                diagnostic.path.is_none(),
-                diagnostic.line.is_none(),
-                diagnostic.line,
-            ) < (
-                representative.path.is_none(),
-                representative.line.is_none(),
-                representative.line,
-            ) {
-                let legacy = std::mem::take(&mut representative.legacy_fingerprints);
-                *representative = diagnostic;
-                representative.legacy_fingerprints = legacy;
-            }
-            representative.legacy_fingerprints.push(legacy_fingerprint);
-        }
+/// Keep the most precise location in a group, remembering every legacy fingerprint.
+fn merge_representative(group: &mut Group, diagnostic: Diagnostic, anchor: (String, String)) {
+    let representative = &mut group.diagnostic;
+    let precision = |item: &Diagnostic, anchor: &(String, String)| {
+        (
+            item.path.is_none(),
+            item.line.is_none(),
+            item.line,
+            anchor.clone(),
+        )
+    };
+    let mut legacy = std::mem::take(&mut representative.legacy_fingerprints);
+    legacy.extend(diagnostic.legacy_fingerprints.iter().cloned());
+    if precision(&diagnostic, &anchor) < precision(representative, &group.anchor) {
+        *representative = diagnostic;
+        group.anchor = anchor;
+    }
+    representative.legacy_fingerprints = legacy;
+}
+
+fn group_message(description: &str, module: &str, cycle: bool, group: &Group) -> String {
+    const EXAMPLES: usize = 3;
+    let count = group.pairs.len();
+    if count == 1 {
+        let (origin, target) = &group.anchor;
+        return format!("{description} {origin} depends on {target} in {module}.");
+    }
+    let more = count.saturating_sub(EXAMPLES);
+    let more = if more > 0 {
+        format!(" and {more} more")
+    } else {
+        String::new()
+    };
+    if cycle {
+        let (origin, target) = &group.anchor;
+        let examples = group
+            .pairs
+            .iter()
+            .take(EXAMPLES)
+            .map(|(origin, target)| format!("{origin} -> {target}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!(
+            "{description} Package {} depends on {} through {count} class dependencies in {module}, for example {examples}{more}.",
+            package_of(origin),
+            package_of(target),
+        )
+    } else {
+        let origin = &group.anchor.0;
+        let targets = group
+            .pairs
+            .iter()
+            .take(EXAMPLES)
+            .map(|(_, target)| target.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!(
+            "{description} {origin} depends on {count} forbidden types in {module}: {targets}{more}."
+        )
     }
 }
 
@@ -457,4 +548,78 @@ struct RunnerFailure {
     module: String,
     path: Option<PathBuf>,
     reason: String,
+}
+
+#[cfg(test)]
+mod group_tests {
+    use super::*;
+
+    fn group(pairs: &[(&str, &str)]) -> Group {
+        let anchor = (pairs[0].0.to_owned(), pairs[0].1.to_owned());
+        Group {
+            diagnostic: Diagnostic {
+                path: None,
+                module: None,
+                class_name: None,
+                line: None,
+                column: None,
+                end_line: None,
+                end_column: None,
+                subject: None,
+                rule_id: String::new(),
+                engine: ENGINE,
+                severity: dornguard_core::Severity::Error,
+                confidence: dornguard_core::Confidence::default(),
+                message: String::new(),
+                fix: String::new(),
+                edit: None,
+                legacy_fingerprints: Vec::new(),
+                fingerprint: None,
+            },
+            anchor,
+            pairs: pairs
+                .iter()
+                .map(|(origin, target)| ((*origin).to_owned(), (*target).to_owned()))
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn packages_come_from_the_class_name() {
+        assert_eq!(package_of("a.b.C"), "a.b");
+        assert_eq!(package_of("a.b.C$Inner"), "a.b");
+        assert_eq!(package_of("Top"), "");
+    }
+
+    #[test]
+    fn a_single_dependency_keeps_the_original_message() {
+        let group = group(&[("a.A", "b.B")]);
+        assert_eq!(
+            group_message("Rule.", ":m", true, &group),
+            "Rule. a.A depends on b.B in :m."
+        );
+    }
+
+    #[test]
+    fn many_forbidden_types_are_counted_with_examples() {
+        let group = group(&[
+            ("a.A", "s.T1"),
+            ("a.A", "s.T2"),
+            ("a.A", "s.T3"),
+            ("a.A", "s.T4"),
+        ]);
+        assert_eq!(
+            group_message("Rule.", ":m", false, &group),
+            "Rule. a.A depends on 4 forbidden types in :m: s.T1, s.T2, s.T3 and 1 more."
+        );
+    }
+
+    #[test]
+    fn a_cycle_edge_names_both_packages() {
+        let group = group(&[("a.A1", "b.B"), ("a.A2", "b.B")]);
+        assert_eq!(
+            group_message("Rule.", ":m", true, &group),
+            "Rule. Package a depends on b through 2 class dependencies in :m, for example a.A1 -> b.B, a.A2 -> b.B."
+        );
+    }
 }

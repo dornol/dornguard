@@ -239,6 +239,10 @@ fn package_cycles_report_only_dependencies_inside_a_cycle() {
             "package example.admin.beta;\npublic class Beta {\n    public Object other() { return new example.admin.alpha.Alpha(); }\n}\n",
         ),
         (
+            "alpha/AlphaToo.java",
+            "package example.admin.alpha;\npublic class AlphaToo {\n    public Object other() { return new example.admin.beta.Beta(); }\n}\n",
+        ),
+        (
             "gamma/Gamma.java",
             "package example.admin.gamma;\npublic class Gamma {\n    public Object other() { return new example.admin.alpha.Alpha(); }\n}\n",
         ),
@@ -271,6 +275,24 @@ fn package_cycles_report_only_dependencies_inside_a_cycle() {
         })
         .collect::<Vec<_>>();
     cycles.sort_unstable();
+    // Two classes in alpha depend on beta, but that is one package edge.
+    let edge = result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|finding| {
+            finding["rule_id"] == "architecture.package-cycle"
+                && finding["class_name"] == "example.admin.alpha.Alpha"
+        })
+        .unwrap();
+    let message = edge["message"].as_str().unwrap();
+    assert!(
+        message.contains(
+            "Package example.admin.alpha depends on example.admin.beta through 2 class dependencies"
+        ),
+        "{message}"
+    );
+    assert_eq!(cycles.len(), 2, "{result}");
     assert_eq!(
         cycles,
         [
