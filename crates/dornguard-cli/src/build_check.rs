@@ -73,78 +73,69 @@ pub struct Check<'a> {
     pub module_git_outcome: Outcome,
 }
 
-pub async fn check(check: Check<'_>) -> Outcome {
-    let Check {
-        build,
-        root,
-        target,
-        filter,
-        registry,
-        config,
-        profiles,
-        global,
-        global_kotlin,
-        resolve_imports,
-        sources,
-        mut changes,
-        required,
-        mut module_git_outcome,
-    } = check;
-    let config_error = |error| failure(FailureKind::ConfigurationError, error);
-    let preparation_error = |error| failure(FailureKind::PreparationError, error);
-    if !target.starts_with(root) {
-        return preparation_error(miette!(
-            "The check target must be inside the configuration directory"
-        ));
-    }
-    let mut overrides = BTreeMap::new();
-    let mut kotlin_modules = BTreeSet::new();
-    for name in config.modules.keys() {
-        match registry.resolve(config, Some(name), profiles) {
-            Ok(rules) => {
-                match registry.kotlin_profile_enabled(config, Some(name), profiles) {
-                    Ok(enabled) => {
-                        if enabled || rules.iter().any(Rule::enables_kotlin) {
-                            kotlin_modules.insert(name.as_str());
-                        }
-                    }
-                    Err(error) => return config_error(error),
-                }
-                overrides.insert(name.as_str(), rules);
-            }
-            Err(error) => return config_error(error),
-        }
+/// Rule lookups shared by every phase of a build-backed check.
+struct Plan<'p> {
+    build: BuildSystem,
+    global: &'p [&'p Rule],
+    overrides: BTreeMap<&'p str, Vec<&'p Rule>>,
+    kotlin_modules: BTreeSet<&'p str>,
+    global_kotlin: bool,
+    resolve_imports: bool,
+}
+
+impl<'p> Plan<'p> {
+    fn rules_for(&self, name: &str) -> &[&'p Rule] {
+        self.overrides.get(name).map_or(self.global, Vec::as_slice)
     }
 
-    if build == BuildSystem::Maven {
-        if global_kotlin || !kotlin_modules.is_empty() {
-            return config_error(miette!("Kotlin build integration requires Gradle"));
-        }
-        if !config.module_dependencies.forbid.is_empty() {
-            return config_error(miette!("module_dependencies.forbid requires Gradle"));
-        }
+    fn rule_needs_compile(&self, rule: &Rule) -> bool {
+        rule.engine == EngineName::Archunit || self.resolve_imports && rule.uses_pmd_classpath()
     }
-    let overrides = overrides
-        .iter()
-        .map(|(&name, rules)| (name, rules.iter().collect::<Vec<_>>()))
-        .collect::<BTreeMap<_, _>>();
-    let rules_for = |name: &str| overrides.get(name).map_or(global, Vec::as_slice);
-    let rule_needs_compile = |rule: &Rule| {
-        rule.engine == EngineName::Archunit || resolve_imports && rule.uses_pmd_classpath()
-    };
-    let build_failure = |error, stage, modules: &[String]| {
-        let mut outcome = preparation_error(error);
+
+    fn needs_compile(&self, rules: &[&Rule]) -> bool {
+        rules.iter().any(|rule| self.rule_needs_compile(rule))
+    }
+
+    fn kotlin_for(&self, name: &str) -> bool {
+        self.global_kotlin || self.kotlin_modules.contains(name)
+    }
+
+    fn format_kotlin(&self, name: &str) -> bool {
+        !self.kotlin_for(name)
+            && self
+                .rules_for(name)
+                .iter()
+                .any(|rule| rule.is_format_rule())
+    }
+
+    fn kotlin_sources(&self, name: &str) -> bool {
+        self.kotlin_for(name) || self.format_kotlin(name)
+    }
+
+    fn web_for(&self, name: &str, language: SourceLanguage) -> bool {
+        self.rules_for(name)
+            .iter()
+            .any(|rule| rule.applies_to(language))
+    }
+
+    fn build_failure(
+        &self,
+        error: miette::Report,
+        stage: FailureStage,
+        modules: &[String],
+    ) -> Outcome {
+        let mut outcome = failure(FailureKind::PreparationError, error);
         let failure = &mut outcome.failures[0];
         failure.stage = Some(stage);
-        failure.build_tool = Some(build.name());
+        failure.build_tool = Some(self.build.name());
         failure.modules = modules.to_vec();
         let affected_rule =
-            |rule: &&Rule| stage != FailureStage::ProjectCompile || rule_needs_compile(rule);
+            |rule: &&Rule| stage != FailureStage::ProjectCompile || self.rule_needs_compile(rule);
         if modules.is_empty() {
             failure.set_rules(
-                global
+                self.global
                     .iter()
-                    .chain(overrides.values().flatten())
+                    .chain(self.overrides.values().flatten())
                     .copied()
                     .filter(affected_rule)
                     .map(|rule| rule.id.as_str()),
@@ -153,42 +144,79 @@ pub async fn check(check: Check<'_>) -> Outcome {
             failure.set_rules(
                 modules
                     .iter()
-                    .flat_map(|name| rules_for(name).iter())
+                    .flat_map(|name| self.rules_for(name).iter())
                     .copied()
                     .filter(affected_rule)
                     .map(|rule| rule.id.as_str()),
             );
         }
         outcome
-    };
-    let kotlin_for = |name: &str| global_kotlin || kotlin_modules.contains(name);
-    let format_kotlin =
-        |name: &str| !kotlin_for(name) && rules_for(name).iter().any(|rule| rule.is_format_rule());
-    let kotlin_sources = |name: &str| kotlin_for(name) || format_kotlin(name);
-    let web_for = |name: &str, language: SourceLanguage| {
-        rules_for(name).iter().any(|rule| rule.applies_to(language))
-    };
-    let needs_compile = |rules: &[&Rule]| rules.iter().copied().any(rule_needs_compile);
-    let (discovery, affected, fallback_reason) = if let Some(changes_found) = changes {
+    }
+}
+
+type ResolvedRules<'c> = (BTreeMap<&'c str, Vec<Rule>>, BTreeSet<&'c str>);
+
+/// Resolve each configured module's rules and find the modules that enable Kotlin.
+fn resolve_module_rules<'c>(
+    registry: &Registry,
+    config: &'c ProjectConfig,
+    profiles: &[String],
+) -> std::result::Result<ResolvedRules<'c>, Box<Outcome>> {
+    let config_error = |error| Box::new(failure(FailureKind::ConfigurationError, error));
+    let mut overrides = BTreeMap::new();
+    let mut kotlin_modules = BTreeSet::new();
+    for name in config.modules.keys() {
+        let rules = registry
+            .resolve(config, Some(name), profiles)
+            .map_err(config_error)?;
+        let enabled = registry
+            .kotlin_profile_enabled(config, Some(name), profiles)
+            .map_err(config_error)?;
+        if enabled || rules.iter().any(Rule::enables_kotlin) {
+            kotlin_modules.insert(name.as_str());
+        }
+        overrides.insert(name.as_str(), rules);
+    }
+    Ok((overrides, kotlin_modules))
+}
+
+/// The project model and what the check must compile.
+struct Acquired {
+    model: ProjectModel,
+    affected: Option<BTreeSet<String>>,
+    compile_names: Vec<String>,
+    compile_all: bool,
+    compile_requested: bool,
+    compile_failed: bool,
+}
+
+async fn acquire_model(
+    plan: &Plan<'_>,
+    root: &Path,
+    filter: Option<&str>,
+    changes: &mut Option<&Changes>,
+) -> std::result::Result<(Acquired, Outcome), Outcome> {
+    let build = plan.build;
+    let (discovery, affected, fallback_reason) = if let Some(changes_found) = *changes {
         let model = match build.collect(root, CompileModules::Selected(&[])).await {
             Ok(model) => model,
-            Err(error) => return build_failure(error, FailureStage::ProjectModel, &[]),
+            Err(error) => return Err(plan.build_failure(error, FailureStage::ProjectModel, &[])),
         };
         match affected_modules(
             root,
             &model.modules,
             changes_found,
-            kotlin_sources,
+            |name| plan.kotlin_sources(name),
             model
                 .modules
                 .iter()
-                .any(|module| kotlin_sources(&module.path)),
-            format_kotlin,
-            web_for,
+                .any(|module| plan.kotlin_sources(&module.path)),
+            |name| plan.format_kotlin(name),
+            |name, language| plan.web_for(name, language),
         ) {
             Ok(affected) => (Some(model), Some(affected), None),
             Err(error) => {
-                changes = None;
+                *changes = None;
                 (Some(model), None, Some(error.to_string()))
             }
         }
@@ -198,21 +226,22 @@ pub async fn check(check: Check<'_>) -> Outcome {
     let compile_names = if let Some(affected) = &affected {
         affected
             .iter()
-            .filter(|name| needs_compile(rules_for(name)))
+            .filter(|name| plan.needs_compile(plan.rules_for(name)))
             .cloned()
             .collect()
     } else {
         match filter {
-            Some(name) if needs_compile(rules_for(name)) => vec![name.to_owned()],
+            Some(name) if plan.needs_compile(plan.rules_for(name)) => vec![name.to_owned()],
             Some(_) => Vec::new(),
-            None => overrides
+            None => plan
+                .overrides
                 .iter()
-                .filter(|(_, rules)| needs_compile(rules))
+                .filter(|(_, rules)| plan.needs_compile(rules))
                 .map(|(&name, _)| name.to_owned())
                 .collect(),
         }
     };
-    let compile_all = affected.is_none() && filter.is_none() && needs_compile(global);
+    let compile_all = affected.is_none() && filter.is_none() && plan.needs_compile(plan.global);
     let compile_requested = compile_all || !compile_names.is_empty();
     let mut compile_failed = false;
     let mut outcome = Outcome {
@@ -236,7 +265,7 @@ pub async fn check(check: Check<'_>) -> Outcome {
                     } else {
                         compile_names.as_slice()
                     };
-                    outcome.merge(build_failure(
+                    outcome.merge(plan.build_failure(
                         error,
                         FailureStage::ProjectCompile,
                         requested,
@@ -247,26 +276,420 @@ pub async fn check(check: Check<'_>) -> Outcome {
                         match build.collect(root, CompileModules::Selected(&[])).await {
                             Ok(model) => model,
                             Err(error) => {
-                                outcome.merge(build_failure(
+                                outcome.merge(plan.build_failure(
                                     error,
                                     FailureStage::ProjectModel,
                                     requested,
                                 ));
-                                return outcome;
+                                return Err(outcome);
                             }
                         }
                     }
                 }
                 Err(error) => {
                     let requested = filter.map(str::to_owned).into_iter().collect::<Vec<_>>();
-                    outcome.merge(build_failure(error, FailureStage::ProjectModel, &requested));
-                    return outcome;
+                    outcome.merge(plan.build_failure(
+                        error,
+                        FailureStage::ProjectModel,
+                        &requested,
+                    ));
+                    return Err(outcome);
                 }
             }
         }
     };
-    let maven_compiled = build == BuildSystem::Maven && compile_requested && !compile_failed;
+    Ok((
+        Acquired {
+            model,
+            affected,
+            compile_names,
+            compile_all,
+            compile_requested,
+            compile_failed,
+        },
+        outcome,
+    ))
+}
 
+/// Everything a module needs to be turned into checks.
+struct ModuleRun<'r, 'p> {
+    plan: &'r Plan<'p>,
+    root: &'r Path,
+    target: &'r Path,
+    sources: &'r SourceFiles<'r>,
+    config: &'r ProjectConfig,
+    changes: Option<&'r Changes>,
+    acquired: &'r Acquired,
+}
+
+/// Checks queued while walking the selected modules.
+#[derive(Default)]
+struct Queued<'x> {
+    source_groups: SourceGroups<'x>,
+    pmd_modules: Vec<PmdModule<'x>>,
+    architecture: Vec<ArchModule<'x>>,
+    excluded_source: bool,
+}
+
+fn queue_architecture<'x>(
+    run: &ModuleRun<'_, 'x>,
+    module: &'x Module,
+    arch_rules: Vec<&'x Rule>,
+    files: &[PathBuf],
+    queued: &mut Queued<'x>,
+    outcome: &mut Outcome,
+) -> Result<()> {
+    let plan = run.plan;
+    let kotlin = plan.kotlin_for(&module.path);
+    let jvm = |language| {
+        language == SourceLanguage::Java || (language == SourceLanguage::Kotlin && kotlin)
+    };
+    let build_name = plan.build.name();
+    if arch_rules.is_empty()
+        || !(run.acquired.affected.is_some()
+            || files
+                .iter()
+                .any(|path| SourceLanguage::of(path).is_some_and(jvm)))
+    {
+        return Ok(());
+    }
+    let mut all_files = module_files(build_name, run.sources, run.root, module, false, jvm)?;
+    // package-info.java need not emit bytecode. Keep it in source checks.
+    let has_arch_sources = !all_files.is_empty();
+    let has_class_sources = all_files.iter().any(|file| {
+        file.file_name()
+            .is_some_and(|name| name != "package-info.java")
+    });
+    all_files.retain(|file| {
+        file.file_name()
+            .is_none_or(|name| name != "package-info.java")
+            || has_class_sources && module.compile_sources.contains(&run.root.join(file))
+    });
+    queued.excluded_source |= has_arch_sources && all_files.is_empty();
+    if all_files.is_empty() {
+        return Ok(());
+    }
+    if run.acquired.compile_failed && plan.needs_compile(plan.rules_for(&module.path)) {
+        outcome.record_coverage(&all_files);
+    } else if let Some(file) = all_files
+        .iter()
+        .find(|file| match SourceLanguage::of(file) {
+            Some(SourceLanguage::Java) => !module.compile_sources.contains(&run.root.join(file)),
+            Some(SourceLanguage::Kotlin) => !module.kotlin_compiled,
+            _ => false,
+        })
+    {
+        let mut failure = Failure::new(
+            FailureKind::EngineError,
+            "The build did not compile this source. Check the compiler's skip and exclude settings.",
+        );
+        failure.engine = Some(EngineName::Archunit);
+        failure.stage = Some(FailureStage::Engine);
+        failure.path = Some(file.to_string_lossy().replace('\\', "/"));
+        failure.modules.push(module.path.clone());
+        failure.file_count = Some(all_files.len());
+        failure.set_rules(arch_rules.iter().map(|rule| rule.id.as_str()));
+        outcome.failures.push(failure);
+        outcome.incomplete_files.extend(all_files.iter().cloned());
+        outcome.record_coverage(&all_files);
+    } else {
+        queued.architecture.push(ArchModule {
+            module,
+            rules: arch_rules,
+            files: all_files,
+            kotlin,
+            // Gradle validates input content for up-to-date and cache hits.
+            check_class_timestamps: plan.build == BuildSystem::Maven,
+        });
+    }
+    Ok(())
+}
+
+/// Report Java files that `--resolve-types` cannot check without a compiled classpath.
+fn report_missing_classpath(
+    module: &Module,
+    source_rules: &[&Rule],
+    files: &[PathBuf],
+    compile_failed: bool,
+    outcome: &mut Outcome,
+) {
+    let java_files = files
+        .iter()
+        .filter(|path| SourceLanguage::of(path) == Some(SourceLanguage::Java));
+    let count = java_files.clone().count();
+    if count == 0 {
+        return;
+    }
+    if !compile_failed {
+        let mut failure = Failure::new(
+            FailureKind::EngineError,
+            "The compiled classpath required by --resolve-types is unavailable.",
+        );
+        failure.engine = Some(EngineName::Pmd);
+        failure.stage = Some(FailureStage::Engine);
+        failure.modules.push(module.path.clone());
+        failure.file_count = Some(count);
+        failure.set_rules(
+            source_rules
+                .iter()
+                .filter(|rule| rule.uses_pmd_classpath())
+                .map(|rule| rule.id.as_str()),
+        );
+        outcome.failures.push(failure);
+    }
+    outcome.record_coverage(java_files);
+}
+
+fn queue_module<'x>(
+    run: &ModuleRun<'_, 'x>,
+    module: &'x Module,
+    queued: &mut Queued<'x>,
+    outcome: &mut Outcome,
+) -> Result<()> {
+    let plan = run.plan;
+    let config = run.config;
+    let acquired = run.acquired;
+    let build_name = plan.build.name();
+    let rules = plan.rules_for(&module.path);
+    let kotlin = plan.kotlin_for(&module.path);
+    let jvm = |language| {
+        language == SourceLanguage::Java || (language == SourceLanguage::Kotlin && kotlin)
+    };
+    let format_kotlin = plan.format_kotlin(&module.path);
+    let source_jvm =
+        |language| jvm(language) || (language == SourceLanguage::Kotlin && format_kotlin);
+    let mut files = module_files(
+        build_name,
+        run.sources,
+        run.target,
+        module,
+        format_kotlin,
+        source_jvm,
+    )?;
+    let arch_rules = rules
+        .iter()
+        .copied()
+        .filter(|rule| rule.engine == EngineName::Archunit)
+        .collect::<Vec<_>>();
+    queue_architecture(run, module, arch_rules, &files, queued, outcome)?;
+    files.extend(module_files(
+        build_name,
+        run.sources,
+        run.target,
+        module,
+        false,
+        |language| {
+            !matches!(language, SourceLanguage::Java | SourceLanguage::Kotlin)
+                && plan.web_for(&module.path, language)
+        },
+    )?);
+    if let Some(changes) = run.changes {
+        files.retain(|file| changes.matches(file));
+    }
+    let mut source_rules = rules
+        .iter()
+        .copied()
+        .filter(|rule| {
+            matches!(
+                rule.engine,
+                EngineName::Semgrep | EngineName::Pmd | EngineName::Eslint | EngineName::Builtin
+            )
+        })
+        .collect::<Vec<_>>();
+    queued.excluded_source |= files.iter().any(|file| config.excludes_source(file));
+    files.retain(|file| {
+        !config.excludes_source(file)
+            && SourceLanguage::of(file)
+                .is_some_and(|language| source_rules.iter().any(|rule| rule.applies_to(language)))
+    });
+    let test_rules = source_rules
+        .iter()
+        .copied()
+        .filter(|rule| rule.applies_to_java_tests())
+        .collect::<Vec<_>>();
+    let skips_tests = source_rules.iter().any(|rule| rule.skips_tests());
+    if !test_rules.is_empty() || skips_tests {
+        let tests = module_test_sources(
+            build_name,
+            run.sources,
+            run.target,
+            module,
+            config,
+            run.changes,
+            &files,
+            &mut queued.excluded_source,
+        )?;
+        if skips_tests {
+            outcome.skipped_test_files.extend(tests.iter().cloned());
+        }
+        if !test_rules.is_empty() {
+            add_source_group(
+                &mut queued.source_groups,
+                test_rules,
+                tests,
+                module.java_test_source.or(module.java_source),
+            );
+        }
+    }
+    let uses_classpath = source_rules.iter().any(|rule| rule.uses_pmd_classpath());
+    let maven_compiled =
+        plan.build == BuildSystem::Maven && acquired.compile_requested && !acquired.compile_failed;
+    let classpath = (!acquired.compile_failed
+        && uses_classpath
+        && (maven_compiled
+            || acquired.compile_all
+            || acquired.compile_names.contains(&module.path)))
+    .then(|| compiled_classpath(module))
+    .flatten();
+    if plan.resolve_imports && classpath.is_none() && uses_classpath {
+        report_missing_classpath(
+            module,
+            &source_rules,
+            &files,
+            acquired.compile_failed,
+            outcome,
+        );
+    }
+    let java_target = config.java_target.or(module.java_target);
+    let needs_target = config.java_target.is_none()
+        && module.java_target.is_some_and(|target| target < 21)
+        && source_rules.iter().any(|rule| rule.id == RESOURCE_RULE);
+    if classpath.is_some() || needs_target {
+        let java_files = files
+            .iter()
+            .filter(|path| SourceLanguage::of(path) == Some(SourceLanguage::Java))
+            .cloned()
+            .collect::<Vec<_>>();
+        if !java_files.is_empty() {
+            let pmd_rules = source_rules
+                .extract_if(.., |rule| rule.engine == EngineName::Pmd)
+                .collect::<Vec<_>>();
+            queued
+                .pmd_modules
+                .push((module, java_files, pmd_rules, classpath, java_target));
+        }
+    }
+    add_source_group(
+        &mut queued.source_groups,
+        source_rules,
+        files,
+        module.java_source,
+    );
+    Ok(())
+}
+
+/// Queue sources that sit outside every module's source directories.
+fn queue_unmapped_sources<'x>(run: &ModuleRun<'_, 'x>, queued: &mut Queued<'x>) -> Result<()> {
+    let plan = run.plan;
+    let model = &run.acquired.model;
+    let include_unmapped = |language| {
+        // Kotlin checks depend on the source sets registered by the JVM plugin.
+        (language != SourceLanguage::Kotlin
+            || !plan.global_kotlin && plan.kotlin_modules.is_empty())
+            && plan.global.iter().any(|rule| rule.applies_to(language))
+    };
+    if !SOURCE_LANGUAGES.into_iter().any(include_unmapped) {
+        return Ok(());
+    }
+    let roots = SOURCE_LANGUAGES
+        .into_iter()
+        .filter(|&language| include_unmapped(language))
+        .map(|language| {
+            let paths = model
+                .modules
+                .iter()
+                .flat_map(|module| {
+                    source_dirs(module, language, plan.format_kotlin(&module.path))
+                        .into_owned()
+                        .into_iter()
+                        .chain(
+                            module
+                                .test_source_dirs
+                                .iter()
+                                .filter(|_| language == SourceLanguage::Java)
+                                .cloned(),
+                        )
+                })
+                .collect::<BTreeSet<_>>();
+            (language, paths)
+        })
+        .collect::<BTreeMap<_, _>>();
+    let files = run.sources.collect(run.target, include_unmapped)?;
+    let excluded_source = &mut queued.excluded_source;
+    let files = files
+        .into_iter()
+        .filter(|path| {
+            run.changes.is_none_or(|changes| changes.matches(path))
+                && SourceLanguage::of(path)
+                    .and_then(|language| roots.get(&language))
+                    .is_none_or(|directories| {
+                        let full_path = run.root.join(path);
+                        !directories
+                            .iter()
+                            .any(|directory| full_path.starts_with(directory))
+                    })
+        })
+        .filter(|path| {
+            let excluded = run.config.excludes_source(path);
+            *excluded_source |= excluded;
+            !excluded
+        });
+    add_source_group(&mut queued.source_groups, plan.global.to_vec(), files, None);
+    Ok(())
+}
+
+pub async fn check(check: Check<'_>) -> Outcome {
+    let Check {
+        build,
+        root,
+        target,
+        filter,
+        registry,
+        config,
+        profiles,
+        global,
+        global_kotlin,
+        resolve_imports,
+        sources,
+        mut changes,
+        required,
+        mut module_git_outcome,
+    } = check;
+    let config_error = |error| failure(FailureKind::ConfigurationError, error);
+    if !target.starts_with(root) {
+        return failure(
+            FailureKind::PreparationError,
+            miette!("The check target must be inside the configuration directory"),
+        );
+    }
+    let (resolved, kotlin_modules) = match resolve_module_rules(registry, config, profiles) {
+        Ok(resolved) => resolved,
+        Err(outcome) => return *outcome,
+    };
+    if build == BuildSystem::Maven {
+        if global_kotlin || !kotlin_modules.is_empty() {
+            return config_error(miette!("Kotlin build integration requires Gradle"));
+        }
+        if !config.module_dependencies.forbid.is_empty() {
+            return config_error(miette!("module_dependencies.forbid requires Gradle"));
+        }
+    }
+    let plan = Plan {
+        build,
+        global,
+        overrides: resolved
+            .iter()
+            .map(|(&name, rules)| (name, rules.iter().collect::<Vec<_>>()))
+            .collect(),
+        kotlin_modules,
+        global_kotlin,
+        resolve_imports,
+    };
+    let (acquired, mut outcome) = match acquire_model(&plan, root, filter, &mut changes).await {
+        Ok(acquired) => acquired,
+        Err(outcome) => return outcome,
+    };
+    let model = &acquired.model;
     let build_name = build.name();
     let known = model
         .modules
@@ -278,7 +701,8 @@ pub async fn check(check: Check<'_>) -> Outcome {
         .forbid
         .iter()
         .flat_map(|dependency| [dependency.from.as_str(), dependency.to.as_str()]);
-    for name in overrides
+    for name in plan
+        .overrides
         .keys()
         .copied()
         .chain(filter)
@@ -294,7 +718,8 @@ pub async fn check(check: Check<'_>) -> Outcome {
         .iter()
         .filter(|module| {
             filter.is_none_or(|filter| filter == module.path)
-                && affected
+                && acquired
+                    .affected
                     .as_ref()
                     .is_none_or(|affected| affected.contains(&module.path))
                 && (target == root
@@ -305,10 +730,14 @@ pub async fn check(check: Check<'_>) -> Outcome {
                         .iter()
                         .chain(&module.test_source_dirs)
                         .any(|dir| target.starts_with(dir) || dir.starts_with(target))
-                    || kotlin_sources(&module.path)
-                        && source_dirs(module, SourceLanguage::Kotlin, format_kotlin(&module.path))
-                            .iter()
-                            .any(|dir| target.starts_with(dir) || dir.starts_with(target)))
+                    || plan.kotlin_sources(&module.path)
+                        && source_dirs(
+                            module,
+                            SourceLanguage::Kotlin,
+                            plan.format_kotlin(&module.path),
+                        )
+                        .iter()
+                        .any(|dir| target.starts_with(dir) || dir.starts_with(target)))
         })
         .collect::<Vec<_>>();
     let selected_names = selected
@@ -335,261 +764,32 @@ pub async fn check(check: Check<'_>) -> Outcome {
             .retain(|path| selected_path(path));
         outcome.merge(module_git_outcome);
     }
-    let mut source_groups = BTreeMap::new();
-    let mut pmd_modules = Vec::new();
-    let mut excluded_source = false;
-    let mut architecture = Vec::new();
-    for module in selected {
-        let rules = rules_for(&module.path);
-        let kotlin = kotlin_for(&module.path);
-        let jvm = |language| {
-            language == SourceLanguage::Java || (language == SourceLanguage::Kotlin && kotlin)
-        };
-        let format_kotlin = format_kotlin(&module.path);
-        let source_jvm =
-            |language| jvm(language) || (language == SourceLanguage::Kotlin && format_kotlin);
-        let mut files = match module_files(
-            build_name,
-            sources,
-            target,
-            module,
-            format_kotlin,
-            source_jvm,
-        ) {
-            Ok(files) => files,
-            Err(error) => return preparation_error(error),
-        };
-        let arch_rules = rules
-            .iter()
-            .copied()
-            .filter(|rule| rule.engine == EngineName::Archunit)
-            .collect::<Vec<_>>();
-        if !arch_rules.is_empty()
-            && (affected.is_some()
-                || files
-                    .iter()
-                    .any(|path| SourceLanguage::of(path).is_some_and(jvm)))
-        {
-            let mut all_files = match module_files(build_name, sources, root, module, false, jvm) {
-                Ok(files) => files,
-                Err(error) => return preparation_error(error),
-            };
-            // package-info.java need not emit bytecode. Keep it in source checks.
-            let has_arch_sources = !all_files.is_empty();
-            let has_class_sources = all_files.iter().any(|file| {
-                file.file_name()
-                    .is_some_and(|name| name != "package-info.java")
-            });
-            all_files.retain(|file| {
-                file.file_name()
-                    .is_none_or(|name| name != "package-info.java")
-                    || has_class_sources && module.compile_sources.contains(&root.join(file))
-            });
-            excluded_source |= has_arch_sources && all_files.is_empty();
-            if !all_files.is_empty() {
-                if compile_failed && needs_compile(rules) {
-                    outcome.record_coverage(&all_files);
-                } else if let Some(file) =
-                    all_files
-                        .iter()
-                        .find(|file| match SourceLanguage::of(file) {
-                            Some(SourceLanguage::Java) => {
-                                !module.compile_sources.contains(&root.join(file))
-                            }
-                            Some(SourceLanguage::Kotlin) => !module.kotlin_compiled,
-                            _ => false,
-                        })
-                {
-                    let mut failure = Failure::new(
-                        FailureKind::EngineError,
-                        "The build did not compile this source. Check the compiler's skip and exclude settings.",
-                    );
-                    failure.engine = Some(EngineName::Archunit);
-                    failure.stage = Some(FailureStage::Engine);
-                    failure.path = Some(file.to_string_lossy().replace('\\', "/"));
-                    failure.modules.push(module.path.clone());
-                    failure.file_count = Some(all_files.len());
-                    failure.set_rules(arch_rules.iter().map(|rule| rule.id.as_str()));
-                    outcome.failures.push(failure);
-                    outcome.incomplete_files.extend(all_files.iter().cloned());
-                    outcome.record_coverage(&all_files);
-                } else {
-                    architecture.push(ArchModule {
-                        module,
-                        rules: arch_rules,
-                        files: all_files,
-                        kotlin,
-                        // Gradle validates input content for up-to-date and cache hits.
-                        check_class_timestamps: build == BuildSystem::Maven,
-                    });
-                }
-            }
-        }
-        match module_files(build_name, sources, target, module, false, |language| {
-            !matches!(language, SourceLanguage::Java | SourceLanguage::Kotlin)
-                && web_for(&module.path, language)
-        }) {
-            Ok(web_files) => files.extend(web_files),
-            Err(error) => return preparation_error(error),
-        }
-        if let Some(changes) = changes {
-            files.retain(|file| changes.matches(file));
-        }
-        let mut source_rules = rules
-            .iter()
-            .copied()
-            .filter(|rule| {
-                matches!(
-                    rule.engine,
-                    EngineName::Semgrep
-                        | EngineName::Pmd
-                        | EngineName::Eslint
-                        | EngineName::Builtin
-                )
-            })
-            .collect::<Vec<_>>();
-        excluded_source |= files.iter().any(|file| config.excludes_source(file));
-        files.retain(|file| {
-            !config.excludes_source(file)
-                && SourceLanguage::of(file).is_some_and(|language| {
-                    source_rules.iter().any(|rule| rule.applies_to(language))
-                })
-        });
-        let test_rules = source_rules
-            .iter()
-            .copied()
-            .filter(|rule| rule.applies_to_java_tests())
-            .collect::<Vec<_>>();
-        if !test_rules.is_empty() || source_rules.iter().any(|rule| rule.skips_tests()) {
-            let tests = match module_test_sources(
-                build_name,
-                sources,
-                target,
-                module,
-                config,
-                changes,
-                &files,
-                &mut excluded_source,
-            ) {
-                Ok(tests) => tests,
-                Err(error) => return preparation_error(error),
-            };
-            if source_rules.iter().any(|rule| rule.skips_tests()) {
-                outcome.skipped_test_files.extend(tests.iter().cloned());
-            }
-            if !test_rules.is_empty() {
-                add_source_group(
-                    &mut source_groups,
-                    test_rules,
-                    tests,
-                    module.java_test_source.or(module.java_source),
-                );
-            }
-        }
-        let uses_classpath = source_rules.iter().any(|rule| rule.uses_pmd_classpath());
-        let classpath = (!compile_failed
-            && uses_classpath
-            && (maven_compiled || compile_all || compile_names.contains(&module.path)))
-        .then(|| compiled_classpath(module))
-        .flatten();
-        if resolve_imports && classpath.is_none() && uses_classpath {
-            let java_files = files
-                .iter()
-                .filter(|path| SourceLanguage::of(path) == Some(SourceLanguage::Java));
-            let count = java_files.clone().count();
-            if count > 0 {
-                if !compile_failed {
-                    let mut failure = Failure::new(
-                        FailureKind::EngineError,
-                        "The compiled classpath required by --resolve-types is unavailable.",
-                    );
-                    failure.engine = Some(EngineName::Pmd);
-                    failure.stage = Some(FailureStage::Engine);
-                    failure.modules.push(module.path.clone());
-                    failure.file_count = Some(count);
-                    failure.set_rules(
-                        source_rules
-                            .iter()
-                            .filter(|rule| rule.uses_pmd_classpath())
-                            .map(|rule| rule.id.as_str()),
-                    );
-                    outcome.failures.push(failure);
-                }
-                outcome.record_coverage(java_files);
-            }
-        }
-        let java_target = config.java_target.or(module.java_target);
-        let needs_target = config.java_target.is_none()
-            && module.java_target.is_some_and(|target| target < 21)
-            && source_rules.iter().any(|rule| rule.id == RESOURCE_RULE);
-        if classpath.is_some() || needs_target {
-            let java_files = files
-                .iter()
-                .filter(|path| SourceLanguage::of(path) == Some(SourceLanguage::Java))
-                .cloned()
-                .collect::<Vec<_>>();
-            if !java_files.is_empty() {
-                let pmd_rules = source_rules
-                    .extract_if(.., |rule| rule.engine == EngineName::Pmd)
-                    .collect::<Vec<_>>();
-                pmd_modules.push((module, java_files, pmd_rules, classpath, java_target));
-            }
-        }
-        add_source_group(&mut source_groups, source_rules, files, module.java_source);
-    }
-    let include_unmapped = |language| {
-        // Kotlin checks depend on the source sets registered by the JVM plugin.
-        (language != SourceLanguage::Kotlin || !global_kotlin && kotlin_modules.is_empty())
-            && global.iter().any(|rule| rule.applies_to(language))
+    let run = ModuleRun {
+        plan: &plan,
+        root,
+        target,
+        sources,
+        config,
+        changes,
+        acquired: &acquired,
     };
-    if filter.is_none() && SOURCE_LANGUAGES.into_iter().any(include_unmapped) {
-        let roots = SOURCE_LANGUAGES
-            .into_iter()
-            .filter(|&language| include_unmapped(language))
-            .map(|language| {
-                let paths = model
-                    .modules
-                    .iter()
-                    .flat_map(|module| {
-                        source_dirs(module, language, format_kotlin(&module.path))
-                            .into_owned()
-                            .into_iter()
-                            .chain(
-                                module
-                                    .test_source_dirs
-                                    .iter()
-                                    .filter(|_| language == SourceLanguage::Java)
-                                    .cloned(),
-                            )
-                    })
-                    .collect::<BTreeSet<_>>();
-                (language, paths)
-            })
-            .collect::<BTreeMap<_, _>>();
-        let files = match sources.collect(target, include_unmapped) {
-            Ok(files) => files,
-            Err(error) => return preparation_error(error),
-        };
-        let files = files
-            .into_iter()
-            .filter(|path| {
-                changes.is_none_or(|changes| changes.matches(path))
-                    && SourceLanguage::of(path)
-                        .and_then(|language| roots.get(&language))
-                        .is_none_or(|directories| {
-                            let full_path = root.join(path);
-                            !directories
-                                .iter()
-                                .any(|directory| full_path.starts_with(directory))
-                        })
-            })
-            .filter(|path| {
-                let excluded = config.excludes_source(path);
-                excluded_source |= excluded;
-                !excluded
-            });
-        add_source_group(&mut source_groups, global.to_vec(), files, None);
+    let mut queued = Queued::default();
+    for module in selected {
+        if let Err(error) = queue_module(&run, module, &mut queued, &mut outcome) {
+            return failure(FailureKind::PreparationError, error);
+        }
     }
+    if filter.is_none()
+        && let Err(error) = queue_unmapped_sources(&run, &mut queued)
+    {
+        return failure(FailureKind::PreparationError, error);
+    }
+    let Queued {
+        source_groups,
+        pmd_modules,
+        architecture,
+        excluded_source,
+    } = queued;
 
     let dependency_checks = config
         .module_dependencies
@@ -612,9 +812,10 @@ pub async fn check(check: Check<'_>) -> Outcome {
         if global.iter().any(|rule| rule.id == FLYWAY_RULE) {
             return outcome;
         }
-        outcome.merge(preparation_error(miette!(
-            "No {build_name} module targets apply to this check"
-        )));
+        outcome.merge(failure(
+            FailureKind::PreparationError,
+            miette!("No {build_name} module targets apply to this check"),
+        ));
         return outcome;
     }
     if !dependency_checks.is_empty() {
@@ -624,7 +825,7 @@ pub async fn check(check: Check<'_>) -> Outcome {
         };
         outcome.diagnostics.extend(module_dependency_diagnostics(
             root,
-            &model,
+            model,
             rule,
             &dependency_checks,
         ));

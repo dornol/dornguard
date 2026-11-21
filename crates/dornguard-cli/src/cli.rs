@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
 #[command(
@@ -59,52 +59,7 @@ Examples
 
 Keep the same scope and profile options when switching between agent and JSON output.
 With --changed, build-backed Maven checks report full scope.")]
-    Check {
-        #[arg(default_value = ".")]
-        target: PathBuf,
-        /// Add a profile to the project and module profiles
-        #[arg(long, conflicts_with = "only_profile")]
-        profile: Vec<String>,
-        /// Use these profiles in place of the configured project and module profiles
-        #[arg(long, value_name = "PROFILE")]
-        only_profile: Vec<String>,
-        /// Report format. Use agent for a compact review or json for every finding and failure
-        #[arg(long, value_enum, default_value_t = Format::Text)]
-        format: Format,
-        /// Show findings for this rule without changing the check or exit status. Repeat to include more rules
-        #[arg(long, value_name = "RULE_ID")]
-        report_rule: Vec<String>,
-        /// Show findings under this project-relative file or directory. Repeat to include more paths
-        #[arg(long, value_name = "PATH", value_parser = report_path)]
-        report_path: Vec<PathBuf>,
-        /// Use a specific configuration file
-        #[arg(long, value_name = "PATH")]
-        config: Option<PathBuf>,
-        /// Check one Gradle module or Maven reactor module
-        #[arg(long, value_name = "MODULE")]
-        module: Option<String>,
-        /// Compile main Java sources for PMD type resolution, including wildcard imports
-        #[arg(long, visible_alias = "resolve-types")]
-        resolve_imports: bool,
-        /// Check staged, unstaged and untracked changes
-        #[arg(long, conflicts_with = "module")]
-        changed: bool,
-        /// Compare committed changes from the merge base of HEAD and REF
-        #[arg(long, value_name = "REF", requires = "changed")]
-        base: Option<String>,
-        /// Suppress existing violations recorded in a baseline
-        #[arg(long, value_name = "PATH")]
-        baseline: Option<PathBuf>,
-        /// Report baselined findings in files selected by --changed
-        #[arg(long, requires = "baseline", requires = "changed")]
-        strict_changed: bool,
-        /// Fail a complete full scan when the baseline records findings that no longer occur
-        #[arg(long, requires = "baseline")]
-        ratchet: bool,
-        /// Enforce a policy supplied outside the project worktree
-        #[arg(long, value_name = "PATH")]
-        organization_policy: Option<PathBuf>,
-    },
+    Check(CheckArgs),
     /// Audit a Maven project's resolved runtime dependencies for known vulnerabilities
     Audit {
         #[arg(default_value = ".")]
@@ -187,6 +142,54 @@ Run dornguard check --format agent to verify how the configuration applies."#
         #[command(subcommand)]
         command: RuleAction,
     },
+}
+
+#[derive(Args)]
+pub(crate) struct CheckArgs {
+    #[arg(default_value = ".")]
+    pub(crate) target: PathBuf,
+    /// Add a profile to the project and module profiles
+    #[arg(long, conflicts_with = "only_profile")]
+    pub(crate) profile: Vec<String>,
+    /// Use these profiles in place of the configured project and module profiles
+    #[arg(long, value_name = "PROFILE")]
+    pub(crate) only_profile: Vec<String>,
+    /// Report format. Use agent for a compact review or json for every finding and failure
+    #[arg(long, value_enum, default_value_t = Format::Text)]
+    pub(crate) format: Format,
+    /// Show findings for this rule without changing the check or exit status. Repeat to include more rules
+    #[arg(long, value_name = "RULE_ID")]
+    pub(crate) report_rule: Vec<String>,
+    /// Show findings under this project-relative file or directory. Repeat to include more paths
+    #[arg(long, value_name = "PATH", value_parser = report_path)]
+    pub(crate) report_path: Vec<PathBuf>,
+    /// Use a specific configuration file
+    #[arg(long, value_name = "PATH")]
+    pub(crate) config: Option<PathBuf>,
+    /// Check one Gradle module or Maven reactor module
+    #[arg(long, value_name = "MODULE")]
+    pub(crate) module: Option<String>,
+    /// Compile main Java sources for PMD type resolution, including wildcard imports
+    #[arg(long, visible_alias = "resolve-types")]
+    pub(crate) resolve_imports: bool,
+    /// Check staged, unstaged and untracked changes
+    #[arg(long, conflicts_with = "module")]
+    pub(crate) changed: bool,
+    /// Compare committed changes from the merge base of HEAD and REF
+    #[arg(long, value_name = "REF", requires = "changed")]
+    pub(crate) base: Option<String>,
+    /// Suppress existing violations recorded in a baseline
+    #[arg(long, value_name = "PATH")]
+    pub(crate) baseline: Option<PathBuf>,
+    /// Report baselined findings in files selected by --changed
+    #[arg(long, requires = "baseline", requires = "changed")]
+    pub(crate) strict_changed: bool,
+    /// Fail a complete full scan when the baseline records findings that no longer occur
+    #[arg(long, requires = "baseline")]
+    pub(crate) ratchet: bool,
+    /// Enforce a policy supplied outside the project worktree
+    #[arg(long, value_name = "PATH")]
+    pub(crate) organization_policy: Option<PathBuf>,
 }
 
 #[derive(Subcommand)]
