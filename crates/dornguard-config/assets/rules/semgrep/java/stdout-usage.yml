@@ -3,4 +3,14 @@ rules:
     languages: [java]
     message: Use the project logger.
     severity: ERROR
-    pattern: System.out.println(...)
+    patterns:
+      - pattern: System.out.println(...)
+      # A command-line entry point writes to standard output by design.
+      - pattern-not-inside: |
+          public static void main(String[] $ARGS) {
+            ...
+          }
+      - pattern-not-inside: |
+          public static void main(String... $ARGS) {
+            ...
+          }

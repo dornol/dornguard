@@ -41,13 +41,15 @@ fn kotlin_source_rules_and_external_languages_run_in_kotlin_only_modules() {
     assert_eq!(clean["files_scanned"], 1);
 
     let file = "src/main/kotlin/example/Example.kt";
-    let source = "package example\n\nfun display() {\n    println(42)\n}\n";
+    // A command-line entry point prints by design; other functions do not.
+    let source = "package example\n\nfun main(args: Array<String>) {\n    println(args.size)\n}\n\nfun display() {\n    println(42)\n}\n";
     fs::write(root.join(file), source).unwrap();
     let flagged = report(check(root).output().unwrap(), 1);
     let finding = &flagged["diagnostics"][0];
     assert_eq!(finding["rule_id"], "kotlin.stdout-usage");
     assert_eq!(finding["path"], file);
-    assert_eq!(finding["line"], 4);
+    assert_eq!(finding["line"], 8);
+    assert_eq!(flagged["diagnostics"].as_array().unwrap().len(), 1);
 
     fs::write(
         root.join(file),

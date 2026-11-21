@@ -3,6 +3,12 @@ rules:
     languages: [kotlin]
     severity: ERROR
     message: Use the project logger.
-    pattern-either:
-      - pattern: println(...)
-      - pattern: kotlin.io.println(...)
+    patterns:
+      - pattern-either:
+          - pattern: println(...)
+          - pattern: kotlin.io.println(...)
+      # A command-line entry point writes to standard output by design.
+      - pattern-not-inside: |
+          fun main(...) {
+            ...
+          }
