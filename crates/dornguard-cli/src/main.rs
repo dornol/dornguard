@@ -56,6 +56,8 @@ async fn dispatch(action: Action) -> Result<u8> {
             changed,
             base,
             baseline,
+            strict_changed,
+            ratchet,
             organization_policy,
         } => {
             let mut outcome = async {
@@ -81,7 +83,13 @@ async fn dispatch(action: Action) -> Result<u8> {
                 )
                 .await;
                 if let Some(baseline) = loaded_baseline {
-                    baseline.apply(&mut outcome);
+                    baseline.apply_project(
+                        &mut outcome,
+                        baseline::ProjectOptions {
+                            strict_changed,
+                            ratchet,
+                        },
+                    );
                 }
                 outcome
             }

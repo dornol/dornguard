@@ -245,6 +245,16 @@ matches earlier PMD fingerprints for existing baseline and ignore entries.
 With `--changed`, DornGuard runs a full scan if the selected baseline changed
 or Git cannot verify it as a tracked project file.
 
+A baseline hides existing findings, so two options keep the debt shrinking:
+
+- `--strict-changed` (with `--changed`) reports baselined findings in the
+  files that the run selected. Whoever edits a file also clears its legacy
+  findings; untouched files stay hidden.
+- `--ratchet` fails a complete full scan when the baseline records findings
+  that no longer occur. Without it, the report only notes the count. Run
+  `dornguard baseline create --force` and commit the smaller file, so the
+  baseline can only shrink.
+
 ## Organization policy
 
 From a trusted CI job, run

@@ -95,6 +95,12 @@ With --changed, build-backed Maven checks report full scope.")]
         /// Suppress existing violations recorded in a baseline
         #[arg(long, value_name = "PATH")]
         baseline: Option<PathBuf>,
+        /// Report baselined findings in files selected by --changed
+        #[arg(long, requires = "baseline", requires = "changed")]
+        strict_changed: bool,
+        /// Fail a complete full scan when the baseline records findings that no longer occur
+        #[arg(long, requires = "baseline")]
+        ratchet: bool,
         /// Enforce a policy supplied outside the project worktree
         #[arg(long, value_name = "PATH")]
         organization_policy: Option<PathBuf>,

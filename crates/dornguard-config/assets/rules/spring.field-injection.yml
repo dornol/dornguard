@@ -2,7 +2,14 @@ id: spring.field-injection
 engine: semgrep
 severity: error
 description: Spring field injection hides a class's dependencies.
-fix: Move the dependency to a constructor parameter and store it in a final field.
+fix: >-
+  Take the dependency as a constructor parameter and store it in a private
+  final field, then remove @Autowired from the field. With Lombok, add
+  @RequiredArgsConstructor to the class and make the field private final.
+  Lombok does not copy @Qualifier from a field to the generated constructor
+  unless lombok.config lists it under lombok.copyableAnnotations. A circular
+  dependency needs a design change instead: extract the shared logic into a
+  third bean.
 implementation:
   config: rules/semgrep/spring/field-injection.yml
   rule_id: spring-field-injection

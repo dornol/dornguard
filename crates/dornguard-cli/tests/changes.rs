@@ -723,3 +723,83 @@ fn tracked_changes_are_checked_even_when_their_directory_is_gitignored() {
         assert_eq!(result["diagnostics"][0]["rule_id"], "format.final-newline");
     }
 }
+
+#[test]
+#[ignore = "requires the pinned Semgrep version and Git"]
+fn strict_changed_reports_baselined_findings_only_in_edited_files() {
+    let violation = CLEAN.replace("return 42;", "System.out.println(42); return 42;");
+    let project = project(&violation);
+    let root = project.path();
+    fs::write(
+        root.join("src/Other.java"),
+        violation.replace("Example", "Other"),
+    )
+    .unwrap();
+    let create = Command::new(env!("CARGO_BIN_EXE_dornguard"))
+        .current_dir(root)
+        .args(["baseline", "create"])
+        .output()
+        .unwrap();
+    assert!(create.status.success());
+    commit_fixture(root);
+
+    fs::write(
+        root.join("src/Example.java"),
+        format!("{violation}\n// touched\n"),
+    )
+    .unwrap();
+    let args = ["--changed", "--baseline", ".dornguard-baseline.json"];
+    let lenient = report(check(root).args(args).output().unwrap(), 0);
+    assert_eq!(lenient["suppressed_count"], 1, "{lenient}");
+
+    let strict = report(
+        check(root)
+            .args(args)
+            .arg("--strict-changed")
+            .output()
+            .unwrap(),
+        1,
+    );
+    let diagnostics = strict["diagnostics"].as_array().unwrap();
+    assert_eq!(diagnostics.len(), 1, "{strict}");
+    assert_eq!(diagnostics[0]["path"], "src/Example.java");
+    assert!(
+        strict["analysis_notes"]
+            .to_string()
+            .contains("1 baselined findings in changed files")
+    );
+}
+
+#[test]
+#[ignore = "requires the pinned Semgrep version on PATH"]
+fn ratchet_fails_when_the_baseline_records_findings_that_no_longer_occur() {
+    let violation = CLEAN.replace("return 42;", "System.out.println(42); return 42;");
+    let project = project(&violation);
+    let root = project.path();
+    let create = Command::new(env!("CARGO_BIN_EXE_dornguard"))
+        .current_dir(root)
+        .args(["baseline", "create"])
+        .output()
+        .unwrap();
+    assert!(create.status.success());
+    let args = ["--baseline", ".dornguard-baseline.json"];
+
+    let current = report(check(root).args(args).arg("--ratchet").output().unwrap(), 0);
+    assert_eq!(current["suppressed_count"], 1, "{current}");
+
+    fs::write(root.join("src/Example.java"), CLEAN).unwrap();
+    let note = report(check(root).args(args).output().unwrap(), 0);
+    assert!(
+        note["analysis_notes"]
+            .to_string()
+            .contains("records 1 findings that no longer occur"),
+        "{note}"
+    );
+    let failed = report(check(root).args(args).arg("--ratchet").output().unwrap(), 2);
+    assert!(
+        failed["failures"][0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("baseline create --force")
+    );
+}

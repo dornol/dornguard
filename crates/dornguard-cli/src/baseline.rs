@@ -1,16 +1,22 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
 use std::io::{BufReader, Write};
 use std::path::Path;
 
 use dornguard_config::Ignore;
-use dornguard_core::{Diagnostic, Outcome, valid_fingerprint};
+use dornguard_core::{Diagnostic, Failure, FailureKind, Outcome, Scope, valid_fingerprint};
 use miette::{IntoDiagnostic, Result, WrapErr, bail, miette};
 use serde::{Deserialize, Serialize};
 
 const VERSION: u8 = 2;
 
 pub struct Baseline(BTreeMap<Entry, usize>);
+
+#[derive(Clone, Copy, Default)]
+pub struct ProjectOptions {
+    pub strict_changed: bool,
+    pub ratchet: bool,
+}
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -96,12 +102,60 @@ impl Baseline {
         Self(counts)
     }
 
-    pub fn apply(mut self, outcome: &mut Outcome) {
+    pub fn apply(self, outcome: &mut Outcome) {
+        self.apply_to(outcome, &BTreeSet::new());
+    }
+
+    /// Apply a project baseline selected with `--baseline`.
+    ///
+    /// With `strict_changed`, findings in files that a `--changed` run
+    /// selected are reported even when the baseline records them, so legacy
+    /// findings shrink wherever someone edits. With `ratchet`, a complete
+    /// full scan fails when the baseline records findings that no longer
+    /// occur, which keeps the baseline from hiding future regressions.
+    pub fn apply_project(self, outcome: &mut Outcome, options: ProjectOptions) {
+        let touched = if options.strict_changed && matches!(outcome.scope, Scope::Changed) {
+            outcome
+                .scanned_files
+                .iter()
+                .map(|path| path.to_string_lossy().replace('\\', "/"))
+                .collect()
+        } else {
+            BTreeSet::new()
+        };
+        let total: usize = self.0.values().sum();
+        let (reported, remaining) = self.apply_to(outcome, &touched);
+        if reported > 0 {
+            outcome.analysis_notes.insert(format!(
+                "{reported} baselined findings in changed files are reported because --strict-changed is set. Fix them while you edit these files."
+            ));
+        }
+        let complete_full_scan = matches!(outcome.scope, Scope::Full)
+            && outcome.failures.is_empty()
+            && outcome.analysis_warnings.is_empty();
+        if total > 0 && remaining > 0 && complete_full_scan {
+            let message = format!(
+                "The baseline records {remaining} findings that no longer occur. Run `dornguard baseline create --force` to shrink it."
+            );
+            if options.ratchet {
+                outcome
+                    .failures
+                    .push(Failure::new(FailureKind::ConfigurationError, message));
+            } else {
+                outcome.analysis_notes.insert(message);
+            }
+        }
+    }
+
+    /// Returns the number of baselined findings kept because their file was
+    /// touched, and the number of baseline entries that matched nothing.
+    fn apply_to(mut self, outcome: &mut Outcome, touched: &BTreeSet<String>) -> (usize, usize) {
         if self.0.is_empty() {
-            return;
+            return (0, 0);
         }
         outcome.diagnostics.sort();
         outcome.diagnostics.dedup();
+        let mut reported = 0;
         // Match current identities first. A compatibility alias must not
         // spend a recorded occurrence belonging to another exact match.
         for legacy in [false, true] {
@@ -109,6 +163,17 @@ impl Baseline {
                 let Some(mut entry) = Entry::from_diagnostic(diagnostic) else {
                     return true;
                 };
+                if diagnostic
+                    .path
+                    .as_ref()
+                    .is_some_and(|path| touched.contains(path))
+                {
+                    if legacy {
+                        return true;
+                    }
+                    reported += usize::from(self.recorded(&entry, diagnostic));
+                    return true;
+                }
                 let matched = if legacy {
                     diagnostic.legacy_fingerprints.iter().any(|hash| {
                         entry.fingerprint.clone_from(hash);
@@ -121,6 +186,18 @@ impl Baseline {
                 !matched
             });
         }
+        let remaining = self.0.values().sum();
+        (reported, remaining)
+    }
+
+    fn recorded(&self, entry: &Entry, diagnostic: &Diagnostic) -> bool {
+        let has = |entry: &Entry| self.0.get(entry).is_some_and(|count| *count > 0);
+        has(entry)
+            || diagnostic.legacy_fingerprints.iter().any(|hash| {
+                let mut alias = entry.clone();
+                alias.fingerprint.clone_from(hash);
+                has(&alias)
+            })
     }
 
     fn consume(&mut self, entry: &Entry) -> bool {
