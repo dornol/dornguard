@@ -484,3 +484,29 @@ fn thymeleaf_partial_parsing_names_the_position_and_literal_markup() {
         "{message}"
     );
 }
+
+#[test]
+#[ignore = "requires the pinned Semgrep version on PATH"]
+fn thymeleaf_partial_parsing_names_a_duplicate_closing_tag() {
+    let project = tempfile::tempdir().unwrap();
+    let root = project.path();
+    let path = "src/main/resources/templates/mail.html";
+    fs::create_dir_all(root.join(path).parent().unwrap()).unwrap();
+    fs::write(
+        root.join(path),
+        "<html>\n<body>\n<p th:text=\"${name}\"></p>\n</body>\n</html>\n\n</html>\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [thymeleaf]\n",
+    )
+    .unwrap();
+    let result = report(check(root).output().unwrap(), 3);
+    let message = result["failures"][0]["message"].as_str().unwrap();
+    assert!(message.contains("line 7, column 1"), "{message}");
+    assert!(
+        message.contains("`</html>` closes an element that is already closed"),
+        "{message}"
+    );
+}

@@ -44,6 +44,22 @@ git show "$base_commit:.dornguard-baseline.json" > "$baseline"
 dornguard check --baseline "$baseline" --format json
 ```
 
+To make a pull request clear the legacy findings in the files it edits, scan
+only the changes and report baselined findings in those files. The guard above
+guarantees that the baseline in the worktree equals the base branch's, so you
+can pass it directly:
+
+```sh
+dornguard check --changed --base "$base_commit" \
+  --baseline .dornguard-baseline.json --strict-changed --format json
+```
+
+Add `--ratchet` to a job on the main branch or a schedule, not to the pull
+request check above. It fails a complete full scan when the baseline records
+findings that no longer occur, so the baseline can only shrink. A pull request
+that fixes findings would fail the same check against the base baseline.
+Regenerate the file with `dornguard baseline create --force` and commit it.
+
 For organization-wide blocking rules, add
 `--organization-policy /trusted/organization.yml` from a trusted location.
 The baseline applies to the project check. See the

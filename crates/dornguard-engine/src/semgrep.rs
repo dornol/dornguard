@@ -171,19 +171,42 @@ struct Location {
     offset: usize,
 }
 
-fn literal_markup_hint(root: &Path, path: &Path, line: u64, column: u64) -> Option<&'static str> {
+fn literal_markup_hint(root: &Path, path: &Path, line: u64, column: u64) -> Option<String> {
     let text = std::fs::read_to_string(root.join(path)).ok()?;
-    let line = text
-        .lines()
-        .nth(usize::try_from(line.checked_sub(1)?).ok()?)?;
-    match line
-        .chars()
-        .nth(usize::try_from(column.checked_sub(1)?).ok()?)?
-    {
-        '>' => Some("A literal `>` in text should be written as `&gt;`."),
-        '&' => Some("A literal `&` in text should be written as `&amp;`."),
+    let line_index = usize::try_from(line.checked_sub(1)?).ok()?;
+    let column_index = usize::try_from(column.checked_sub(1)?).ok()?;
+    let source_line = text.lines().nth(line_index)?;
+    let rest: String = source_line.chars().skip(column_index).collect();
+    match rest.chars().next()? {
+        '>' => Some("A literal `>` in text should be written as `&gt;`.".to_owned()),
+        '&' => Some("A literal `&` in text should be written as `&amp;`.".to_owned()),
+        '<' => duplicate_closing_tag(&text, line_index, &rest),
         _ => None,
     }
+}
+
+/// Names a closing tag that closes an element already closed earlier.
+fn duplicate_closing_tag(text: &str, line_index: usize, rest: &str) -> Option<String> {
+    let name = rest.strip_prefix("</")?.split('>').next()?.trim();
+    if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        return None;
+    }
+    let closing = format!("</{name}>");
+    let before: Vec<&str> = text.lines().take(line_index).collect();
+    let earlier = before.iter().any(|line| line.contains(&closing));
+    let opens = before
+        .iter()
+        .map(|line| line.matches(&format!("<{name}")).count())
+        .sum::<usize>();
+    let closes = before
+        .iter()
+        .map(|line| line.matches(&closing).count())
+        .sum::<usize>();
+    (earlier && closes >= opens).then(|| {
+        format!(
+            "`{closing}` closes an element that is already closed. Remove the extra closing tag."
+        )
+    })
 }
 
 fn normalize(
@@ -253,7 +276,7 @@ fn normalize(
                     && let Some(hint) = literal_markup_hint(root, path, line, column)
                 {
                     message.push(' ');
-                    message.push_str(hint);
+                    message.push_str(&hint);
                 }
             }
             if template {
