@@ -276,7 +276,8 @@ public record Book(BookRepository repository) {
     )
     .unwrap();
     let resolved = report(check(&root).arg("--resolve-imports").output().unwrap(), 0);
-    assert_eq!(resolved["files_scanned"], 6, "{resolved}");
+    // BookTest is a test source, which java.unnecessary-import skips by default.
+    assert_eq!(resolved["files_scanned"], 5, "{resolved}");
     assert_eq!(
         unnecessary_import_lines(&resolved, domain_path),
         [3, 6],
@@ -291,14 +292,6 @@ public record Book(BookRepository repository) {
         "{resolved}"
     );
     assert!(
-        resolved["pmd_coverage"]["source_only"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|path| path == test_path),
-        "{resolved}"
-    );
-    assert!(
         resolved["diagnostics"]
             .as_array()
             .unwrap()
@@ -308,9 +301,8 @@ public record Book(BookRepository repository) {
             ),
         "{resolved}"
     );
-    assert_eq!(
-        unnecessary_import_lines(&resolved, test_path),
-        [3],
+    assert!(
+        unnecessary_import_lines(&resolved, test_path).is_empty(),
         "{resolved}"
     );
     assert_eq!(
@@ -351,7 +343,7 @@ public record Book(BookRepository repository) {
 
 #[test]
 #[ignore = "requires Maven 3, JDK 21, both source engines and the bundled JVM artifacts"]
-fn maven_tracks_effective_compile_inputs_and_checks_custom_test_sources() {
+fn maven_tracks_effective_compile_inputs_and_skips_custom_test_sources() {
     let _maven = MAVEN_TEST_LOCK
         .lock()
         .unwrap_or_else(PoisonError::into_inner);
@@ -392,8 +384,8 @@ fn maven_tracks_effective_compile_inputs_and_checks_custom_test_sources() {
         "package example; import org.springframework.beans.factory.annotation.Autowired; class BrokenTest { @Autowired Object dependency; void example() { try { operation(); } catch (Exception _) {} } void operation() throws Exception {} }\n",
     ).unwrap();
 
-    let first = report(check(root).output().unwrap(), 1);
-    assert_eq!(first["files_scanned"], 3, "{first}");
+    let first = report(check(root).output().unwrap(), 0);
+    assert_eq!(first["files_scanned"], 2, "{first}");
     assert_eq!(
         unnecessary_import_lines(&first, "src/main/java/example/Example.java"),
         [1],
@@ -401,10 +393,15 @@ fn maven_tracks_effective_compile_inputs_and_checks_custom_test_sources() {
     );
     let test_path = "custom tests/example/BrokenTest.java";
     let findings = first["diagnostics"].as_array().unwrap();
+    // The build's custom test directory is a test source, so rules skip it by default.
     assert!(
-        findings
-            .iter()
-            .any(|item| item["path"] == test_path && item["rule_id"] == "java.empty-catch"),
+        findings.iter().all(|item| item["path"] != test_path),
+        "{first}"
+    );
+    assert!(
+        first["analysis_notes"]
+            .to_string()
+            .contains("1 test source files"),
         "{first}"
     );
     assert!(
