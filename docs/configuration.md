@@ -227,7 +227,11 @@ Use a project-relative path with forward slashes. Replace the example
 fingerprint with the reported value. Each entry exempts one matching
 finding when the code moves within the file. For identical code in the
 same file, use a comment to exempt a specific occurrence. The report
-includes all `ignore` entries and source directives in its suppressed count. Baseline creation
+includes all `ignore` entries and source directives in its suppressed count.
+A complete full scan also lists suppressions that matched no finding, such as an
+`ignore` entry that names a rule or a `dornguard-ignore` comment, so you can
+remove them when the code no longer needs them. Path-only entries, which are
+broad exclusions, are not listed. Baseline creation
 records findings that remain after these exceptions have been applied.
 
 ## Baseline

@@ -102,8 +102,24 @@ impl Baseline {
         Self(counts)
     }
 
-    pub fn apply(self, outcome: &mut Outcome) {
+    /// Apply fingerprinted `ignore` entries and return those that matched no
+    /// finding as `(rule, path)` pairs.
+    pub fn apply(mut self, outcome: &mut Outcome) -> Vec<(String, String)> {
         self.apply_to(outcome, &BTreeSet::new());
+        self.unmatched()
+    }
+
+    fn unmatched(&self) -> Vec<(String, String)> {
+        self.0
+            .iter()
+            .filter(|(_, count)| **count > 0)
+            .map(|(entry, _)| {
+                (
+                    entry.rule_id.clone(),
+                    entry.path.clone().unwrap_or_default(),
+                )
+            })
+            .collect()
     }
 
     /// Apply a project baseline selected with `--baseline`.
@@ -113,7 +129,7 @@ impl Baseline {
     /// findings shrink wherever someone edits. With `ratchet`, a complete
     /// full scan fails when the baseline records findings that no longer
     /// occur, which keeps the baseline from hiding future regressions.
-    pub fn apply_project(self, outcome: &mut Outcome, options: ProjectOptions) {
+    pub fn apply_project(mut self, outcome: &mut Outcome, options: ProjectOptions) {
         let touched = if options.strict_changed && matches!(outcome.scope, Scope::Changed) {
             outcome
                 .scanned_files
@@ -124,7 +140,8 @@ impl Baseline {
             BTreeSet::new()
         };
         let total: usize = self.0.values().sum();
-        let (reported, remaining) = self.apply_to(outcome, &touched);
+        let reported = self.apply_to(outcome, &touched);
+        let remaining: usize = self.0.values().sum();
         if reported > 0 {
             outcome.analysis_notes.insert(format!(
                 "{reported} baselined findings in changed files are reported because --strict-changed is set. Fix them while you edit these files."
@@ -148,10 +165,10 @@ impl Baseline {
     }
 
     /// Returns the number of baselined findings kept because their file was
-    /// touched, and the number of baseline entries that matched nothing.
-    fn apply_to(mut self, outcome: &mut Outcome, touched: &BTreeSet<String>) -> (usize, usize) {
+    /// touched.
+    fn apply_to(&mut self, outcome: &mut Outcome, touched: &BTreeSet<String>) -> usize {
         if self.0.is_empty() {
-            return (0, 0);
+            return 0;
         }
         outcome.diagnostics.sort();
         outcome.diagnostics.dedup();
@@ -186,8 +203,7 @@ impl Baseline {
                 !matched
             });
         }
-        let remaining = self.0.values().sum();
-        (reported, remaining)
+        reported
     }
 
     fn recorded(&self, entry: &Entry, diagnostic: &Diagnostic) -> bool {

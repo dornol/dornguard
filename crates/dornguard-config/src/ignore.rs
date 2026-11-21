@@ -79,6 +79,19 @@ pub(crate) fn ignore_rule_matches(pattern: &str, rule: &str) -> bool {
 }
 
 impl Ignore {
+    /// A path glob that names a rule. It is expected to suppress a finding.
+    pub fn is_path_rule_exception(&self) -> bool {
+        self.rule.is_some() && matches!(self.selector, IgnoreSelector::Path(_))
+    }
+
+    pub fn describe(&self) -> String {
+        let rule = self.rule.as_deref().unwrap_or("all rules");
+        match &self.selector {
+            IgnoreSelector::Path(pattern) => format!("{rule} in {}", pattern.0.glob()),
+            IgnoreSelector::Finding { path, .. } => format!("{rule} in {path}"),
+        }
+    }
+
     pub fn matches_path(&self, path: &Path, rule: &str) -> bool {
         matches!(&self.selector, IgnoreSelector::Path(pattern) if pattern.0.is_match(path))
             && self

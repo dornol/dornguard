@@ -1,10 +1,10 @@
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
 use dornguard_config::Ignore;
-use dornguard_core::{EngineName, Outcome, SourceLanguage};
+use dornguard_core::{EngineName, Outcome, Scope, SourceLanguage};
 
 use html5ever::tokenizer::states::RawKind::{Rawtext, Rcdata, ScriptData};
 use html5ever::tokenizer::{BufferQueue, TagKind, Token, TokenSink, TokenSinkResult, Tokenizer};
@@ -15,14 +15,20 @@ pub fn apply(root: &Path, config: &[Ignore], outcome: &mut Outcome) {
     outcome.diagnostics.sort();
     outcome.diagnostics.dedup();
     let mut files = BTreeMap::new();
+    let mut used_entries = vec![false; config.len()];
+    let mut used_comments = BTreeSet::new();
     outcome.diagnostics.retain(|diagnostic| {
         let Some(path) = diagnostic.path.as_deref().map(Path::new) else {
             return true;
         };
-        if config
-            .iter()
-            .any(|entry| entry.matches_path(path, &diagnostic.rule_id))
-        {
+        let mut ignored = false;
+        for (entry, used) in config.iter().zip(&mut used_entries) {
+            if entry.matches_path(path, &diagnostic.rule_id) {
+                *used = true;
+                ignored = true;
+            }
+        }
+        if ignored {
             outcome.suppressed_count += 1;
             return false;
         }
@@ -47,10 +53,68 @@ pub fn apply(root: &Path, config: &[Ignore], outcome: &mut Outcome) {
             return true;
         }
         directives.remove(&line);
+        used_comments.insert((path.to_path_buf(), line));
         outcome.suppressed_count += 1;
         false
     });
-    Baseline::from_config(config).apply(outcome);
+    let unmatched_fingerprints = Baseline::from_config(config).apply(outcome);
+    let complete_full_scan = matches!(outcome.scope, Scope::Full)
+        && outcome.failures.is_empty()
+        && outcome.analysis_warnings.is_empty();
+    if !complete_full_scan {
+        return;
+    }
+    // A path-only exception is a deliberate exclusion that may never match a
+    // finding. Entries that name a rule are expected to suppress something.
+    let mut unused = config
+        .iter()
+        .zip(&used_entries)
+        .filter(|(entry, used)| !**used && entry.is_path_rule_exception())
+        .map(|(entry, _)| format!("ignore entry for {}", entry.describe()))
+        .collect::<Vec<_>>();
+    unused.extend(
+        unmatched_fingerprints
+            .into_iter()
+            .map(|(rule, path)| format!("ignore entry for {rule} in {path}")),
+    );
+    for path in outcome
+        .scanned_files
+        .iter()
+        .filter(|path| {
+            matches!(
+                SourceLanguage::of(path),
+                Some(SourceLanguage::Java | SourceLanguage::Html | SourceLanguage::Template)
+            )
+        })
+        .cloned()
+        .collect::<Vec<_>>()
+    {
+        for (line, rule) in read_directives(&root.join(&path)) {
+            // A directive sits on the line before the finding it exempts.
+            if !used_comments.contains(&(path.clone(), line)) {
+                unused.push(format!(
+                    "comment for {rule} at {}:{}",
+                    path.display(),
+                    line - 1
+                ));
+            }
+        }
+    }
+    if !unused.is_empty() {
+        unused.sort();
+        let shown = unused
+            .iter()
+            .take(5)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("; ");
+        let more = unused.len().saturating_sub(5);
+        outcome.analysis_notes.insert(format!(
+            "{} suppressions matched no finding in this full scan and may be obsolete: {shown}{}. Remove them once the code no longer needs them.",
+            unused.len(),
+            if more > 0 { format!(" (and {more} more)") } else { String::new() }
+        ));
+    }
 }
 
 fn read_directives(path: &Path) -> BTreeMap<usize, String> {

@@ -803,3 +803,57 @@ fn ratchet_fails_when_the_baseline_records_findings_that_no_longer_occur() {
             .contains("baseline create --force")
     );
 }
+
+#[test]
+#[ignore = "requires the pinned Semgrep version on PATH"]
+fn full_scan_notes_suppressions_that_no_longer_match_a_finding() {
+    let source = "
+class Example {
+    void run() {
+        // dornguard-ignore java.stdout-usage -- Script output
+        System.out.println(42);
+        // dornguard-ignore java.stdout-usage -- Obsolete
+        int unused = 1;
+    }
+}
+";
+    let project = project(source);
+    let root = project.path();
+    let stale = "e".repeat(64);
+    fs::write(
+        root.join(".dornguard.yml"),
+        format!(
+            "version: 1\nprofiles: [java-source]\nignore:\n  - path: src/Gone.java\n    rule: java.stdout-usage\n    reason: Removed file\n  - path: src/Example.java\n    rule: java.stdout-usage\n    fingerprint: '{stale}'\n    reason: Old finding\n  - path: generated/\n    reason: Generated code\n"
+        ),
+    )
+    .unwrap();
+    let result = report(check(root).output().unwrap(), 0);
+    assert_eq!(result["suppressed_count"], 1, "{result}");
+    let notes = result["analysis_notes"].to_string();
+    assert!(
+        notes.contains("3 suppressions matched no finding"),
+        "{notes}"
+    );
+    assert!(
+        notes.contains("comment for java.stdout-usage at src/Example.java:6"),
+        "{notes}"
+    );
+    assert!(
+        notes.contains("ignore entry for java.stdout-usage in src/Gone.java"),
+        "{notes}"
+    );
+    assert!(
+        notes.contains("ignore entry for java.stdout-usage in src/Example.java"),
+        "{notes}"
+    );
+    assert!(!notes.contains("generated"), "{notes}");
+
+    // A partial scan cannot tell whether a suppression is obsolete.
+    let selected = report(check(root).arg("src/Example.java").output().unwrap(), 0);
+    assert!(
+        !selected["analysis_notes"]
+            .to_string()
+            .contains("matched no finding"),
+        "{selected}"
+    );
+}
