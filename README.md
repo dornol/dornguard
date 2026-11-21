@@ -28,7 +28,27 @@ The version command should print `dornguard 0.0.7 (built-in ruleset 1.5.0)`.
 Use `"1.5.0"` if `.dornguard.yml` pins the built-in `ruleset.version`.
 Keep the top-level `version: 1`.
 
-See the [release guide](docs/releases.md) for macOS installation and the
+## Install or update on macOS
+
+The macOS archive is built for Apple silicon (ARM64). `--with-deps` is
+Ubuntu-only, so install the prerequisites first, then the release, then the
+engines. You need Python 3.10–3.14 and JDK 21 or later (for example from
+Homebrew: `brew install python@3.13 openjdk@21`).
+
+```sh
+curl -fsSLo /tmp/dornguard-install.sh https://raw.githubusercontent.com/dornol/dornguard/v0.0.7/scripts/install.sh &&
+  sh /tmp/dornguard-install.sh v0.0.7
+export PATH="$HOME/.local/bin:$PATH"
+export JAVA_HOME="$(/usr/libexec/java_home -v 21)"
+dornguard engines install
+dornguard doctor
+```
+
+Add the `PATH` and `JAVA_HOME` exports to your shell profile. Without
+`--with-deps` the installer only downloads and links the release, so run
+`dornguard engines install` yourself to install Semgrep and PMD.
+
+See the [release guide](docs/releases.md) for details and the
 [v0.0.7 release notes](docs/releases/v0.0.7.md) for upgrade details.
 
 ## Run the Java example
