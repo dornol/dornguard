@@ -1,6 +1,7 @@
 id: java.preserve-stack-trace
 engine: pmd
 severity: warning
+confidence: medium
 description: This exception drops the original cause.
 fix: Pass the caught exception as the cause.
 implementation:

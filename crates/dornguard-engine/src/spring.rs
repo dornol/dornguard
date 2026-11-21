@@ -634,6 +634,7 @@ fn emit(
         rule_id: rule.id.clone(),
         engine: EngineName::Builtin,
         severity: rule.severity,
+        confidence: rule.confidence,
         fix: rule.fix.clone(),
         fingerprint: fragment_fingerprint(text(node, source.text())),
         edit: None,

@@ -1,6 +1,7 @@
 id: java.broken-null-check
 engine: pmd
 severity: warning
+confidence: medium
 description: This null check can still evaluate an operation on a null reference.
 fix: Use a short-circuit condition that accesses the value only when it is non-null.
 implementation:

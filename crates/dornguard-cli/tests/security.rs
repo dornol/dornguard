@@ -158,3 +158,31 @@ fn security_profile_keeps_reporting_lookalikes_of_the_exempt_patterns() {
         .collect::<Vec<_>>();
     assert_eq!(lines, [3, 4, 6], "{result}");
 }
+
+#[test]
+#[ignore = "requires the pinned Semgrep engine"]
+fn security_findings_carry_confidence_and_a_review_hint() {
+    let project = project(SOURCE);
+    let root = project.path();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [security]\n",
+    )
+    .unwrap();
+    let result = report(check(root).output().unwrap(), 1);
+    let confidence = result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|finding| finding["confidence"].as_str().unwrap())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(confidence, ["medium"].into(), "{result}");
+
+    let text = std::process::Command::new(env!("CARGO_BIN_EXE_dornguard"))
+        .current_dir(root)
+        .args(["check", "--format", "agent"])
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&text.stdout);
+    assert!(text.contains("Review: This rule infers intent"), "{text}");
+}

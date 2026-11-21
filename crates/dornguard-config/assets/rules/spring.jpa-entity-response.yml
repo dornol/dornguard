@@ -1,5 +1,6 @@
 id: spring.jpa-entity-response
 engine: builtin
 severity: warning
+confidence: medium
 description: This Spring MVC endpoint declares a JPA entity as a response type.
 fix: Map the entity to a response DTO with the intended API fields.

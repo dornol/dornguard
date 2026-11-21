@@ -1,6 +1,7 @@
 id: security.cors-wildcard
 engine: semgrep
 severity: error
+confidence: medium
 description: A wildcard CORS origin allows requests from arbitrary origins.
 fix: List the trusted origins explicitly.
 implementation:

@@ -143,6 +143,7 @@ fn record_report(
             rule_id: rule.id.clone(),
             engine: ENGINE,
             severity: rule.severity,
+            confidence: rule.confidence,
             message: rule.description.clone(),
             fix: rule.fix.clone(),
             edit: None,

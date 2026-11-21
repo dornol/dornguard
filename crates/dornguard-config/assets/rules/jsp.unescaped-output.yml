@@ -1,6 +1,7 @@
 id: jsp.unescaped-output
 engine: semgrep
 severity: warning
+confidence: medium
 description: This JSTL output explicitly disables XML escaping.
 fix: Keep escaping enabled for text or verify that the HTML is sanitized before rendering.
 jsp_only: true

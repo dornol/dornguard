@@ -377,6 +377,7 @@ async fn scan(request: Request<'_>, settings: &Pmd<'_>, outcome: &mut Outcome) -
                 rule_id: rule.id.clone(),
                 engine: rule.engine,
                 severity: rule.severity,
+                confidence: rule.confidence,
                 fix: rule.fix.clone(),
                 fingerprint,
                 edit: None,

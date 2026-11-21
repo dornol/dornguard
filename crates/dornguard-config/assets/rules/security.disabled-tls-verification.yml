@@ -1,6 +1,7 @@
 id: security.disabled-tls-verification
 engine: semgrep
 severity: error
+confidence: medium
 description: This code disables TLS certificate or host name verification.
 fix: Use the default trust store and host name verification, or trust a specific certificate.
 implementation:

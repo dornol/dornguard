@@ -39,6 +39,33 @@ Rules that exist for tests (`java.assert-throws-nested-call`) and the `format.*`
 rules still check them. A custom rule can opt back in with `skip_java_tests: false`.
 Selecting a test file explicitly does not change this.
 
+## Rule confidence
+
+Severity says whether a finding blocks. Confidence says how reliably it is a
+real problem. Each diagnostic in the JSON report has a `confidence` of `high`
+or `medium`, and `dornguard rules explain ID` shows it.
+
+- `high`: the rule matches code that is wrong by policy or by construction,
+  such as formatting, architecture dependencies, field injection and
+  `@Transactional` on a private method. A finding needs fixing.
+- `medium`: the rule infers intent from the shape of the code, so correct code
+  can match. A finding needs a judgment: fix it, or suppress it with a reason
+  in `ignore` or a `dornguard-ignore` comment. The text and agent reports add a
+  `Review:` line to these findings.
+
+These built-in rules have `medium` confidence:
+
+| Area | Rules |
+| --- | --- |
+| Security | `security.sql-injection`, `kotlin.sql-injection`, `security.disabled-tls-verification`, `security.csrf-disabled`, `security.weak-crypto`, `security.cors-wildcard` |
+| Java | `java.resource-not-closed`, `java.preserve-stack-trace`, `java.ignored-interrupt`, `java.ignored-return-value`, `java.broken-null-check`, `java.fully-qualified-type`, `java.assert-throws-nested-call` |
+| Kotlin | `kotlin.fully-qualified-type`, `kotlin.swallowed-cancellation`, `kotlin.run-catching-cancellation` |
+| Spring | `spring.singleton-request-state`, `spring.shared-simple-date-format`, `spring.checked-exception-rollback`, `spring.jpa-entity-response` |
+| Templates | `thymeleaf.unescaped-output`, `jsp.unescaped-output` |
+
+A custom rule defaults to `high`. Set `confidence: medium` in its rule file to
+mark it as a review rule. Confidence does not change severity or the exit code.
+
 ## Source formatting
 
 Add `format` to your profiles or run `dornguard check --profile format`.

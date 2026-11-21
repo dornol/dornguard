@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use std::io::{self, Write};
 
-use dornguard_core::{CheckReport, FailureStage, Scope, Severity, Status};
+use dornguard_core::{CheckReport, Confidence, FailureStage, Scope, Severity, Status};
 
 mod sarif;
 
@@ -224,5 +224,12 @@ fn write_diagnostic(
         ": {severity}[{}]: {}",
         diagnostic.rule_id, diagnostic.message
     )?;
-    writeln!(writer, "  Fix: {}", diagnostic.fix)
+    writeln!(writer, "  Fix: {}", diagnostic.fix)?;
+    if diagnostic.confidence == Confidence::Medium {
+        writeln!(
+            writer,
+            "  Review: This rule infers intent from code shape. Confirm the finding, or suppress it with a reason if the code is correct."
+        )?;
+    }
+    Ok(())
 }

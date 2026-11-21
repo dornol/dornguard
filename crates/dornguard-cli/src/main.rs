@@ -5,7 +5,7 @@ use std::process::ExitCode;
 
 use clap::Parser;
 use dornguard_config::{BUILTIN_VERSION, CONFIG_FILE, DEFAULT_CONFIG};
-use dornguard_core::{EngineName, FailureKind, Scope};
+use dornguard_core::{Confidence, EngineName, FailureKind, Scope};
 use dornguard_engine::{install, supported_version};
 use miette::{IntoDiagnostic, Result, WrapErr, bail};
 
@@ -134,6 +134,13 @@ async fn run_check(args: CheckArgs) -> Result<u8> {
 fn explain_rule(registry: &dornguard_config::Registry, id: &str) -> Result<()> {
     let rule = registry.rule(id)?;
     println!("{}  {}\nFix: {}", rule.id, rule.description, rule.fix);
+    println!(
+        "Confidence: {}",
+        match rule.confidence {
+            Confidence::High => "high (a finding needs fixing)",
+            Confidence::Medium => "medium (confirm the finding, or suppress it with a reason)",
+        }
+    );
     let options = match rule.id.as_str() {
         "format.indentation" => Some(
             "format.indent_style (spaces), format.java_indent (4), format.kotlin_indent (4), format.javascript_indent (2), format.overrides[].indent_style and indent_size",

@@ -102,6 +102,19 @@ pub enum Severity {
     Error,
 }
 
+/// How reliably a rule's findings are real problems.
+///
+/// `High` rules match structure that is wrong by policy, so a finding needs
+/// fixing. `Medium` rules infer intent from code shape, so a finding needs a
+/// judgment: fix it, or suppress it with a reason when the code is correct.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Confidence {
+    Medium,
+    #[default]
+    High,
+}
+
 #[derive(Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct Diagnostic {
     pub path: Option<String>,
@@ -120,6 +133,7 @@ pub struct Diagnostic {
     pub rule_id: String,
     pub engine: EngineName,
     pub severity: Severity,
+    pub confidence: Confidence,
     pub message: String,
     pub fix: String,
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -1,6 +1,7 @@
 id: java.ignored-return-value
 engine: pmd
 severity: warning
+confidence: medium
 description: This call discards the result of a method whose return value should be used.
 fix: Use the returned value in the next operation or remove the call if the result is unnecessary.
 implementation:

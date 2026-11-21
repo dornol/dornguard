@@ -1,6 +1,7 @@
 id: thymeleaf.unescaped-output
 engine: semgrep
 severity: warning
+confidence: medium
 description: Thymeleaf renders this expression without HTML escaping.
 fix: Use escaped output or verify that the HTML has been sanitized before rendering.
 implementation:

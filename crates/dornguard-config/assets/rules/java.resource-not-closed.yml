@@ -1,6 +1,7 @@
 id: java.resource-not-closed
 engine: pmd
 severity: warning
+confidence: medium
 description: The code may leave a Java resource open.
 fix: Use try-with-resources or close the resource according to its ownership.
 implementation:

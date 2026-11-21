@@ -127,6 +127,7 @@ fn check_file(
                     rule_id: rule.id.clone(),
                     engine: EngineName::Builtin,
                     severity: rule.severity,
+                    confidence: rule.confidence,
                     message: rule.description.clone(),
                     fix: rule.fix.clone(),
                     edit: None,

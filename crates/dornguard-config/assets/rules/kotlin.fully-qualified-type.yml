@@ -1,6 +1,7 @@
 id: kotlin.fully-qualified-type
 engine: semgrep
 severity: warning
+confidence: medium
 description: This reference looks like a fully qualified type name.
 fix: Use an import and the simple type name where it is unambiguous.
 implementation:

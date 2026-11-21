@@ -1,6 +1,7 @@
 id: java.ignored-interrupt
 engine: semgrep
 severity: warning
+confidence: medium
 description: An InterruptedException is logged and consumed.
 fix: Rethrow the exception or restore the interrupt status with Thread.currentThread().interrupt().
 implementation:

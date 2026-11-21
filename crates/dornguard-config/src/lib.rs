@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
-use dornguard_core::{EngineName, Severity, SourceLanguage};
+use dornguard_core::{Confidence, EngineName, Severity, SourceLanguage};
 use globset::{GlobBuilder, GlobMatcher};
 use miette::{IntoDiagnostic, Result, WrapErr, bail, miette};
 use serde::Deserialize;
@@ -175,6 +175,8 @@ pub struct Rule {
     pub id: String,
     pub engine: EngineName,
     pub severity: Severity,
+    #[serde(default)]
+    pub confidence: Confidence,
     pub description: String,
     pub fix: String,
     implementation: Option<Implementation>,
@@ -995,6 +997,53 @@ impl ProjectConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Rules whose findings need a judgment. Adding to this list is a decision:
+    /// a rule belongs here when it infers intent from code shape.
+    const MEDIUM_CONFIDENCE: [&str; 22] = [
+        "java.assert-throws-nested-call",
+        "java.broken-null-check",
+        "java.fully-qualified-type",
+        "java.ignored-interrupt",
+        "java.ignored-return-value",
+        "java.preserve-stack-trace",
+        "java.resource-not-closed",
+        "jsp.unescaped-output",
+        "kotlin.fully-qualified-type",
+        "kotlin.run-catching-cancellation",
+        "kotlin.sql-injection",
+        "kotlin.swallowed-cancellation",
+        "security.cors-wildcard",
+        "security.csrf-disabled",
+        "security.disabled-tls-verification",
+        "security.sql-injection",
+        "security.weak-crypto",
+        "spring.checked-exception-rollback",
+        "spring.jpa-entity-response",
+        "spring.shared-simple-date-format",
+        "spring.singleton-request-state",
+        "thymeleaf.unescaped-output",
+    ];
+
+    #[test]
+    fn builtin_rules_declare_medium_confidence_only_for_the_reviewed_set() {
+        let registry = Registry::builtin().unwrap();
+        let medium = registry
+            .rules()
+            .filter(|rule| rule.confidence == Confidence::Medium)
+            .map(|rule| rule.id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(medium, MEDIUM_CONFIDENCE);
+    }
+
+    #[test]
+    fn rules_default_to_high_confidence() {
+        let rule: Rule = serde_saphyr::from_str(
+            "id: custom.rule\nengine: semgrep\nseverity: error\ndescription: d\nfix: f\nimplementation:\n  config: c.yml\n  rule_id: r\n",
+        )
+        .unwrap();
+        assert_eq!(rule.confidence, Confidence::High);
+    }
 
     #[test]
     fn profile_inheritance_deduplicates_rules_and_reports_cycles() {

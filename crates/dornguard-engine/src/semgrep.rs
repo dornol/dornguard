@@ -396,6 +396,7 @@ fn record_findings(
             rule_id: rule.id.clone(),
             engine: rule.engine,
             severity: rule.severity,
+            confidence: rule.confidence,
             fix: rule.fix.clone(),
             edit: None,
             legacy_fingerprints: Vec::new(),

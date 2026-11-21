@@ -77,6 +77,7 @@ pub async fn check(root: &Path, target: &Path, base: Option<&str>, rule: &Rule) 
             rule_id: rule.id.clone(),
             engine: rule.engine,
             severity: rule.severity,
+            confidence: rule.confidence,
             message: format!("{} The file was {action}.", rule.description),
             fix: rule.fix.clone(),
             fingerprint: Some(fingerprint(&String::from_utf8_lossy(&patch))),

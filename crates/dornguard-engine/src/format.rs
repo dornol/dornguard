@@ -171,6 +171,7 @@ impl Emitter<'_> {
             rule_id: rule.id.clone(),
             engine: EngineName::Builtin,
             severity: rule.severity,
+            confidence: rule.confidence,
             message: detail.unwrap_or_else(|| rule.description.clone()),
             fix: match id {
                 "format.control-spacing"

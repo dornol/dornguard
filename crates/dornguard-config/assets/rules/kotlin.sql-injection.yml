@@ -1,6 +1,7 @@
 id: kotlin.sql-injection
 engine: semgrep
 severity: error
+confidence: medium
 description: SQL text built by string interpolation, concatenation, or formatting can allow SQL injection.
 fix: Use bind parameters such as ? or :name, and pass the values separately.
 implementation:

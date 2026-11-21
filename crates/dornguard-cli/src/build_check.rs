@@ -874,6 +874,7 @@ fn module_dependency_diagnostics(
             rule_id: rule.id.clone(),
             engine: EngineName::Gradle,
             severity: rule.severity,
+            confidence: rule.confidence,
             message: format!(
                 "{} {} → {}.",
                 rule.description, dependency.from, dependency.to

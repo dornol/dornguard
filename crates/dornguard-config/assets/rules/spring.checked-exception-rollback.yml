@@ -1,6 +1,7 @@
 id: spring.checked-exception-rollback
 engine: semgrep
 severity: warning
+confidence: medium
 description: Review rollback for this checked exception under Spring's default policy.
 fix: If the failure must roll back the transaction, configure rollbackFor for the exception.
 implementation:

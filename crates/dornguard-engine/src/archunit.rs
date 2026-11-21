@@ -279,6 +279,7 @@ fn record_findings(
             rule_id: rule.id.clone(),
             engine: ENGINE,
             severity: rule.severity,
+            confidence: rule.confidence,
             message: format!(
                 "{} {} depends on {} in {}.",
                 rule.description, finding.origin, finding.target, finding.module
