@@ -69,7 +69,7 @@ jobs:
 
   verify:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 25
     env:
       DORNGUARD_ARCHUNIT_RUNNER: ${{ github.workspace }}/runners/archunit-runner/build/libs/archunit-runner.jar
       DORNGUARD_ENGINE_DIR: ${{ github.workspace }}/.ci-tools/managed

@@ -94,6 +94,12 @@ jobs:
             ~/.cargo/git/db
           key: cargo-registry-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: cargo-registry-${{ runner.os }}-
+      - name: Cache Maven downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.m2/repository
+          key: maven-${{ runner.os }}-${{ hashFiles('crates/dornguard-cli/tests/maven.rs', 'crates/dornguard-cli/tests/gradle.rs') }}
+          restore-keys: maven-${{ runner.os }}-
       - name: Build matching JVM artifacts
         run: |
           scripts/retry.sh examples/spring-boot-multimodule/gradlew --no-daemon --console=plain -p runners/archunit-runner jar
