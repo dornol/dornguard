@@ -101,6 +101,7 @@ fn report_unscoped(unscoped: Unscoped, outcome: &mut Outcome) {
                 diagnostic.rule_id
             )));
             diagnostic.legacy_fingerprints = legacy;
+            diagnostic.location_independent = true;
         }
         outcome.diagnostics.push(diagnostic);
     }
@@ -224,6 +225,7 @@ fn check_file(
                     fix: rule.fix.clone(),
                     edit: None,
                     legacy_fingerprints: Vec::new(),
+                    location_independent: false,
                     fingerprint: Some(fingerprint(&declaration_identity(node, &source))),
                 };
                 if no_scope && !decided {

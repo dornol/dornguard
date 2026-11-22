@@ -124,7 +124,7 @@ of types outside it and up to three names, because one `package-info.java`
 fixes all of them. The diagnostic is located at the first such type. Types that
 a `@NullUnmarked` declaration deliberately opts out are reported one by one. A
 fingerprint for the package diagnostic covers every type in the directory,
-including types added later. A baseline or `ignore` entry from an earlier release matches only if it names the file where the group is reported, so recreate the baseline after upgrading.
+including types added later. A baseline or `ignore` entry for the group matches by rule and fingerprint, whichever file the group is reported in, and entries recorded for the individual dependencies before grouping still match.
 
 DornGuard checks annotation coverage from source. Use JSpecify's `@Nullable`
 where a type permits null and a JSpecify-aware compiler checker for nullness

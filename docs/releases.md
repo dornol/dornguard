@@ -14,7 +14,7 @@ See the [v0.0.7 release notes](releases/v0.0.7.md) for upgrade details.
 - Architecture findings count one cause each: a package edge for
   `architecture.package-cycle`, a class for forbidden dependencies, and a package
   for `java.jspecify-null-marked` when no `@NullMarked` scope exists.
-  A baseline or `ignore` entry from an earlier release matches only if it names the file where the group is reported, so recreate the baseline after upgrading.
+  A baseline or `ignore` entry for the group matches by rule and fingerprint, whichever file the group is reported in, and entries recorded for the individual dependencies before grouping still match.
 - `java.unnecessary-import` no longer reports an import whose type the file
   writes in full. `java.fully-qualified-type` asks for the simple name instead.
 - `java.empty-catch` allows a block that has a comment.

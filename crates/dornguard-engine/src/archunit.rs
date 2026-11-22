@@ -325,6 +325,7 @@ fn record_findings(
             fix: rule.fix.clone(),
             edit: None,
             legacy_fingerprints: vec![legacy_fingerprint, relationship_fingerprint],
+            location_independent: true,
             fingerprint: Some(fingerprint(&identity)),
         };
         let anchor = (finding.origin.clone(), finding.target.clone());
@@ -574,6 +575,7 @@ mod group_tests {
                 fix: String::new(),
                 edit: None,
                 legacy_fingerprints: Vec::new(),
+                location_independent: false,
                 fingerprint: None,
             },
             anchor,

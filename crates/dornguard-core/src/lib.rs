@@ -141,6 +141,10 @@ pub struct Diagnostic {
     pub fingerprint: Option<String>,
     #[serde(skip)]
     pub legacy_fingerprints: Vec<String>,
+    /// The fingerprint names a group of findings whose reported file can change, so a
+    /// baseline or `ignore` entry matches it by rule and fingerprint alone.
+    #[serde(skip)]
+    pub location_independent: bool,
 }
 
 #[derive(Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]

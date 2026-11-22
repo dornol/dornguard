@@ -84,6 +84,7 @@ mod tests {
             fix: "Original.".to_owned(),
             edit: None,
             legacy_fingerprints: Vec::new(),
+            location_independent: false,
             fingerprint: None,
         }
     }

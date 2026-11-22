@@ -177,6 +177,23 @@ impl Baseline {
         // spend a recorded occurrence belonging to another exact match.
         for legacy in [false, true] {
             outcome.diagnostics.retain(|diagnostic| {
+                if diagnostic.location_independent {
+                    // A group's reported file can change, so its identity is the rule and fingerprint.
+                    if legacy {
+                        return true;
+                    }
+                    if diagnostic
+                        .path
+                        .as_ref()
+                        .is_some_and(|path| touched.contains(path))
+                    {
+                        reported += usize::from(self.recorded_group(diagnostic));
+                        return true;
+                    }
+                    let matched = self.consume_group(diagnostic);
+                    outcome.suppressed_count += usize::from(matched);
+                    return !matched;
+                }
                 let Some(mut entry) = Entry::from_diagnostic(diagnostic) else {
                     return true;
                 };
@@ -204,6 +221,35 @@ impl Baseline {
             });
         }
         reported
+    }
+
+    /// Recorded entries for a group: any fingerprint it has had, for its rule, in any file.
+    fn group_entries(&self, diagnostic: &Diagnostic) -> Vec<Entry> {
+        let current = diagnostic.fingerprint.as_deref();
+        self.0
+            .iter()
+            .filter(|(entry, count)| {
+                **count > 0
+                    && entry.rule_id == diagnostic.rule_id
+                    && (current == Some(entry.fingerprint.as_str())
+                        || diagnostic.legacy_fingerprints.contains(&entry.fingerprint))
+            })
+            .map(|(entry, _)| entry.clone())
+            .collect()
+    }
+
+    fn recorded_group(&self, diagnostic: &Diagnostic) -> bool {
+        !self.group_entries(diagnostic).is_empty()
+    }
+
+    /// Spend one occurrence of every entry the group replaces, so a baseline written
+    /// before diagnostics were grouped does not report the rest as gone.
+    fn consume_group(&mut self, diagnostic: &Diagnostic) -> bool {
+        let entries = self.group_entries(diagnostic);
+        for entry in &entries {
+            self.consume(entry);
+        }
+        !entries.is_empty()
     }
 
     fn recorded(&self, entry: &Entry, diagnostic: &Diagnostic) -> bool {
@@ -265,5 +311,120 @@ impl Baseline {
         .into_diagnostic()
         .wrap_err_with(|| format!("Could not save baseline {}", path.display()))?;
         Ok(count)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dornguard_core::{Confidence, EngineName, Severity};
+
+    fn fp(digit: char) -> String {
+        digit.to_string().repeat(64)
+    }
+
+    fn diagnostic(
+        path: &str,
+        fingerprint: &str,
+        legacy: &[String],
+        independent: bool,
+    ) -> Diagnostic {
+        Diagnostic {
+            path: Some(path.to_owned()),
+            module: None,
+            class_name: None,
+            line: Some(1),
+            column: None,
+            end_line: None,
+            end_column: None,
+            subject: None,
+            rule_id: "architecture.package-cycle".to_owned(),
+            engine: EngineName::Archunit,
+            severity: Severity::Error,
+            confidence: Confidence::default(),
+            message: String::new(),
+            fix: String::new(),
+            edit: None,
+            legacy_fingerprints: legacy.to_vec(),
+            location_independent: independent,
+            fingerprint: Some(fingerprint.to_owned()),
+        }
+    }
+
+    fn baseline(entries: &[(&str, String)]) -> Baseline {
+        let violations = entries
+            .iter()
+            .map(|(path, fingerprint)| {
+                serde_json::json!({
+                    "rule_id": "architecture.package-cycle",
+                    "path": path,
+                    "fingerprint": fingerprint,
+                })
+            })
+            .collect::<Vec<_>>();
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("baseline.json");
+        std::fs::write(
+            &file,
+            serde_json::json!({ "version": 2, "violations": violations }).to_string(),
+        )
+        .unwrap();
+        Baseline::load(&file).unwrap()
+    }
+
+    fn apply(baseline: Baseline, diagnostics: Vec<Diagnostic>) -> (Outcome, Vec<(String, String)>) {
+        let mut outcome = Outcome {
+            diagnostics,
+            ..Outcome::default()
+        };
+        let unmatched = baseline.apply(&mut outcome);
+        (outcome, unmatched)
+    }
+
+    #[test]
+    fn a_group_stays_baselined_when_its_reported_file_changes() {
+        // Recorded while the group was reported in A.java; it is now reported in B.java.
+        let (outcome, unmatched) = apply(
+            baseline(&[("A.java", fp('a'))]),
+            vec![diagnostic("B.java", &fp('a'), &[], true)],
+        );
+        assert!(outcome.diagnostics.is_empty());
+        assert_eq!(outcome.suppressed_count, 1);
+        assert!(unmatched.is_empty());
+    }
+
+    #[test]
+    fn a_group_spends_every_entry_it_replaces() {
+        // A baseline from before grouping has one entry per class dependency.
+        let legacy = [fp('b'), fp('c'), fp('d')];
+        let (outcome, unmatched) = apply(
+            baseline(&[
+                ("A.java", fp('b')),
+                ("B.java", fp('c')),
+                ("C.java", fp('d')),
+            ]),
+            vec![diagnostic("C.java", &fp('a'), &legacy, true)],
+        );
+        assert!(outcome.diagnostics.is_empty());
+        assert!(unmatched.is_empty(), "{unmatched:?}");
+    }
+
+    #[test]
+    fn a_different_group_is_still_reported() {
+        let (outcome, unmatched) = apply(
+            baseline(&[("A.java", fp('a'))]),
+            vec![diagnostic("A.java", &fp('e'), &[], true)],
+        );
+        assert_eq!(outcome.diagnostics.len(), 1);
+        assert_eq!(unmatched.len(), 1);
+    }
+
+    #[test]
+    fn an_ordinary_finding_still_needs_the_same_file() {
+        let (outcome, _) = apply(
+            baseline(&[("A.java", fp('a'))]),
+            vec![diagnostic("B.java", &fp('a'), &[], false)],
+        );
+        assert_eq!(outcome.diagnostics.len(), 1);
     }
 }

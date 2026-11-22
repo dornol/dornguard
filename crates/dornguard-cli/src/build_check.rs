@@ -888,6 +888,7 @@ fn module_dependency_diagnostics(
             fix: rule.fix.clone(),
             edit: None,
             legacy_fingerprints: Vec::new(),
+            location_independent: false,
             fingerprint: Some(fingerprint(&format!(
                 "{}:{}",
                 dependency.from, dependency.to

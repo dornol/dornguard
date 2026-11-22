@@ -186,6 +186,7 @@ impl Emitter<'_> {
             },
             edit,
             legacy_fingerprints: Vec::new(),
+            location_independent: false,
             fingerprint: Some(fingerprint(line.text.trim())),
         });
     }

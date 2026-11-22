@@ -427,6 +427,7 @@ fn record_findings(
             fix: rule.fix.clone(),
             edit: None,
             legacy_fingerprints: Vec::new(),
+            location_independent: false,
             fingerprint: sources.offsets(root, &path, finding.start.offset, finding.end.offset),
         });
     }

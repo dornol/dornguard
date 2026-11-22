@@ -404,3 +404,74 @@ fn hexagonal_layered_and_library_profiles_each_report_their_own_violations() {
     .map(|(rule, class)| (rule.to_owned(), class.to_owned()));
     assert_eq!(findings, expected, "{result}");
 }
+
+#[test]
+#[ignore = "requires the pinned engines, JDK 21, Gradle and DORNGUARD_ARCHUNIT_RUNNER"]
+fn a_baselined_cycle_stays_baselined_when_its_reported_file_changes() {
+    let fixture =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/spring-boot-multimodule");
+    let project = tempfile::tempdir().unwrap();
+    copy_gradle_fixture(&fixture, project.path());
+    let root = project.path();
+
+    let base = root.join("admin/src/main/java/example/admin");
+    let class = |package: &str, name: &str, target: &str, padding: &str| {
+        format!(
+            "package example.admin.{package};\npublic class {name} {{\n{padding}    public Object other() {{ return new {target}(); }}\n}}\n"
+        )
+    };
+    let write = |path: &str, source: String| {
+        let file = base.join(path);
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(file, source).unwrap();
+    };
+    // Two classes of alpha depend on beta, so they form one package edge.
+    write(
+        "alpha/Alpha.java",
+        class("alpha", "Alpha", "example.admin.beta.Beta", ""),
+    );
+    write(
+        "alpha/AlphaToo.java",
+        class("alpha", "AlphaToo", "example.admin.beta.Beta", ""),
+    );
+    write(
+        "beta/Beta.java",
+        class("beta", "Beta", "example.admin.alpha.Alpha", ""),
+    );
+    let config = fs::read_to_string(root.join(".dornguard.yml"))
+        .unwrap()
+        .replace(
+            "profiles: [layered, rest-api]",
+            "profiles: [layered, rest-api, package-cycles]",
+        );
+    fs::write(root.join(".dornguard.yml"), config).unwrap();
+    let cycles = |result: &serde_json::Value| {
+        result["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|item| item["rule_id"] == "architecture.package-cycle")
+            .count()
+    };
+
+    let recorded = std::process::Command::new(env!("CARGO_BIN_EXE_dornguard"))
+        .current_dir(root)
+        .args(["baseline", "create"])
+        .output()
+        .unwrap();
+    assert!(recorded.status.success(), "{recorded:?}");
+
+    // Pushing Alpha's dependency down a line makes AlphaToo the group's first location.
+    write(
+        "alpha/Alpha.java",
+        class("alpha", "Alpha", "example.admin.beta.Beta", "\n"),
+    );
+    let result = report(
+        check(root)
+            .args(["--baseline", ".dornguard-baseline.json"])
+            .output()
+            .unwrap(),
+        0,
+    );
+    assert_eq!(cycles(&result), 0, "{result}");
+}
