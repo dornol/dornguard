@@ -115,6 +115,13 @@ Each subpackage has its own scope. A type in a `@NullUnmarked` scope is
 reported unless a more specific declaration marks it again. Changes to either
 descriptor trigger a full scan in changed mode to catch affected types.
 
+A package with no `@NullMarked` scope at all is reported once, with the number
+of types outside it and up to three names, because one `package-info.java`
+fixes all of them. The diagnostic is located at the first such type. Types that
+a `@NullUnmarked` declaration deliberately opts out are reported one by one. A
+fingerprint for the package diagnostic covers every type in the directory,
+including types added later. Fingerprints from earlier releases still match.
+
 DornGuard checks annotation coverage from source. Use JSpecify's `@Nullable`
 where a type permits null and a JSpecify-aware compiler checker for nullness
 analysis. See the [JSpecify user guide](https://jspecify.dev/docs/user-guide/).

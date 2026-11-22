@@ -26,6 +26,7 @@ impl Engine for JSpecify {
             return outcome;
         }
         let mut descriptors = BTreeMap::new();
+        let mut unscoped = Unscoped::new();
         for file in request.files {
             match check_file(
                 &mut parser,
@@ -34,6 +35,7 @@ impl Engine for JSpecify {
                 &self.partial,
                 file,
                 &mut outcome,
+                &mut unscoped,
             ) {
                 Ok(()) => {
                     outcome.scanned_files.insert(file.clone());
@@ -41,8 +43,66 @@ impl Engine for JSpecify {
                 Err(error) => fail(&mut outcome, EngineName::Builtin, error),
             }
         }
+        report_unscoped(unscoped, &mut outcome);
         request.mark_incomplete(&mut outcome);
         outcome
+    }
+}
+
+/// A type that is outside every `@NullMarked` scope only because its package has none.
+struct Missing {
+    package: String,
+    type_name: String,
+    diagnostic: Diagnostic,
+}
+
+/// Types without any scope, by source directory and rule. One `package-info.java`
+/// fixes all of a directory's types, so they are reported together.
+type Unscoped = BTreeMap<(String, String), Vec<Missing>>;
+
+fn report_unscoped(unscoped: Unscoped, outcome: &mut Outcome) {
+    const EXAMPLES: usize = 3;
+    for ((directory, _), mut types) in unscoped {
+        types.sort_by(|a, b| {
+            (&a.diagnostic.path, a.diagnostic.line).cmp(&(&b.diagnostic.path, b.diagnostic.line))
+        });
+        let count = types.len();
+        let legacy = types
+            .iter()
+            .filter_map(|item| item.diagnostic.fingerprint.clone())
+            .collect::<Vec<_>>();
+        let names = types
+            .iter()
+            .take(EXAMPLES)
+            .map(|item| item.type_name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let package = types[0].package.clone();
+        let mut diagnostic = types.swap_remove(0).diagnostic;
+        if count > 1 {
+            let more = count.saturating_sub(EXAMPLES);
+            let more = if more > 0 {
+                format!(" and {more} more")
+            } else {
+                String::new()
+            };
+            let location = if package.is_empty() {
+                "The default package".to_owned()
+            } else {
+                format!("Package {package}")
+            };
+            diagnostic.message = format!(
+                "{} {location} has no @NullMarked scope, so {count} types are outside one: {names}{more}.",
+                diagnostic.message
+            );
+            diagnostic.subject = None;
+            diagnostic.fingerprint = Some(fingerprint(&format!(
+                "jspecify-package\0{directory}\0{}",
+                diagnostic.rule_id
+            )));
+            diagnostic.legacy_fingerprints = legacy;
+        }
+        outcome.diagnostics.push(diagnostic);
     }
 }
 
@@ -61,6 +121,7 @@ fn check_file(
     partial: &PartialParsingPolicy,
     file: &Path,
     outcome: &mut Outcome,
+    unscoped: &mut Unscoped,
 ) -> Result<(), String> {
     if matches!(
         file.file_name().and_then(|name| name.to_str()),
@@ -99,22 +160,23 @@ fn check_file(
     let package_scope = (package.package == names.package)
         .then_some(package.marked)
         .flatten();
-    let mut marked = package_scope.unwrap_or(false);
+    let mut module_scope = None;
     if package_scope.is_none()
         && let Some(root) = source_root(directory, &names.package)
     {
-        marked = descriptor(
+        module_scope = descriptor(
             parser,
             descriptors,
             request.root,
             &root.join("module-info.java"),
         )?
-        .marked
-        .unwrap_or(false);
+        .marked;
     }
+    let marked = package_scope.or(module_scope).unwrap_or(false);
+    let no_scope = package_scope.is_none() && module_scope.is_none();
 
-    let mut pending = vec![(unit, marked)];
-    while let Some((node, mut marked)) = pending.pop() {
+    let mut pending = vec![(unit, marked, false)];
+    while let Some((node, mut marked, mut decided)) = pending.pop() {
         let is_type = matches!(
             node.kind(),
             "class_declaration"
@@ -123,17 +185,18 @@ fn check_file(
                 | "record_declaration"
                 | "annotation_type_declaration"
         );
-        if is_type
+        if (is_type
             || matches!(
                 node.kind(),
                 "method_declaration"
                     | "constructor_declaration"
                     | "compact_constructor_declaration"
-            )
+            ))
+            && let Some(explicit) =
+                child(node, "modifiers").and_then(|modifiers| names.marked(modifiers))
         {
-            marked = child(node, "modifiers")
-                .and_then(|modifiers| names.marked(modifiers))
-                .unwrap_or(marked);
+            marked = explicit;
+            decided = true;
         }
         if is_type
             && !marked
@@ -144,7 +207,7 @@ fn check_file(
             let column = source[line_start..name.start_byte()].encode_utf16().count();
             let subject = text(name, &source);
             for rule in request.rules {
-                outcome.diagnostics.push(Diagnostic {
+                let diagnostic = Diagnostic {
                     path: Some(display_path(file)),
                     module: None,
                     class_name: None,
@@ -162,10 +225,22 @@ fn check_file(
                     edit: None,
                     legacy_fingerprints: Vec::new(),
                     fingerprint: Some(fingerprint(&declaration_identity(node, &source))),
-                });
+                };
+                if no_scope && !decided {
+                    unscoped
+                        .entry((directory.display().to_string(), rule.id.clone()))
+                        .or_default()
+                        .push(Missing {
+                            package: names.package.clone(),
+                            type_name: subject.to_owned(),
+                            diagnostic,
+                        });
+                } else {
+                    outcome.diagnostics.push(diagnostic);
+                }
             }
         }
-        pending.extend(children(node).map(|child| (child, marked)));
+        pending.extend(children(node).map(|child| (child, marked, decided)));
     }
     Ok(())
 }

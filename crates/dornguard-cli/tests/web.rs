@@ -72,10 +72,21 @@ fn jspecify_checks_effective_java_scopes_without_external_engines() {
         [
             ("core/src/main/java/example/Example.java", 5),
             ("core/src/main/java/example/Example.java", 8),
+            // Both types lack a scope only because example.sub has no package-info.java.
             ("core/src/main/java/example/sub/Other.java", 3),
-            ("core/src/main/java/example/sub/Other.java", 5),
             ("jpms/src/main/java/example/b/Legacy.java", 2),
         ]
+    );
+    let missing = diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic["path"] == "core/src/main/java/example/sub/Other.java")
+        .unwrap();
+    assert!(
+        missing["message"]
+            .as_str()
+            .unwrap()
+            .contains("Package example.sub has no @NullMarked scope, so 2 types are outside one: Other, Marker"),
+        "{missing}"
     );
     let selected = report(
         check(root)
