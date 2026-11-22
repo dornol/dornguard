@@ -18,7 +18,7 @@ fn maven_reactor_enforces_layered_and_hexagonal_profiles() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join(".dornguard.yml"),
-        "version: 1\nprofiles: [layered, hexagonal, thymeleaf, jsp]\n",
+        "version: 1\nprofiles: [layered, hexagonal, thymeleaf, jsp]\nrules:\n  format.indentation: {enabled: true}\n",
     )
     .unwrap();
     fs::write(
