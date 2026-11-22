@@ -679,3 +679,48 @@ fn listed_files_may_defeat_the_declaration_parser_too() {
         "{tolerated}"
     );
 }
+
+#[test]
+#[ignore = "requires the pinned Semgrep and PMD engines"]
+fn an_imported_type_written_in_full_is_one_diagnostic_that_asks_for_the_simple_name() {
+    let project = project(
+        "import java.util.List;\nimport java.util.Set;\n\nclass Example {\n    java.util.List<String> names = null;\n    java.nio.file.Path path = null;\n}\n",
+    );
+    let root = project.path();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [java]\n",
+    )
+    .unwrap();
+    let result = report(check(root).output().unwrap(), 0);
+    let found = |rule: &str| {
+        result["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|item| item["rule_id"] == rule)
+            .map(|item| {
+                (
+                    item["subject"].as_str().unwrap().to_owned(),
+                    item["message"].as_str().unwrap().to_owned(),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    // The List import is used by the full name's fix, so only the unused Set import remains.
+    let imports = found("java.unnecessary-import");
+    assert_eq!(imports.len(), 1, "{result}");
+    assert_eq!(imports[0].0, "java.util.Set");
+    let names = found("java.fully-qualified-type");
+    assert_eq!(names.len(), 2, "{result}");
+    let list = names
+        .iter()
+        .find(|item| item.0 == "java.util.List")
+        .unwrap();
+    assert!(list.1.ends_with("replace it with `List`."), "{}", list.1);
+    let path = names
+        .iter()
+        .find(|item| item.0 == "java.nio.file.Path")
+        .unwrap();
+    assert!(!path.1.contains("already imported"), "{}", path.1);
+}

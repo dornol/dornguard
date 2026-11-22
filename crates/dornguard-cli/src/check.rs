@@ -155,6 +155,8 @@ impl Prepared<'_> {
             let active = self.rules.iter().map(|rule| rule.id.as_str()).collect();
             suppressions::apply(self.root, &self.config.ignore, &active, outcome);
         }
+        // After suppression, so that an exempted full name does not hide an unused import.
+        crate::overlap::merge(outcome);
     }
 
     fn scoped_prep_error(&self, error: miette::Report) -> Outcome {

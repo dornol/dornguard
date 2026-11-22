@@ -134,7 +134,7 @@ make it blocking.
 | Rule | Reports |
 | --- | --- |
 | `java.fully-qualified-type` and `kotlin.fully-qualified-type` | Package-qualified names shaped like types in Java or Kotlin code |
-| `java.unnecessary-import` | Unused, duplicate, or implicit imports reported by PMD |
+| `java.unnecessary-import` | Unused, duplicate, or implicit imports reported by PMD. An import whose type the file writes out in full is reported only by `java.fully-qualified-type`, which asks for the simple name |
 | `java.preserve-stack-trace` | Rethrown exceptions that lose their original cause, as reported by PMD |
 | `java.resource-not-closed` | Potential leaks of Java resources such as file streams and JDBC connections, as reported by PMD |
 | `java.bigdecimal-from-floating-point-literal` | Decimal literals passed to the `BigDecimal` constructor, as reported by PMD |

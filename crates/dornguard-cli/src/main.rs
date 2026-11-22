@@ -23,6 +23,7 @@ mod csp;
 mod doctor;
 mod flyway;
 mod maven;
+mod overlap;
 mod suppressions;
 
 #[tokio::main(flavor = "current_thread")]
