@@ -141,11 +141,22 @@ pub struct Diagnostic {
     pub fingerprint: Option<String>,
     #[serde(skip)]
     pub legacy_fingerprints: Vec<String>,
-    /// The fingerprint names a group of findings whose reported file can change, so a
-    /// baseline or `ignore` entry matches it by rule and fingerprint alone.
-    #[serde(skip)]
-    pub location_independent: bool,
+    /// Set when the diagnostic stands for several findings of one cause. Its fingerprint
+    /// names the group, so a baseline or `ignore` entry matches by rule and fingerprint
+    /// alone, whichever file the group is reported in.
+    #[serde(flatten, skip_serializing_if = "Option::is_none")]
+    pub group: Option<FindingGroup>,
 }
+
+/// How many findings a grouped diagnostic stands for, with a few of them.
+#[derive(Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct FindingGroup {
+    pub occurrences: usize,
+    pub examples: Vec<String>,
+}
+
+/// The most examples a grouped diagnostic lists, in its message and in `examples`.
+pub const GROUP_EXAMPLES: usize = 3;
 
 #[derive(Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct SourceEdit {

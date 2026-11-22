@@ -77,6 +77,18 @@ fn jspecify_checks_effective_java_scopes_without_external_engines() {
             ("jpms/src/main/java/example/b/Legacy.java", 2),
         ]
     );
+    // Grouped diagnostics carry the count and examples as fields, others have neither.
+    let grouped = diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic["path"] == "core/src/main/java/example/sub/Other.java")
+        .unwrap();
+    assert_eq!(grouped["occurrences"], 2, "{grouped}");
+    assert_eq!(grouped["examples"], serde_json::json!(["Other", "Marker"]));
+    let single = diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic["path"] == "jpms/src/main/java/example/b/Legacy.java")
+        .unwrap();
+    assert!(single.get("occurrences").is_none() && single.get("examples").is_none());
     let missing = diagnostics
         .iter()
         .find(|diagnostic| diagnostic["path"] == "core/src/main/java/example/sub/Other.java")
@@ -87,6 +99,21 @@ fn jspecify_checks_effective_java_scopes_without_external_engines() {
             .unwrap()
             .contains("Package example.sub has no @NullMarked scope, so 2 types are outside one: Other, Marker"),
         "{missing}"
+    );
+    let sarif = std::process::Command::new(env!("CARGO_BIN_EXE_dornguard"))
+        .current_dir(root)
+        .args(["check", "--format", "sarif"])
+        .output()
+        .unwrap();
+    let sarif: serde_json::Value = serde_json::from_slice(&sarif.stdout).unwrap();
+    let results = sarif["runs"][0]["results"].as_array().unwrap();
+    let grouped = results
+        .iter()
+        .find(|item| item["properties"]["occurrences"] == 2)
+        .unwrap();
+    assert_eq!(
+        grouped["properties"]["examples"],
+        serde_json::json!(["Other", "Marker"])
     );
     let selected = report(
         check(root)

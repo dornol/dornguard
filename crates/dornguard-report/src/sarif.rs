@@ -62,6 +62,10 @@ fn results(report: &CheckReport) -> Vec<Value> {
             if let Some(subject) = &item.subject {
                 result["properties"]["subject"] = json!(subject);
             }
+            if let Some(group) = &item.group {
+                result["properties"]["occurrences"] = json!(group.occurrences);
+                result["properties"]["examples"] = json!(group.examples);
+            }
             result
         })
         .collect::<Vec<_>>()

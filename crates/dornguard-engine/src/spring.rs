@@ -639,6 +639,6 @@ fn emit(
         fingerprint: fragment_fingerprint(text(node, source.text())),
         edit: None,
         legacy_fingerprints: Vec::new(),
-        location_independent: false,
+        group: None,
     });
 }

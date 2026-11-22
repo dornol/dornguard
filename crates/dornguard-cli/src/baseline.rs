@@ -177,7 +177,7 @@ impl Baseline {
         // spend a recorded occurrence belonging to another exact match.
         for legacy in [false, true] {
             outcome.diagnostics.retain(|diagnostic| {
-                if diagnostic.location_independent {
+                if diagnostic.group.is_some() {
                     // A group's reported file can change, so its identity is the rule and fingerprint.
                     if legacy {
                         return true;
@@ -317,7 +317,7 @@ impl Baseline {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dornguard_core::{Confidence, EngineName, Severity};
+    use dornguard_core::{Confidence, EngineName, FindingGroup, Severity};
 
     fn fp(digit: char) -> String {
         digit.to_string().repeat(64)
@@ -346,7 +346,10 @@ mod tests {
             fix: String::new(),
             edit: None,
             legacy_fingerprints: legacy.to_vec(),
-            location_independent: independent,
+            group: independent.then(|| FindingGroup {
+                occurrences: 2,
+                examples: Vec::new(),
+            }),
             fingerprint: Some(fingerprint.to_owned()),
         }
     }

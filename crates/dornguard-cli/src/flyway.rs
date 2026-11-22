@@ -83,7 +83,7 @@ pub async fn check(root: &Path, target: &Path, base: Option<&str>, rule: &Rule) 
             fingerprint: Some(fingerprint(&String::from_utf8_lossy(&patch))),
             edit: None,
             legacy_fingerprints: Vec::new(),
-            location_independent: false,
+            group: None,
         });
     }
     Ok(outcome)

@@ -11,6 +11,8 @@ See the [v0.0.7 release notes](releases/v0.0.7.md) for upgrade details.
   accepted for every rule.
 - `partial_parsing` and `partial_parsing_files` report valid files that a parser
   reads only partly as incomplete analysis instead of an engine error.
+- Diagnostics that stand for several findings carry `occurrences` and `examples`
+  in JSON and SARIF.
 - Architecture findings count one cause each: a package edge for
   `architecture.package-cycle`, a class for forbidden dependencies, and a package
   for `java.jspecify-null-marked` when no `@NullMarked` scope exists.
@@ -62,6 +64,14 @@ is exclusive. SARIF declares `columnKind: utf16CodeUnits` and records the
 same ranges. ArchUnit can report a logical location with `module` and
 `class_name` when the source is unresolved, or a path with a null line
 when the debug mapping is ambiguous.
+
+A diagnostic that stands for several findings of one cause adds optional
+`occurrences`, the number of findings it covers, and `examples`, up to three of
+them. SARIF carries both in the result's `properties`. Package-cycle
+diagnostics describe a package edge and list `origin -> target` class pairs,
+forbidden-dependency diagnostics describe a class and list the forbidden types,
+and a JSpecify diagnostic for a package without `@NullMarked` lists type names.
+Diagnostics for a single finding have neither field.
 
 Check reports still expose `complete` and `exit_code`. Failures can include
 `stage`, `build_tool`, `file_count`, `modules`, `rule_ids` and the

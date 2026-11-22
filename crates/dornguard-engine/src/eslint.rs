@@ -148,7 +148,7 @@ fn record_report(
             fix: rule.fix.clone(),
             edit: None,
             legacy_fingerprints: Vec::new(),
-            location_independent: false,
+            group: None,
             fingerprint: finding
                 .end_line
                 .zip(finding.end_column)

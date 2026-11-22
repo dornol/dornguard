@@ -4,7 +4,9 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use dornguard_config::Rule;
-use dornguard_core::{Diagnostic, EngineName, Module, Outcome, fingerprint};
+use dornguard_core::{
+    Diagnostic, EngineName, FindingGroup, GROUP_EXAMPLES, Module, Outcome, fingerprint,
+};
 use miette::{IntoDiagnostic, Result, WrapErr, bail, miette};
 use serde::{Deserialize, Serialize};
 use tokio::time::Instant;
@@ -325,7 +327,7 @@ fn record_findings(
             fix: rule.fix.clone(),
             edit: None,
             legacy_fingerprints: vec![legacy_fingerprint, relationship_fingerprint],
-            location_independent: true,
+            group: None,
             fingerprint: Some(fingerprint(&identity)),
         };
         let anchor = (finding.origin.clone(), finding.target.clone());
@@ -354,6 +356,10 @@ fn record_findings(
         };
         let cycle = rule.options.as_ref().is_some_and(|options| options.cycles);
         group.diagnostic.message = group_message(&rule.description, &module, cycle, &group);
+        group.diagnostic.group = Some(FindingGroup {
+            occurrences: group.pairs.len(),
+            examples: group_examples(cycle, &group),
+        });
         outcome.diagnostics.push(group.diagnostic);
     }
 }
@@ -378,28 +384,38 @@ fn merge_representative(group: &mut Group, diagnostic: Diagnostic, anchor: (Stri
     representative.legacy_fingerprints = legacy;
 }
 
+/// A few of the dependencies behind a diagnostic: a class pair for a cycle, a forbidden
+/// type otherwise.
+fn group_examples(cycle: bool, group: &Group) -> Vec<String> {
+    group
+        .pairs
+        .iter()
+        .take(GROUP_EXAMPLES)
+        .map(|(origin, target)| {
+            if cycle {
+                format!("{origin} -> {target}")
+            } else {
+                target.clone()
+            }
+        })
+        .collect()
+}
+
 fn group_message(description: &str, module: &str, cycle: bool, group: &Group) -> String {
-    const EXAMPLES: usize = 3;
     let count = group.pairs.len();
     if count == 1 {
         let (origin, target) = &group.anchor;
         return format!("{description} {origin} depends on {target} in {module}.");
     }
-    let more = count.saturating_sub(EXAMPLES);
+    let more = count.saturating_sub(GROUP_EXAMPLES);
     let more = if more > 0 {
         format!(" and {more} more")
     } else {
         String::new()
     };
+    let examples = group_examples(cycle, group).join(", ");
     if cycle {
         let (origin, target) = &group.anchor;
-        let examples = group
-            .pairs
-            .iter()
-            .take(EXAMPLES)
-            .map(|(origin, target)| format!("{origin} -> {target}"))
-            .collect::<Vec<_>>()
-            .join(", ");
         format!(
             "{description} Package {} depends on {} through {count} class dependencies in {module}, for example {examples}{more}.",
             package_of(origin),
@@ -407,15 +423,8 @@ fn group_message(description: &str, module: &str, cycle: bool, group: &Group) ->
         )
     } else {
         let origin = &group.anchor.0;
-        let targets = group
-            .pairs
-            .iter()
-            .take(EXAMPLES)
-            .map(|(_, target)| target.as_str())
-            .collect::<Vec<_>>()
-            .join(", ");
         format!(
-            "{description} {origin} depends on {count} forbidden types in {module}: {targets}{more}."
+            "{description} {origin} depends on {count} forbidden types in {module}: {examples}{more}."
         )
     }
 }
@@ -575,7 +584,7 @@ mod group_tests {
                 fix: String::new(),
                 edit: None,
                 legacy_fingerprints: Vec::new(),
-                location_independent: false,
+                group: None,
                 fingerprint: None,
             },
             anchor,
@@ -614,6 +623,23 @@ mod group_tests {
             group_message("Rule.", ":m", false, &group),
             "Rule. a.A depends on 4 forbidden types in :m: s.T1, s.T2, s.T3 and 1 more."
         );
+    }
+
+    #[test]
+    fn examples_are_the_class_pairs_of_a_cycle_and_the_types_otherwise() {
+        let pairs = [
+            ("a.A1", "b.B"),
+            ("a.A2", "b.B"),
+            ("a.A3", "b.B"),
+            ("a.A4", "b.B"),
+        ];
+        let group = group(&pairs);
+        assert_eq!(
+            group_examples(true, &group),
+            ["a.A1 -> b.B", "a.A2 -> b.B", "a.A3 -> b.B"]
+        );
+        let forbidden = self::group(&[("a.A", "s.T1"), ("a.A", "s.T2")]);
+        assert_eq!(group_examples(false, &forbidden), ["s.T1", "s.T2"]);
     }
 
     #[test]

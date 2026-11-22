@@ -4,7 +4,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use dornguard_config::PartialParsingPolicy;
-use dornguard_core::{Diagnostic, EngineName, Outcome, fingerprint};
+use dornguard_core::{Diagnostic, EngineName, FindingGroup, GROUP_EXAMPLES, Outcome, fingerprint};
 use tree_sitter::{Node, Parser, Tree};
 
 use crate::{Engine, Request, display_path, engine_failure, fail};
@@ -61,7 +61,6 @@ struct Missing {
 type Unscoped = BTreeMap<(String, String), Vec<Missing>>;
 
 fn report_unscoped(unscoped: Unscoped, outcome: &mut Outcome) {
-    const EXAMPLES: usize = 3;
     for ((directory, _), mut types) in unscoped {
         types.sort_by(|a, b| {
             (&a.diagnostic.path, a.diagnostic.line).cmp(&(&b.diagnostic.path, b.diagnostic.line))
@@ -71,16 +70,16 @@ fn report_unscoped(unscoped: Unscoped, outcome: &mut Outcome) {
             .iter()
             .filter_map(|item| item.diagnostic.fingerprint.clone())
             .collect::<Vec<_>>();
-        let names = types
+        let examples = types
             .iter()
-            .take(EXAMPLES)
-            .map(|item| item.type_name.as_str())
-            .collect::<Vec<_>>()
-            .join(", ");
+            .take(GROUP_EXAMPLES)
+            .map(|item| item.type_name.clone())
+            .collect::<Vec<_>>();
+        let names = examples.join(", ");
         let package = types[0].package.clone();
         let mut diagnostic = types.swap_remove(0).diagnostic;
         if count > 1 {
-            let more = count.saturating_sub(EXAMPLES);
+            let more = count.saturating_sub(GROUP_EXAMPLES);
             let more = if more > 0 {
                 format!(" and {more} more")
             } else {
@@ -101,7 +100,10 @@ fn report_unscoped(unscoped: Unscoped, outcome: &mut Outcome) {
                 diagnostic.rule_id
             )));
             diagnostic.legacy_fingerprints = legacy;
-            diagnostic.location_independent = true;
+            diagnostic.group = Some(FindingGroup {
+                occurrences: count,
+                examples,
+            });
         }
         outcome.diagnostics.push(diagnostic);
     }
@@ -225,7 +227,7 @@ fn check_file(
                     fix: rule.fix.clone(),
                     edit: None,
                     legacy_fingerprints: Vec::new(),
-                    location_independent: false,
+                    group: None,
                     fingerprint: Some(fingerprint(&declaration_identity(node, &source))),
                 };
                 if no_scope && !decided {

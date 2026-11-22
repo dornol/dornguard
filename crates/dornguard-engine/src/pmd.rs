@@ -420,7 +420,7 @@ async fn scan(request: Request<'_>, settings: &Pmd<'_>, outcome: &mut Outcome) -
                 fingerprint,
                 edit: None,
                 legacy_fingerprints,
-                location_independent: false,
+                group: None,
             });
         }
     }
