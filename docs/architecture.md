@@ -13,7 +13,7 @@ A diagnostic stands for one cause, not for each class dependency.
 The location is the earliest one that has a file and a line. A fingerprint
 identifies the package edge or the class, so a baseline or an `ignore` entry
 with a fingerprint covers every dependency in that group, including ones added
-later. Fingerprints from earlier releases still match.
+later. A baseline or `ignore` entry from an earlier release matches only if it names the file where the group is reported, so recreate the baseline after upgrading.
 
 ## Gradle
 
