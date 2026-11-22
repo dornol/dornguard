@@ -79,12 +79,24 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+          cache: gradle
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
+      - name: Install the pinned Rust toolchain
+        run: scripts/install-rust-toolchain.sh
+      - name: Cache Cargo downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-registry-${{ runner.os }}-
       - name: Build matching JVM artifacts
         run: |
-          examples/spring-boot-multimodule/gradlew --no-daemon --console=plain -p runners/archunit-runner jar
+          scripts/retry.sh examples/spring-boot-multimodule/gradlew --no-daemon --console=plain -p runners/archunit-runner jar
           python - <<'PY' >> "$GITHUB_ENV"
           import hashlib
           from pathlib import Path
@@ -97,7 +109,7 @@ jobs:
         run: |
           mkdir -p .ci-tools/eslint
           cp scripts/ci-eslint/package.json scripts/ci-eslint/package-lock.json .ci-tools/eslint/
-          (cd .ci-tools/eslint && npm ci --no-audit --no-fund)
+          (cd .ci-tools/eslint && ../../scripts/retry.sh npm ci --no-audit --no-fund)
           echo "$GITHUB_WORKSPACE/.ci-tools/eslint/node_modules/.bin" >> "$GITHUB_PATH"
       - name: Build CLI
         run: |
@@ -108,7 +120,7 @@ jobs:
           DORNGUARD_ENGINE_DIR: ${{ runner.temp }}/dornguard-engines
           DORNGUARD_ARCHUNIT_RUNNER: ${{ github.workspace }}/runners/archunit-runner/build/libs/archunit-runner.jar
         run: |
-          target/release/dornguard engines install
+          scripts/retry.sh target/release/dornguard engines install
           target/release/dornguard doctor
           cargo test --workspace --locked -- --include-ignored
           target/release/dornguard check examples/spring-boot-multimodule --format json

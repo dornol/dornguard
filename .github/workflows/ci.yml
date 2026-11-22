@@ -15,12 +15,32 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+      - name: Install the pinned Rust toolchain
+        run: scripts/install-rust-toolchain.sh
+      - name: Cache cargo-deny and cargo-about
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/.cargo/bin/cargo-deny
+            ~/.cargo/bin/cargo-about
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+          key: cargo-tools-${{ runner.os }}-deny-0.22.0-about-0.9.3-rust-${{ hashFiles('.github/rust-version') }}
+      - name: Cache Cargo downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-registry-${{ runner.os }}-
       - name: Install cargo-deny
-        run: cargo install cargo-deny --locked --version 0.22.0
+        run: scripts/retry.sh cargo install cargo-deny --locked --version 0.22.0
       - name: Check advisories, licenses, bans, and sources
         run: cargo deny --locked check
       - name: Install cargo-about
-        run: cargo install cargo-about --locked --version 0.9.3 --features cli
+        run: scripts/retry.sh cargo install cargo-about --locked --version 0.9.3 --features cli
       - name: Check Rust dependency notices are current
         run: scripts/generate-rust-notices.sh --check
 
@@ -31,6 +51,17 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+      - name: Install the pinned Rust toolchain
+        run: scripts/install-rust-toolchain.sh
+      - name: Cache Cargo downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-registry-${{ runner.os }}-
       - name: Lint and test without external engines
         run: |
           cargo clippy --locked --workspace --all-targets -- -D warnings
@@ -46,6 +77,23 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+      - name: Install the pinned Rust toolchain
+        run: scripts/install-rust-toolchain.sh
+      - name: Cache Cargo downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-registry-${{ runner.os }}-
+      - name: Cache Maven downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.m2/repository
+          key: maven-${{ runner.os }}-${{ hashFiles('crates/dornguard-cli/tests/maven.rs', 'crates/dornguard-cli/tests/gradle.rs') }}
+          restore-keys: maven-${{ runner.os }}-
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
@@ -53,6 +101,7 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+          cache: gradle
       - name: Check install docs name the current release
         run: python scripts/check-version-refs.py
       - name: Validate Gradle and Maven configuration examples

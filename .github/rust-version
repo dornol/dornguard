@@ -1,0 +1,5 @@
+# The Rust toolchain that CI and the release workflow use, as a rustup channel.
+# Pinning it keeps a new compiler or clippy release from failing a build that did
+# not change. Raise it in its own commit after running
+# `cargo clippy --locked --workspace --all-targets -- -D warnings` with the new version.
+1.100.0
