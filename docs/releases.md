@@ -18,6 +18,10 @@ See the [v0.0.7 release notes](releases/v0.0.7.md) for upgrade details.
 - `java.unnecessary-import` no longer reports an import whose type the file
   writes in full. `java.fully-qualified-type` asks for the simple name instead.
 - `java.empty-catch` allows a block that has a comment.
+- Fewer false positives. `java.resource-not-closed` ignores `instanceof` bindings
+  that are never closed and locals that borrow a field, a variable or a plain
+  `getX()` result. `java.preserve-stack-trace` accepts rethrowing the caught
+  exception after an `instanceof` check.
 - Bundled runner files are found when the executable is installed through a symlink.
 
 The [release workflow](../.github/workflows/release.yml) builds

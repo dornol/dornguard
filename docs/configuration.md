@@ -89,7 +89,16 @@ resolve in PMD. The report indicates when analysis uses the compiled project
 classpath. Use `check --resolve-types` for compiled PMD type resolution on
 main Java sources. `--resolve-imports` is an equivalent option.
 An `instanceof` resource binding is treated as closed when the matching
-branch begins with a direct call to that binding's `close()` method.
+branch begins with a direct call to that binding's `close()` method. A binding
+whose `close()` the code never calls only borrows the object, so the rule does
+not report it. The rule also treats a local that holds a field, another
+variable, or the result of a no-argument `getX()` call as borrowed, unless the
+local is assigned again. `getConnection`, `getResourceAsStream`,
+`getInputStream` and `getOutputStream` still count as opening a resource.
+
+`java.preserve-stack-trace` accepts rethrowing the caught exception after
+narrowing it with `instanceof`, as in
+`if (e instanceof WriteException w) throw w;`.
 
 `allow_logged_exceptions` defaults to `false`. Set it to `true` to allow a
 direct call to a resolved `java.util.logging.Logger` or `org.slf4j.Logger`

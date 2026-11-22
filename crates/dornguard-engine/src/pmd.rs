@@ -29,8 +29,16 @@ const NON_CLOSEABLE_EXECUTOR: &str = concat!(
 );
 const NON_CLOSEABLE_HTTP_CLIENT: &str =
     "self::VariableId[pmd-java:typeIsExactly('java.net.http.HttpClient')]";
-// PMD treats an instanceof binding as a new resource. It misses a direct close
-// on that binding at the start of the matching branch.
+// An instanceof binding views an object that already exists. When the code never tries to
+// close it, it only borrows the object. Code that closes the binding claims ownership, so a
+// close that does not run on every path still leaves a resource open.
+const BORROWED_PATTERN_BINDING: &str = concat!(
+    "self::VariableId[@PatternBinding = true()]",
+    "[let $binding := @Name return not(",
+    "ancestor::*[self::MethodDeclaration or self::ConstructorDeclaration or self::LambdaExpression][1]",
+    "//MethodCall[@MethodName = 'close'][*[1]/self::VariableAccess[@Name = $binding]])]"
+);
+// PMD misses a direct close on that binding at the start of the matching branch.
 const CLOSED_PATTERN_RESOURCE: &str = concat!(
     "self::VariableId[@PatternBinding = true()]",
     "[let $binding := @Name return ",
@@ -39,6 +47,17 @@ const CLOSED_PATTERN_RESOURCE: &str = concat!(
     "/(self::ExpressionStatement | self::Block/*[1][self::ExpressionStatement])",
     "/MethodCall[pmd-java:matchesSig('java.lang.AutoCloseable#close()') ",
     "and *[1]/self::VariableAccess[@Name = $binding]]]"
+);
+// A local that holds a field, another variable, or the result of a plain accessor borrows a
+// resource that has an owner. Accessors that conventionally hand out a resource to close
+// stay reported. A later assignment may replace the value, so it keeps the finding.
+const BORROWED_RESOURCE: &str = concat!(
+    "self::VariableId[let $resource := @Name return ",
+    "parent::VariableDeclarator[FieldAccess or VariableAccess or ",
+    "MethodCall[ArgumentList[@Size = 0]][matches(@MethodName, '^get[A-Z]')]",
+    "[not(@MethodName = ('getConnection', 'getResourceAsStream', 'getInputStream', 'getOutputStream'))]]",
+    "[parent::LocalVariableDeclaration[count(VariableDeclarator) = 1]/parent::Block",
+    "[not(.//VariableAccess[@Name = $resource and @AccessType != 'READ'])]]]"
 );
 // A shutdown on this exact ExecutorService at the start of the immediately
 // following finally block runs on both normal and exceptional exits.
@@ -59,6 +78,16 @@ const CAUSE_PRESERVING_EXCEPTION: &str = concat!(
     "[let $catch := ancestor::CatchClause[1], $caught := $catch/CatchParameter/@Name return ",
     "parent::ThrowStatement and ArgumentList[@Size = 2]/*[2]/self::VariableAccess[@Name = $caught] ",
     "and not($catch/Block//VariableAccess[@Name = $caught and @AccessType != 'READ'])]"
+);
+// Throwing the caught exception again after narrowing it with instanceof keeps its cause.
+const RETHROWN_NARROWED_EXCEPTION: &str = concat!(
+    "self::VariableAccess[parent::ThrowStatement]",
+    "[let $name := @Name, $catch := ancestor::CatchClause[1], ",
+    "$caught := ancestor::CatchClause[1]/CatchParameter/@Name return ",
+    "not($catch/Block//VariableAccess[@Name = $caught and @AccessType != 'READ']) ",
+    "and $catch/Block//InfixExpression[@Operator = 'instanceof']",
+    "[*[1]/self::VariableAccess[@Name = $caught]]",
+    "[PatternExpression/TypePattern/VariableId[@Name = $name]]]"
 );
 // A preceding direct log call in the same catch body runs on every
 // path to that throw. Require a resolved throwable overload and the unchanged catch parameter.
@@ -126,7 +155,12 @@ async fn scan(request: Request<'_>, settings: &Pmd<'_>, outcome: &mut Outcome) -
         let config = request.registry.engine_config(rule)?;
         let suppression = match rule.id.as_str() {
             RESOURCE_RULE => {
-                let mut conditions = vec![CLOSED_PATTERN_RESOURCE, SHUTDOWN_EXECUTOR];
+                let mut conditions = vec![
+                    BORROWED_PATTERN_BINDING,
+                    CLOSED_PATTERN_RESOURCE,
+                    BORROWED_RESOURCE,
+                    SHUTDOWN_EXECUTOR,
+                ];
                 if settings.java_target.is_some_and(|target| target < 21) {
                     conditions.push(NON_CLOSEABLE_HTTP_CLIENT);
                 }
@@ -152,14 +186,18 @@ async fn scan(request: Request<'_>, settings: &Pmd<'_>, outcome: &mut Outcome) -
                         "parent::Block//VariableAccess[@Name = $resource and @AccessType != 'READ'])]"
                     ), signatures));
                 }
-                Some((CLOSE_RESOURCE, Cow::Owned(xpath)))
+                Some((CLOSE_RESOURCE, Cow::<str>::Owned(xpath)))
             }
             PRESERVE_STACK_TRACE_RULE => Some((
                 PRESERVE_STACK_TRACE,
                 if settings.allow_logged_exceptions {
-                    Cow::Owned(format!("{CAUSE_PRESERVING_EXCEPTION} | {LOGGED_EXCEPTION}"))
+                    Cow::Owned(format!(
+                        "{CAUSE_PRESERVING_EXCEPTION} | {RETHROWN_NARROWED_EXCEPTION} | {LOGGED_EXCEPTION}"
+                    ))
                 } else {
-                    Cow::Borrowed(CAUSE_PRESERVING_EXCEPTION)
+                    Cow::Owned(format!(
+                        "{CAUSE_PRESERVING_EXCEPTION} | {RETHROWN_NARROWED_EXCEPTION}"
+                    ))
                 },
             )),
             _ => None,

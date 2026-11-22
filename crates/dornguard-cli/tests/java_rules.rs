@@ -724,3 +724,129 @@ fn an_imported_type_written_in_full_is_one_diagnostic_that_asks_for_the_simple_n
         .unwrap();
     assert!(!path.1.contains("already imported"), "{}", path.1);
 }
+
+fn lines_of(result: &serde_json::Value, rule: &str) -> Vec<u64> {
+    result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|item| item["rule_id"] == rule)
+        .map(|item| item["line"].as_u64().unwrap())
+        .collect()
+}
+
+#[test]
+#[ignore = "requires the pinned Semgrep and PMD engines"]
+fn borrowed_resources_are_not_reported_but_opened_ones_are() {
+    let project = project(
+        r#"import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.sql.Connection;
+import java.sql.SQLException;
+import javax.sql.DataSource;
+
+class Example {
+    static class Holder {
+        InputStream in;
+        InputStream getStream() { return in; }
+    }
+
+    int pattern(Object value) throws IOException {
+        if (value instanceof InputStream stream) {
+            return stream.available();
+        }
+        return 0;
+    }
+
+    int getter(Holder holder) throws IOException {
+        InputStream stream = holder.getStream();
+        return stream.available();
+    }
+
+    int field(Holder holder) throws IOException {
+        InputStream stream = holder.in;
+        return stream.available();
+    }
+
+    void connection(DataSource source) throws SQLException {
+        Connection connection = source.getConnection();
+        connection.getAutoCommit();
+    }
+
+    int reassigned(Holder holder) throws IOException {
+        InputStream stream = holder.getStream();
+        stream = new FileInputStream("x");
+        return stream.available();
+    }
+
+    int opened() throws IOException {
+        InputStream stream = new FileInputStream("y");
+        return stream.available();
+    }
+}
+"#,
+    );
+    let root = project.path();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [java]\n",
+    )
+    .unwrap();
+    let result = report(check(root).output().unwrap(), 0);
+    // Only the connection from a data source, the reassigned variable and the stream opened here.
+    assert_eq!(
+        lines_of(&result, "java.resource-not-closed"),
+        [32, 37, 43],
+        "{result}"
+    );
+}
+
+#[test]
+#[ignore = "requires the pinned Semgrep and PMD engines"]
+fn rethrowing_the_narrowed_caught_exception_keeps_its_cause() {
+    let project = project(
+        r#"import java.io.IOException;
+
+class Example {
+    static class WriteException extends RuntimeException {
+        WriteException(String message) { super(message); }
+        WriteException(String message, Throwable cause) { super(message, cause); }
+    }
+
+    void run() throws IOException {}
+
+    void narrowed() {
+        try { run(); } catch (IOException | RuntimeException e) {
+            if (e instanceof WriteException writeException) throw writeException;
+            throw new WriteException("Failed to write", e);
+        }
+    }
+
+    void lost() {
+        try { run(); } catch (IOException e) { throw new WriteException("failed"); }
+    }
+
+    void unrelated(Exception other) {
+        try { run(); } catch (IOException e) {
+            if (other instanceof IllegalStateException state) throw state;
+            throw new WriteException("failed", e);
+        }
+    }
+}
+"#,
+    );
+    let root = project.path();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [java]\n",
+    )
+    .unwrap();
+    let result = report(check(root).output().unwrap(), 0);
+    // The cause is lost in lost() and when an unrelated exception is thrown.
+    assert_eq!(
+        lines_of(&result, "java.preserve-stack-trace"),
+        [19, 24],
+        "{result}"
+    );
+}
