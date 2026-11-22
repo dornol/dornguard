@@ -2,6 +2,24 @@
 
 See the [v0.0.7 release notes](releases/v0.0.7.md) for upgrade details.
 
+## Unreleased
+
+- `format.indentation` is off by default. Enable it with
+  `rules: { format.indentation: { enabled: true } }`.
+- The `format.*` rules skip test sources like other rules. Set
+  `skip_java_tests: false` on a rule under `rules` to check them. The key is now
+  accepted for every rule.
+- `partial_parsing` and `partial_parsing_files` report valid files that a parser
+  reads only partly as incomplete analysis instead of an engine error.
+- Architecture findings count one cause each: a package edge for
+  `architecture.package-cycle`, a class for forbidden dependencies, and a package
+  for `java.jspecify-null-marked` when no `@NullMarked` scope exists.
+  Fingerprints from earlier releases still match.
+- `java.unnecessary-import` no longer reports an import whose type the file
+  writes in full. `java.fully-qualified-type` asks for the simple name instead.
+- `java.empty-catch` allows a block that has a comment.
+- Bundled runner files are found when the executable is installed through a symlink.
+
 The [release workflow](../.github/workflows/release.yml) builds
 archives for Linux x86-64 (AMD64) and macOS ARM64. Each
 archive includes the native CLI, the ArchUnit runner and the Maven model

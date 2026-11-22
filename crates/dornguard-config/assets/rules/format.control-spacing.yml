@@ -3,4 +3,3 @@ engine: builtin
 severity: error
 description: Use one space before a control statement's opening parenthesis.
 fix: Insert exactly one space between the control keyword and its opening parenthesis.
-skip_java_tests: false

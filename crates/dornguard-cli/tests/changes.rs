@@ -620,7 +620,11 @@ fn ignore_paths_suppress_findings_by_file_folder_and_rule() {
         fs::write(path, "if(true) {\n   run();\n}\n").unwrap();
     }
     let config = root.join(".dornguard.yml");
-    fs::write(&config, "version: 1\nprofiles: [format]\n").unwrap();
+    fs::write(
+        &config,
+        "version: 1\nprofiles: [format]\nrules: {format.indentation: {enabled: true}}\n",
+    )
+    .unwrap();
     let before = report(check(root).output().unwrap(), 1);
     assert_eq!(before["diagnostics"].as_array().unwrap().len(), 10);
 
@@ -628,6 +632,8 @@ fn ignore_paths_suppress_findings_by_file_folder_and_rule() {
         &config,
         r#"version: 1
 profiles: [format]
+rules:
+  format.indentation: {enabled: true}
 ignore:
   - path: manual.js
     reason: Hand-maintained compatibility script
@@ -665,7 +671,11 @@ ignore:
 
     let authority = tempfile::tempdir().unwrap();
     let policy = authority.path().join("required.yml");
-    fs::write(&policy, "version: 1\nprofiles: [format]\n").unwrap();
+    fs::write(
+        &policy,
+        "version: 1\nprofiles: [format]\nrules: {format.indentation: {enabled: true}}\n",
+    )
+    .unwrap();
     let required = report(
         check(root)
             .arg("--organization-policy")
@@ -700,7 +710,7 @@ fn tracked_changes_are_checked_even_when_their_directory_is_gitignored() {
     let root = project.path();
     fs::write(
         root.join(".dornguard.yml"),
-        "version: 1\nprofiles: [format]\n",
+        "version: 1\nprofiles: [format]\nrules: {format.indentation: {enabled: true}}\n",
     )
     .unwrap();
     commit_fixture(root);

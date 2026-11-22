@@ -29,14 +29,15 @@ Use `dornguard rules explain ID` for the reason and guidance for a rule.
 | `scheduler` | Spring rules for scheduler modules |
 | `java-library` | Java and framework independence rules |
 
-`architecture.package-cycle` reports each class dependency that crosses
-between packages of the same dependency cycle within a module. Dependencies on
-packages outside the cycle are not reported. Override `options: { from:
+`architecture.package-cycle` reports each package edge of a dependency cycle
+within a module, with the number of class dependencies behind it. Dependencies
+on packages outside the cycle are not reported. Override `options: { from:
 [example.service], cycles: true }` to consider only matching packages.
 
 Rules skip test sources, any file below a `src/test` directory, by default.
-Rules that exist for tests (`java.assert-throws-nested-call`) and the `format.*`
-rules still check them. A custom rule can opt back in with `skip_java_tests: false`.
+The one rule that exists for tests, `java.assert-throws-nested-call`, still checks
+them. Set `skip_java_tests: false` under `rules` to check test sources with any
+other rule, for example `rules: { format.trailing-whitespace: { skip_java_tests: false } }`.
 Selecting a test file explicitly does not change this.
 
 ## Rule confidence
@@ -70,11 +71,14 @@ mark it as a review rule. Confidence does not change severity or the exit code.
 
 Add `format` to your profiles or run `dornguard check --profile format`.
 The profile works with `.java`, `.kt`, `.js`, `.mjs`, and `.cjs` sources and
-uses the bundled parsers. It reports the following as errors.
+uses the bundled parsers. It reports the following as errors. Indentation is
+off by default, because a formatter such as Spotless, google-java-format,
+ktlint or Prettier decides block layout better than a checker can. Enable it
+with `rules: { format.indentation: { enabled: true } }`.
 
 | Rule | Default |
 | --- | --- |
-| `format.indentation` | Spaces only. Indent blocks by four spaces in Java and Kotlin and two in JavaScript. |
+| `format.indentation` | Off by default. When enabled, spaces only. Indent blocks by four spaces in Java and Kotlin and two in JavaScript. |
 | `format.line-ending` | LF throughout the file. |
 | `format.final-newline` | A newline at the end of every nonempty file. |
 | `format.trailing-whitespace` | No spaces or tabs at the end of a line. |

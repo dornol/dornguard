@@ -7,3 +7,6 @@ rules:
   - format.trailing-whitespace
   - format.blank-lines
   - format.control-spacing
+rule_defaults:
+  format.indentation:
+    enabled: false

@@ -164,6 +164,7 @@
         "additionalProperties": false,
         "properties": {
           "enabled": { "type": "boolean" },
+          "skip_java_tests": { "type": "boolean" },
           "severity": { "enum": ["warning", "error"] },
           "options": {
             "type": "object",

@@ -144,7 +144,7 @@ fn explain_rule(registry: &dornguard_config::Registry, id: &str) -> Result<()> {
     );
     let options = match rule.id.as_str() {
         "format.indentation" => Some(
-            "format.indent_style (spaces), format.java_indent (4), format.kotlin_indent (4), format.javascript_indent (2), format.overrides[].indent_style and indent_size",
+            "Off by default; enable with rules.format.indentation.enabled: true. format.indent_style (spaces), format.java_indent (4), format.kotlin_indent (4), format.javascript_indent (2), format.overrides[].indent_style and indent_size",
         ),
         "format.control-spacing" => {
             Some("format.control_spacing (space), format.overrides[].control_spacing")

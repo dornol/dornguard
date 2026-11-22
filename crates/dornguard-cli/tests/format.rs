@@ -10,7 +10,7 @@ fn format_defaults_check_java_kotlin_and_javascript_without_a_build() {
     let root = project.path();
     fs::write(
         root.join(".dornguard.yml"),
-        "version: 1\nprofiles: [format]\n",
+        "version: 1\nprofiles: [format]\nrules: {format.indentation: {enabled: true}}\n",
     )
     .unwrap();
     fs::write(
@@ -60,7 +60,7 @@ fn format_accepts_overrides_and_ignores_program_text_inside_literals() {
     let root = project.path();
     fs::write(
         root.join(".dornguard.yml"),
-        "version: 1\nprofiles: [format]\nformat: {java_indent: 2, line_ending: crlf}\n",
+        "version: 1\nprofiles: [format]\nrules: {format.indentation: {enabled: true}}\nformat: {java_indent: 2, line_ending: crlf}\n",
     )
     .unwrap();
     let result = report(check(root).output().unwrap(), 0);
@@ -69,7 +69,7 @@ fn format_accepts_overrides_and_ignores_program_text_inside_literals() {
 
     fs::write(
         root.join(".dornguard.yml"),
-        "version: 1\nprofiles: [format]\nformat: {kotlin_indent: 0}\n",
+        "version: 1\nprofiles: [format]\nrules: {format.indentation: {enabled: true}}\nformat: {kotlin_indent: 0}\n",
     )
     .unwrap();
     let invalid = report(check(root).output().unwrap(), 2);
@@ -96,6 +96,8 @@ fn exclusive_format_uses_file_overrides_and_skips_vendor_sources() {
 version: 1
 profiles: [spring-boot]
 exclude: ["**/*.min.js"]
+rules:
+  format.indentation: {enabled: true}
 format:
   overrides:
     - files: ["legacy/**"]
@@ -131,7 +133,7 @@ fn malformed_sources_report_partial_formatting_and_keep_line_diagnostics() {
     let root = project.path();
     fs::write(
         root.join(".dornguard.yml"),
-        "version: 1\nprofiles: [format]\n",
+        "version: 1\nprofiles: [format]\nrules: {format.indentation: {enabled: true}}\n",
     )
     .unwrap();
     fs::write(root.join("src/example.js"), "function example( {\n").unwrap();
@@ -156,7 +158,7 @@ fn format_edits_are_byte_ranges_tied_to_the_exact_source() {
     let root = project.path();
     fs::write(
         root.join(".dornguard.yml"),
-        "version: 1\nprofiles: [format]\nformat: {line_ending: crlf}\n",
+        "version: 1\nprofiles: [format]\nrules: {format.indentation: {enabled: true}}\nformat: {line_ending: crlf}\n",
     )
     .unwrap();
     let file = root.join("fixture.js");
@@ -189,7 +191,7 @@ fn formatting_handles_tabs_control_spacing_and_minified_defaults() {
     let root = project.path();
     fs::write(root.join("ui.js"), "if(true) {\n\trun();\n}\n").unwrap();
     fs::write(root.join("vendor.min.js"), "if(true){run()}").unwrap();
-    let config = "version: 1\nprofiles: [format]\n";
+    let config = "version: 1\nprofiles: [format]\nrules: {format.indentation: {enabled: true}}\n";
     fs::write(root.join(".dornguard.yml"), config).unwrap();
     let default = report(check(root).output().unwrap(), 1);
     assert_eq!(default["files_requested"], 1);
@@ -240,6 +242,8 @@ fn formatting_exceptions_keep_other_rules_active() {
         root.join(".dornguard.yml"),
         r#"version: 1
 profiles: [java-source, format]
+rules:
+  format.indentation: {enabled: true}
 format:
   exclude: ["excluded/**"]
 ignore:
@@ -263,19 +267,13 @@ ignore:
 }
 
 #[test]
-fn format_rules_still_check_test_sources() {
+fn format_rules_skip_test_sources_unless_they_opt_in() {
     let project = project("class Example {\n}\n");
     let root = project.path();
-    fs::write(
-        root.join(".dornguard.yml"),
-        "version: 1\nprofiles: [format]\n",
-    )
-    .unwrap();
     let test = root.join("src/test/java/ExampleTest.java");
     fs::create_dir_all(test.parent().unwrap()).unwrap();
     fs::write(test, "class ExampleTest {  \n}\n").unwrap();
-    let result = report(check(root).output().unwrap(), 1);
-    assert!(
+    let on_test = |result: &serde_json::Value| {
         result["diagnostics"]
             .as_array()
             .unwrap()
@@ -283,7 +281,51 @@ fn format_rules_still_check_test_sources() {
             .any(|item| {
                 item["rule_id"] == "format.trailing-whitespace"
                     && item["path"] == "src/test/java/ExampleTest.java"
-            }),
-        "{result}"
-    );
+            })
+    };
+
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [format]\n",
+    )
+    .unwrap();
+    let skipped = report(check(root).output().unwrap(), 0);
+    assert!(!on_test(&skipped), "{skipped}");
+
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [format]\nrules:\n  format.trailing-whitespace: {skip_java_tests: false}\n",
+    )
+    .unwrap();
+    let included = report(check(root).output().unwrap(), 1);
+    assert!(on_test(&included), "{included}");
+}
+
+#[test]
+fn indentation_is_checked_only_when_a_project_opts_in() {
+    let project = project("class Example {\n  int x;\n}\n");
+    let root = project.path();
+    let indentation = |result: &serde_json::Value| {
+        result["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["rule_id"] == "format.indentation")
+    };
+
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [format]\n",
+    )
+    .unwrap();
+    let off = report(check(root).output().unwrap(), 0);
+    assert!(!indentation(&off), "{off}");
+
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [format]\nrules:\n  format.indentation: {enabled: true}\n",
+    )
+    .unwrap();
+    let on = report(check(root).output().unwrap(), 1);
+    assert!(indentation(&on), "{on}");
 }

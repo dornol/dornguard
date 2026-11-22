@@ -3,4 +3,3 @@ engine: builtin
 severity: error
 description: Remove trailing spaces and tabs.
 fix: Delete the whitespace at the end of this line.
-skip_java_tests: false

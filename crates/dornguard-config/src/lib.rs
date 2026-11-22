@@ -223,6 +223,8 @@ pub struct Profile {
 #[serde(deny_unknown_fields)]
 pub struct RuleOverride {
     enabled: Option<bool>,
+    /// Set to `false` to check test sources, which rules skip by default.
+    skip_java_tests: Option<bool>,
     severity: Option<Severity>,
     options: Option<ArchitectureOptions>,
 }
@@ -914,6 +916,9 @@ impl Registry {
                 item.enabled.as_ref()
             })?
             .unwrap_or(&true);
+            let skip_tests = effective(id, "skip_java_tests", &explicit, &defaults, |item| {
+                item.skip_java_tests.as_ref()
+            })?;
             let severity = effective(id, "severity", &explicit, &defaults, |item| {
                 item.severity.as_ref()
             })?;
@@ -921,6 +926,9 @@ impl Registry {
                 item.options.as_ref()
             })?;
             if *enabled {
+                if let Some(skip_tests) = skip_tests {
+                    rule.skip_java_tests = *skip_tests;
+                }
                 if let Some(severity) = severity {
                     rule.severity = *severity;
                 }
@@ -1055,6 +1063,34 @@ impl ProjectConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn format_indentation_is_off_by_default_and_tests_are_skipped() {
+        let registry = Registry::builtin().unwrap();
+        let config = Registry::parse("version: 1\n").unwrap();
+        let rules = registry
+            .resolve(&config, None, &["format".to_owned()])
+            .unwrap();
+        assert!(rules.iter().all(|rule| rule.id != "format.indentation"));
+        assert!(rules.iter().all(|rule| rule.skips_tests()), "{rules:?}");
+
+        let config = Registry::parse(
+            "version: 1\nrules:\n  format.indentation: {enabled: true}\n  format.final-newline: {skip_java_tests: false}\n",
+        )
+        .unwrap();
+        let rules = registry
+            .resolve(&config, None, &["format".to_owned()])
+            .unwrap();
+        let skips = |id: &str| {
+            rules
+                .iter()
+                .find(|rule| rule.id == id)
+                .unwrap()
+                .skips_tests()
+        };
+        assert!(skips("format.indentation"));
+        assert!(!skips("format.final-newline"));
+    }
 
     #[test]
     fn partial_parsing_files_tolerate_only_listed_paths() {
