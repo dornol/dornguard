@@ -1,30 +1,6 @@
 # Releases
 
-See the [v0.0.7 release notes](releases/v0.0.7.md) for upgrade details.
-
-## Unreleased
-
-- `format.indentation` is off by default. Enable it with
-  `rules: { format.indentation: { enabled: true } }`.
-- The `format.*` rules skip test sources like other rules. Set
-  `skip_java_tests: false` on a rule under `rules` to check them. The key is now
-  accepted for every rule.
-- `partial_parsing` and `partial_parsing_files` report valid files that a parser
-  reads only partly as incomplete analysis instead of an engine error.
-- Diagnostics that stand for several findings carry `occurrences` and `examples`
-  in JSON and SARIF.
-- Architecture findings count one cause each: a package edge for
-  `architecture.package-cycle`, a class for forbidden dependencies, and a package
-  for `java.jspecify-null-marked` when no `@NullMarked` scope exists.
-  A baseline or `ignore` entry for the group matches by rule and fingerprint, whichever file the group is reported in, and entries recorded for the individual dependencies before grouping still match.
-- `java.unnecessary-import` no longer reports an import whose type the file
-  writes in full. `java.fully-qualified-type` asks for the simple name instead.
-- `java.empty-catch` allows a block that has a comment.
-- Fewer false positives. `java.resource-not-closed` ignores `instanceof` bindings
-  that are never closed and locals that borrow a field, a variable or a plain
-  `getX()` result. `java.preserve-stack-trace` accepts rethrowing the caught
-  exception after an `instanceof` check.
-- Bundled runner files are found when the executable is installed through a symlink.
+See the [v0.0.8 release notes](releases/v0.0.8.md) for upgrade details.
 
 The [release workflow](../.github/workflows/release.yml) builds
 archives for Linux x86-64 (AMD64) and macOS ARM64. Each
@@ -45,7 +21,7 @@ The script reuses a supported Python with `venv` and `ensurepip` and an
 existing JDK 21 or later. It ends by running `dornguard doctor`.
 
 ```sh
-sh scripts/install.sh v0.0.7 --with-deps
+sh scripts/install.sh v0.0.8 --with-deps
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
@@ -55,7 +31,7 @@ For local installation from source, use
 
 ## Report format
 
-DornGuard v0.0.3 through v0.0.7 emit JSON check report version 3. The v0.0.2
+DornGuard v0.0.3 through v0.0.8 emit JSON check report version 3. The v0.0.2
 archive emits version 2. Project configuration remains version 1.
 
 Version 3 uses one-based lines and UTF-16 columns in text, JSON, and SARIF.
@@ -86,11 +62,14 @@ optional `analysis_notes` describing PMD classpath use. When organization
 policy runs, reports include `project_scope` and `organization_scope`. The
 combined `scope` is full. SARIF exposes the same scopes as `projectScope`
 and `organizationScope`. ArchUnit
-reports one finding per module, rule, origin class and forbidden target class.
-Existing dependency fingerprints still match the grouped finding.
-The v0.0.6 and v0.0.7 runners use protocol 5, which adds the `cycles` rule option for
+reports one finding per package edge for `architecture.package-cycle` and one
+per class for forbidden dependencies, and v0.0.8 groups by cause as described
+under [How findings are counted](architecture.md#how-findings-are-counted).
+Baselines and `ignore` entries recorded for the individual dependencies still match.
+The v0.0.6 through v0.0.8 runners use protocol 5, which adds the `cycles` rule option for
 `architecture.package-cycle`. The v0.0.4 and v0.0.5 runners use protocol 4.
-Version 0.0.7 adds `confidence` to each diagnostic.
+Version 0.0.7 adds `confidence` to each diagnostic. Version 0.0.8 adds optional
+`occurrences` and `examples` to grouped diagnostics.
 Install the matching CLI and runner together.
 The v0.0.3 runner uses protocol 3.
 A compiler-skipped input or a missing Java bytecode mapping is reported as

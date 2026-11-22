@@ -12,20 +12,20 @@ through one CLI with project and module profiles.
 
 ## Install or update on Ubuntu and WSL
 
-DornGuard v0.0.7 publishes Linux x86-64 (AMD64) and macOS ARM64 archives.
+DornGuard v0.0.8 publishes Linux x86-64 (AMD64) and macOS ARM64 archives.
 Run these commands in x86-64 Ubuntu, including Ubuntu on WSL. They
 install DornGuard for the first time or update an existing `install.sh`
 installation. The installer verifies the archive checksum, links the new
 version, and installs missing dependencies and engines with `--with-deps`.
 
 ```sh
-curl -fsSLo /tmp/dornguard-install.sh https://raw.githubusercontent.com/dornol/dornguard/v0.0.7/scripts/install.sh &&
-  sh /tmp/dornguard-install.sh v0.0.7 --with-deps &&
+curl -fsSLo /tmp/dornguard-install.sh https://raw.githubusercontent.com/dornol/dornguard/v0.0.8/scripts/install.sh &&
+  sh /tmp/dornguard-install.sh v0.0.8 --with-deps &&
   "$HOME/.local/bin/dornguard" version
 ```
 
-The version command should print `dornguard 0.0.7 (built-in ruleset 1.5.0)`.
-Use `"1.5.0"` if `.dornguard.yml` pins the built-in `ruleset.version`.
+The version command should print `dornguard 0.0.8 (built-in ruleset 1.6.0)`.
+Use `"1.6.0"` if `.dornguard.yml` pins the built-in `ruleset.version`.
 Keep the top-level `version: 1`.
 
 ## Install or update on macOS
@@ -36,8 +36,8 @@ engines. You need Python 3.10–3.14 and JDK 21 or later (for example from
 Homebrew: `brew install python@3.13 openjdk@21`).
 
 ```sh
-curl -fsSLo /tmp/dornguard-install.sh https://raw.githubusercontent.com/dornol/dornguard/v0.0.7/scripts/install.sh &&
-  sh /tmp/dornguard-install.sh v0.0.7
+curl -fsSLo /tmp/dornguard-install.sh https://raw.githubusercontent.com/dornol/dornguard/v0.0.8/scripts/install.sh &&
+  sh /tmp/dornguard-install.sh v0.0.8
 export PATH="$HOME/.local/bin:$PATH"
 export JAVA_HOME="$(/usr/libexec/java_home -v 21)"
 dornguard engines install
@@ -49,7 +49,7 @@ Add the `PATH` and `JAVA_HOME` exports to your shell profile. Without
 `dornguard engines install` yourself to install Semgrep and PMD.
 
 See the [release guide](docs/releases.md) for details and the
-[v0.0.7 release notes](docs/releases/v0.0.7.md) for upgrade details.
+[v0.0.8 release notes](docs/releases/v0.0.8.md) for upgrade details.
 
 ## Run the Java example
 
