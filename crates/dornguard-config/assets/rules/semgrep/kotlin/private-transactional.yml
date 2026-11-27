@@ -1,0 +1,30 @@
+rules:
+  - id: kotlin-private-transactional
+    languages: [kotlin]
+    severity: WARNING
+    message: A private function cannot be advised by a Spring transaction proxy.
+    pattern-either:
+      - pattern: |
+          @Transactional
+          private fun $F(...) { ... }
+      - pattern: |
+          @Transactional(...)
+          private fun $F(...) { ... }
+      - pattern: |
+          @Transactional
+          private fun $F(...): $T { ... }
+      - pattern: |
+          @Transactional(...)
+          private fun $F(...): $T { ... }
+      - pattern: |
+          @Transactional
+          private fun $F(...) = $E
+      - pattern: |
+          @Transactional(...)
+          private fun $F(...) = $E
+      - pattern: |
+          @Transactional
+          private fun $F(...): $T = $E
+      - pattern: |
+          @Transactional(...)
+          private fun $F(...): $T = $E

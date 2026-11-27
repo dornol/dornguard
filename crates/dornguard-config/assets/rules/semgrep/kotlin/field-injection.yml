@@ -1,0 +1,22 @@
+rules:
+  - id: kotlin-field-injection
+    languages: [kotlin]
+    severity: ERROR
+    message: Use constructor injection.
+    patterns:
+      - pattern-either:
+          - pattern: |
+              @$ANNOTATION
+              lateinit var $FIELD: $TYPE
+          - pattern: |
+              @$ANNOTATION(...)
+              lateinit var $FIELD: $TYPE
+          - pattern: |
+              @$ANNOTATION
+              var $FIELD: $TYPE = $INIT
+          - pattern: |
+              @$ANNOTATION(...)
+              var $FIELD: $TYPE = $INIT
+      - metavariable-regex:
+          metavariable: $ANNOTATION
+          regex: '^((org\.springframework\.beans\.factory\.annotation\.)?Autowired|((jakarta|javax)\.inject\.)?Inject|((jakarta|javax)\.annotation\.)?Resource)$'

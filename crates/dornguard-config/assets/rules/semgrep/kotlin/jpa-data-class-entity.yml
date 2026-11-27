@@ -1,0 +1,18 @@
+rules:
+  - id: kotlin-jpa-data-class-entity
+    languages: [kotlin]
+    severity: WARNING
+    message: Use a regular class for a JPA entity.
+    pattern-either:
+      - pattern: |
+          @Entity
+          data class $C(...)
+      - pattern: |
+          @Entity(...)
+          data class $C(...)
+      - pattern: |
+          @Entity
+          data class $C(...) { ... }
+      - pattern: |
+          @Entity(...)
+          data class $C(...) { ... }

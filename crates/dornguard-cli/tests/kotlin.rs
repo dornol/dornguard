@@ -410,6 +410,96 @@ class Service {
 
 #[test]
 #[ignore = "requires Gradle, JDK 21 and the pinned Semgrep"]
+fn kotlin_reports_field_injection_private_transactions_and_data_class_entities() {
+    let project = kotlin_fixture("kotlin-single");
+    let root = project.path();
+    let file = "src/main/kotlin/example/Example.kt";
+    fs::write(
+        root.join(file),
+        r#"package example
+
+import jakarta.inject.Inject
+import jakarta.persistence.Entity
+import jakarta.persistence.Id
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.beans.factory.annotation.Value
+import org.springframework.transaction.annotation.Transactional
+
+@Entity
+data class Book(@Id val id: Long, val title: String)
+
+@Entity(name = "authors")
+data class Author(@Id val id: Long) {
+    fun label() = "author $id"
+}
+
+@Entity
+class Shelf(@Id val id: Long)
+
+data class BookView(val id: Long)
+
+class Catalog(private val shelves: Any) {
+    @Autowired
+    lateinit var books: Any
+
+    @Autowired(required = false)
+    private lateinit var metrics: Any
+
+    @Inject
+    lateinit var clock: Any
+
+    @Autowired
+    var audit: Any? = null
+
+    @Value("\${app.name}")
+    lateinit var name: String
+
+    @Transactional
+    private fun save() {}
+
+    @Transactional(readOnly = true)
+    private fun load(): Any = shelves
+
+    @Transactional
+    fun publish() {}
+}
+
+class Library @Autowired constructor(private val catalog: Catalog)
+"#,
+    )
+    .unwrap();
+    let result = report(check(root).output().unwrap(), 1);
+    assert_eq!(result["complete"], true, "{result}");
+    let mut findings = result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|finding| {
+            (
+                finding["line"].as_u64().unwrap(),
+                finding["rule_id"].as_str().unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    findings.sort_unstable();
+    assert_eq!(
+        findings,
+        [
+            (10, "kotlin.jpa-data-class-entity"),
+            (13, "kotlin.jpa-data-class-entity"),
+            (24, "kotlin.field-injection"),
+            (27, "kotlin.field-injection"),
+            (30, "kotlin.field-injection"),
+            (33, "kotlin.field-injection"),
+            (39, "kotlin.private-transactional"),
+            (42, "kotlin.private-transactional"),
+        ],
+        "{result}"
+    );
+}
+
+#[test]
+#[ignore = "requires Gradle, JDK 21 and the pinned Semgrep"]
 fn kotlin_reports_week_based_years_and_days_of_the_year_in_date_patterns() {
     let project = kotlin_fixture("kotlin-single");
     let root = project.path();

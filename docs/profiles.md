@@ -160,6 +160,9 @@ make it blocking.
 | `kotlin.run-catching-cancellation` | A known suspending coroutine operation or a direct call to a sibling no-argument `suspend` function inside `runCatching` |
 | `kotlin.sql-injection` | A JDBC, JPA, or `JdbcTemplate` query method in Kotlin whose SQL string interpolates, concatenates, or formats a value |
 | `kotlin.transactional-suspend` | Spring `@Transactional` on a Kotlin `suspend` function, which needs a reactive transaction manager |
+| `kotlin.field-injection` | A Kotlin `lateinit var` or `var` property annotated with `@Autowired`, `@Inject` or `@Resource`. Constructor injection, including `@Autowired constructor`, is not reported |
+| `kotlin.private-transactional` | A private Kotlin function with Spring's `@Transactional` |
+| `kotlin.jpa-data-class-entity` | A Kotlin `data class` annotated with `@Entity`. Its generated `equals`, `hashCode` and `toString` read every property, including lazy associations |
 | `security.sql-injection` | A JDBC, JPA, or `JdbcTemplate` query method whose SQL argument is built by concatenation or formatting. The argument must also contain SQL text (for example `select`, `update`, `drop`) in a string literal, so `signature.update("id=" + name)` is not reported |
 | `security.weak-crypto` | MD2, MD5, SHA-1, DES, RC2, RC4, and AES in ECB or default mode |
 | `security.disabled-tls-verification` | Trust-all trust managers and host name verifiers that always return `true`. Code inside an `if` or conditional expression whose condition mentions `verif`, `insecure`, `trustAll`, `skip`, or `validat` is skipped, because it is an opt-in setting. The trust-all implementation itself is still reported; suppress it with a reason |

@@ -1,0 +1,9 @@
+id: kotlin.private-transactional
+engine: semgrep
+severity: warning
+description: Spring proxy mode cannot apply transaction advice to a private function.
+fix: >-
+  Place the transaction boundary on a public function that callers reach through the Spring proxy.
+implementation:
+  config: rules/semgrep/kotlin/private-transactional.yml
+  rule_id: kotlin-private-transactional

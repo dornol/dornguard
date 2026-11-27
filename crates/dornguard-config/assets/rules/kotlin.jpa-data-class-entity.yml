@@ -1,0 +1,9 @@
+id: kotlin.jpa-data-class-entity
+engine: semgrep
+severity: warning
+description: A Kotlin data class is used as a JPA entity.
+fix: >-
+  Use a regular class for the entity, with the kotlin-jpa and kotlin-spring (all-open) compiler plugins. Data class equals, hashCode and toString read every property, which loads lazy associations and changes the hash code when the generated id is assigned. Keep data classes for DTOs.
+implementation:
+  config: rules/semgrep/kotlin/jpa-data-class-entity.yml
+  rule_id: kotlin-jpa-data-class-entity

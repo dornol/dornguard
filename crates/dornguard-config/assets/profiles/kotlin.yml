@@ -12,3 +12,6 @@ rules:
   - kotlin.date-pattern-typo
   - kotlin.transactional-suspend
   - kotlin.sql-injection
+  - kotlin.field-injection
+  - kotlin.private-transactional
+  - kotlin.jpa-data-class-entity

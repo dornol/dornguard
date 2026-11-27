@@ -1,0 +1,9 @@
+id: kotlin.field-injection
+engine: semgrep
+severity: error
+description: Spring field injection hides a class's dependencies.
+fix: >-
+  Take the dependency as a primary constructor parameter, declared as private val, and remove the annotated lateinit var. A circular dependency needs a design change instead: extract the shared logic into a third bean.
+implementation:
+  config: rules/semgrep/kotlin/field-injection.yml
+  rule_id: kotlin-field-injection

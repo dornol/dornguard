@@ -457,9 +457,24 @@ const BUILTIN_RULES: &[&str] = &[
     include_str!("../assets/rules/java.throw-from-finally.yml"),
     include_str!("../assets/rules/java.double-checked-locking.yml"),
     include_str!("../assets/rules/java.lock-without-finally.yml"),
+    include_str!("../assets/rules/kotlin.field-injection.yml"),
+    include_str!("../assets/rules/kotlin.private-transactional.yml"),
+    include_str!("../assets/rules/kotlin.jpa-data-class-entity.yml"),
 ];
 
 const BUILTIN_ENGINE_CONFIGS: &[(&str, &str)] = &[
+    (
+        "rules/semgrep/kotlin/field-injection.yml",
+        include_str!("../assets/rules/semgrep/kotlin/field-injection.yml"),
+    ),
+    (
+        "rules/semgrep/kotlin/private-transactional.yml",
+        include_str!("../assets/rules/semgrep/kotlin/private-transactional.yml"),
+    ),
+    (
+        "rules/semgrep/kotlin/jpa-data-class-entity.yml",
+        include_str!("../assets/rules/semgrep/kotlin/jpa-data-class-entity.yml"),
+    ),
     (
         "rules/pmd/java/log-format-arguments.xml",
         include_str!("../assets/rules/pmd/java/log-format-arguments.xml"),
