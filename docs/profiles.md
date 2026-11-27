@@ -146,7 +146,7 @@ make it blocking.
 | `java.broken-null-check` | A null check that fails to guard a subsequent dereference, as reported by PMD |
 | `java.equals-hashcode-contract` | Overriding only one of `equals` and `hashCode`, as reported by PMD |
 | `java.print-stack-trace` and `kotlin.print-stack-trace` | A call to `printStackTrace()` that writes the stack trace to standard error |
-| `java.date-pattern-typo` | A `DateTimeFormatter`, `SimpleDateFormat`, or Commons Lang `FastDateFormat`/`DateFormatUtils` pattern literal with the week-based year `YYYY` and no week-of-year field `w`, or with the day of the year `D` together with a month `M`. Both format most dates correctly and fail near the end of the year or after January |
+| `java.date-pattern-typo` and `kotlin.date-pattern-typo` | A `DateTimeFormatter`, `SimpleDateFormat`, or Commons Lang `FastDateFormat`/`DateFormatUtils` pattern literal with the week-based year `YYYY` and no week-of-year field `w`, or with the day of the year `D` together with a month `M`. Both format most dates correctly and fail near the end of the year or after January. Kotlin string templates and `applyPattern` calls are not checked |
 | `java.stdout-usage` and `kotlin.stdout-usage` | `System.out.println` or `println` calls. A call inside a `main` entry point is not reported, because a command-line tool writes to standard output by design. Helpers that `main` calls are still reported |
 | `java.ignored-interrupt` | An `InterruptedException` catch with a single logging call, optionally followed by a bare return |
 | `kotlin.run-blocking-in-suspend` | `kotlinx.coroutines.runBlocking` inside a Kotlin suspend function |

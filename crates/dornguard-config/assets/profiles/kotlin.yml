@@ -9,5 +9,6 @@ rules:
   - kotlin.thread-sleep-in-suspend
   - kotlin.run-catching-cancellation
   - kotlin.print-stack-trace
+  - kotlin.date-pattern-typo
   - kotlin.transactional-suspend
   - kotlin.sql-injection

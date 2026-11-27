@@ -1,0 +1,12 @@
+id: kotlin.date-pattern-typo
+engine: semgrep
+severity: error
+description: A date pattern uses the week-based year (YYYY) or the day of the year (DD) by mistake.
+fix: >-
+  Use yyyy for the calendar year and dd for the day of the month. YYYY gives
+  the wrong year for the last days of December, and DD after MM gives the day
+  of the year, so both pass tests written for most dates. Keep YYYY only
+  together with week-of-year fields such as ww.
+implementation:
+  config: rules/semgrep/kotlin/date-pattern-typo.yml
+  rule_id: kotlin-date-pattern-typo

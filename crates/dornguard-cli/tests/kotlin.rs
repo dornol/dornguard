@@ -410,6 +410,53 @@ class Service {
 
 #[test]
 #[ignore = "requires Gradle, JDK 21 and the pinned Semgrep"]
+fn kotlin_reports_week_based_years_and_days_of_the_year_in_date_patterns() {
+    let project = kotlin_fixture("kotlin-single");
+    let root = project.path();
+    let file = "src/main/kotlin/example/Example.kt";
+    fs::write(
+        root.join(file),
+        r#"package example
+
+import java.text.SimpleDateFormat
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+
+val weekYear = DateTimeFormatter.ofPattern("YYYY-MM-dd")
+val dayOfYear = DateTimeFormatter.ofPattern("yyyy-MM-DD", Locale.ROOT)
+val legacy = SimpleDateFormat("dd/MM/YYYY")
+val iso = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss")
+val isoWeek = DateTimeFormatter.ofPattern("YYYY-'W'ww")
+val ordinal = DateTimeFormatter.ofPattern("yyyy-DDD")
+"#,
+    )
+    .unwrap();
+    let result = report(check(root).output().unwrap(), 1);
+    assert_eq!(result["complete"], true, "{result}");
+    let findings = result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|finding| {
+            (
+                finding["line"].as_u64().unwrap(),
+                finding["rule_id"].as_str().unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        findings,
+        [
+            (7, "kotlin.date-pattern-typo"),
+            (8, "kotlin.date-pattern-typo"),
+            (9, "kotlin.date-pattern-typo"),
+        ],
+        "{result}"
+    );
+}
+
+#[test]
+#[ignore = "requires Gradle, JDK 21 and the pinned Semgrep"]
 fn kotlin_reports_sql_built_from_templates_and_concatenation() {
     let project = kotlin_fixture("kotlin-single");
     let root = project.path();

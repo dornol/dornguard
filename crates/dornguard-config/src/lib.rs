@@ -451,9 +451,14 @@ const BUILTIN_RULES: &[&str] = &[
     include_str!("../assets/rules/java.date-pattern-typo.yml"),
     include_str!("../assets/rules/spring.static-member-injection.yml"),
     include_str!("../assets/rules/security.jackson-default-typing.yml"),
+    include_str!("../assets/rules/kotlin.date-pattern-typo.yml"),
 ];
 
 const BUILTIN_ENGINE_CONFIGS: &[(&str, &str)] = &[
+    (
+        "rules/semgrep/kotlin/date-pattern-typo.yml",
+        include_str!("../assets/rules/semgrep/kotlin/date-pattern-typo.yml"),
+    ),
     (
         "rules/semgrep/java/date-pattern-typo.yml",
         include_str!("../assets/rules/semgrep/java/date-pattern-typo.yml"),
