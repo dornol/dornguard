@@ -7,8 +7,10 @@ integration is tested with Gradle 9.9.1 and JDK 21. Java Maven integration
 is tested with Maven 3.9.9 and JDK 21.
 
 The ArchUnit runner needs Java 21 or later. DornGuard selects
-`JAVA_HOME/bin/java` when `JAVA_HOME` is set and otherwise uses `java` from
-`PATH`. `dornguard doctor` reports this runtime separately from its source
+`DORNGUARD_JAVA_HOME/bin/java` when `DORNGUARD_JAVA_HOME` is set, then
+`JAVA_HOME/bin/java`, and otherwise uses `java` from `PATH`. Maven and Gradle
+keep using `JAVA_HOME`, so a project that builds on an older JDK can still run
+ArchUnit on a newer one. `dornguard doctor` reports this runtime separately from its source
 engine checks. An unavailable optional ArchUnit runtime does not change the
 doctor exit code for the source engines.
 

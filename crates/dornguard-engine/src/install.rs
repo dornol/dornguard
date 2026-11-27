@@ -81,10 +81,13 @@ pub(crate) fn engine_command(engine: EngineName) -> Result<Command> {
 
 pub(crate) fn java_executable() -> PathBuf {
     let binary = if cfg!(windows) { "java.exe" } else { "java" };
-    std::env::var_os("JAVA_HOME").map_or_else(
-        || PathBuf::from(binary),
-        |java| PathBuf::from(java).join("bin").join(binary),
-    )
+    std::env::var_os("DORNGUARD_JAVA_HOME")
+        .filter(|java| !java.is_empty())
+        .or_else(|| std::env::var_os("JAVA_HOME"))
+        .map_or_else(
+            || PathBuf::from(binary),
+            |java| PathBuf::from(java).join("bin").join(binary),
+        )
 }
 
 pub(crate) fn java_command(root: &Path) -> Command {
@@ -112,13 +115,13 @@ pub async fn inspect_java(root: &Path) -> Result<String> {
     .into_diagnostic()
     .wrap_err_with(|| {
         format!(
-            "Could not start {}; ArchUnit requires Java 21 or later",
+            "Could not start {}; ArchUnit requires Java 21 or later; set DORNGUARD_JAVA_HOME to a Java 21+ installation",
             executable.display()
         )
     })?;
     if !output.status.success() {
         bail!(
-            "Java version check failed for {} ({}); ArchUnit requires Java 21 or later",
+            "Java version check failed for {} ({}); ArchUnit requires Java 21 or later; set DORNGUARD_JAVA_HOME to a Java 21+ installation",
             executable.display(),
             output.status
         );
@@ -144,7 +147,7 @@ pub async fn inspect_java(root: &Path) -> Result<String> {
         .and_then(|part| part.parse::<u32>().ok());
     if major.is_none_or(|major| major < 21) {
         bail!(
-            "Java {version} at {}; ArchUnit requires Java 21 or later",
+            "Java {version} at {}; ArchUnit requires Java 21 or later; set DORNGUARD_JAVA_HOME to a Java 21+ installation",
             executable.display()
         );
     }
@@ -213,7 +216,18 @@ fn managed_engine(root: &Path, engine: EngineName) -> Option<PathBuf> {
         EngineName::Pmd => directory.join("bin/pmd"),
         _ => return None,
     };
-    (directory.join(READY).is_file() && path.is_file()).then_some(path)
+    // A managed Semgrep is a venv. If the interpreter it was built from is gone
+    // (for example after a Homebrew Python upgrade), its `python` link dangles
+    // and the engine cannot start, so it must not count as installed.
+    let interpreter_works = engine != EngineName::Semgrep
+        || directory
+            .join(if cfg!(windows) {
+                "Scripts/python.exe"
+            } else {
+                "bin/python"
+            })
+            .is_file();
+    (directory.join(READY).is_file() && path.is_file() && interpreter_works).then_some(path)
 }
 
 async fn install_semgrep(root: &Path, destination: &Path) -> Result<()> {
@@ -451,4 +465,38 @@ async fn run(command: &mut Command, step: &str) -> Result<()> {
         bail!("Could not {step} ({})", output.status);
     }
     Ok(())
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    fn fake_semgrep(root: &Path) -> std::io::Result<PathBuf> {
+        let directory = engine_directory(root, EngineName::Semgrep);
+        fs::create_dir_all(directory.join("bin"))?;
+        File::create(directory.join(READY))?;
+        fs::write(directory.join("bin/semgrep"), "")?;
+        Ok(directory)
+    }
+
+    #[test]
+    fn semgrep_with_dangling_interpreter_is_not_installed() -> std::io::Result<()> {
+        let root = tempfile::tempdir()?;
+        let directory = fake_semgrep(root.path())?;
+        std::os::unix::fs::symlink(
+            root.path().join("missing-python"),
+            directory.join("bin/python"),
+        )?;
+        assert!(managed_engine(root.path(), EngineName::Semgrep).is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn semgrep_with_working_interpreter_is_installed() -> std::io::Result<()> {
+        let root = tempfile::tempdir()?;
+        let directory = fake_semgrep(root.path())?;
+        fs::write(directory.join("bin/python"), "")?;
+        assert!(managed_engine(root.path(), EngineName::Semgrep).is_some());
+        Ok(())
+    }
 }

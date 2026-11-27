@@ -73,9 +73,26 @@ pub async fn run(command: &mut Command) -> Result<Output> {
         .into_diagnostic()
         .wrap_err("Could not start Maven. Make mvnw executable or install Maven on PATH")?;
     if !output.status.success() {
-        bail!("Maven build failed ({})\n{}", output.status, log(&output));
+        bail!(
+            "Maven build failed ({})\nMaven ran with {}\n{}",
+            output.status,
+            java_home_note(),
+            log(&output)
+        );
     }
     Ok(output)
+}
+
+fn java_home_note() -> String {
+    std::env::var_os("JAVA_HOME")
+        .filter(|java| !java.is_empty())
+        .map_or_else(
+            || {
+                "JAVA_HOME unset (java from PATH); the build JDK may differ from the project's"
+                    .to_string()
+            },
+            |java| format!("JAVA_HOME={}", PathBuf::from(java).display()),
+        )
 }
 
 fn log(output: &Output) -> String {
