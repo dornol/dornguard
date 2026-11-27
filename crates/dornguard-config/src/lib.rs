@@ -276,7 +276,10 @@ impl Rule {
             return false;
         }
         match self.engine {
-            EngineName::Eslint => language == SourceLanguage::Javascript,
+            EngineName::Eslint => matches!(
+                language,
+                SourceLanguage::Javascript | SourceLanguage::Typescript
+            ),
             EngineName::Builtin if self.is_format_rule() => matches!(
                 language,
                 SourceLanguage::Java | SourceLanguage::Kotlin | SourceLanguage::Javascript

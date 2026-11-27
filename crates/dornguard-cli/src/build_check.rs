@@ -1078,12 +1078,13 @@ fn affected_modules(
     Ok(affected)
 }
 
-const SOURCE_LANGUAGES: [SourceLanguage; 6] = [
+const SOURCE_LANGUAGES: [SourceLanguage; 7] = [
     SourceLanguage::Java,
     SourceLanguage::Kotlin,
     SourceLanguage::Html,
     SourceLanguage::Template,
     SourceLanguage::Javascript,
+    SourceLanguage::Typescript,
     SourceLanguage::Jsp,
 ];
 
@@ -1182,13 +1183,13 @@ fn source_dirs(
         SourceLanguage::Kotlin => Cow::Borrowed(&module.kotlin_source_dirs),
         SourceLanguage::Template => Cow::Owned(vec![module.project_dir.join(TEMPLATE_DIR)]),
         SourceLanguage::Jsp => Cow::Owned(vec![module.project_dir.join("src/main/webapp")]),
-        SourceLanguage::Html | SourceLanguage::Javascript => {
+        SourceLanguage::Html | SourceLanguage::Javascript | SourceLanguage::Typescript => {
             let mut dirs = vec![
                 "src/main/resources/static",
                 "src/main/resources/public",
                 "src/main/webapp",
             ];
-            if language == SourceLanguage::Javascript {
+            if language != SourceLanguage::Html {
                 dirs.extend([TEMPLATE_DIR, "src/main/js", "src/main/frontend"]);
             }
             Cow::Owned(

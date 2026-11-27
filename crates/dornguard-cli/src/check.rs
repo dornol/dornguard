@@ -508,6 +508,7 @@ async fn run_engines(
             &[SourceLanguage::Template],
             &[SourceLanguage::Html],
             &[SourceLanguage::Javascript],
+            &[SourceLanguage::Typescript],
             &[SourceLanguage::Jsp],
         ] {
             let files: Vec<_> = files
@@ -637,6 +638,7 @@ impl SourceFiles<'_> {
             SourceLanguage::Html,
             SourceLanguage::Template,
             SourceLanguage::Javascript,
+            SourceLanguage::Typescript,
             SourceLanguage::Jsp,
         ]
         .into_iter()

@@ -119,3 +119,110 @@ export const wait = new Promise((resolve) => setTimeout(resolve, 10));
         "{result}"
     );
 }
+
+#[test]
+#[ignore = "requires ESLint 9 or 10 and @typescript-eslint/parser"]
+fn javascript_profile_checks_typescript_sources_but_not_declaration_files() {
+    let project = project("class Unused {}\n");
+    let root = project.path();
+    fs::remove_file(root.join("src/Example.java")).unwrap();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [javascript]\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("src/order.ts"),
+        r#"interface Order { items?: string[]; total: number }
+enum Status { Open, Closed }
+export function isMissing(order: Order): boolean { return order.total === NaN; }
+export const run = <T,>(code: T): unknown => eval(String(code));
+export const status: Status = Status.Open;
+export const count = (order?: Order): number => order?.items?.length ?? 0;
+"#,
+    )
+    .unwrap();
+    fs::write(
+        root.join("src/view.tsx"),
+        r#"type Props = { label: string };
+export const View = ({ label }: Props) => <a href="javascript:void(0)">{label}</a>;
+"#,
+    )
+    .unwrap();
+    fs::write(
+        root.join("src/types.d.ts"),
+        "declare const broken: number;\nexport declare function check(n: number): n is never;\n",
+    )
+    .unwrap();
+    let result = report(check(root).output().unwrap(), 0);
+    assert_eq!(result["complete"], true, "{result}");
+    assert_eq!(result["files_scanned"], 2, "{result}");
+    let mut findings = result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|finding| {
+            (
+                finding["path"].as_str().unwrap(),
+                finding["line"].as_u64().unwrap(),
+                finding["rule_id"].as_str().unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    findings.sort_unstable();
+    assert_eq!(
+        findings,
+        [
+            ("src/order.ts", 3, "javascript.use-isnan"),
+            ("src/order.ts", 4, "javascript.no-eval"),
+            ("src/view.tsx", 2, "javascript.no-script-url"),
+        ],
+        "{result}"
+    );
+}
+
+/// The first executable `name` on PATH, with symlinks resolved.
+#[cfg(unix)]
+fn on_path(name: &str) -> Option<std::path::PathBuf> {
+    std::env::split_paths(&std::env::var_os("PATH")?)
+        .map(|dir| dir.join(name))
+        .find(|path| path.is_file())
+        .and_then(|path| fs::canonicalize(path).ok())
+}
+
+#[test]
+#[ignore = "requires Node.js and ESLint 9 or 10 on PATH or managed"]
+#[cfg(unix)]
+fn typescript_without_a_parser_is_an_engine_error() {
+    let managed = std::path::Path::new(&std::env::var_os("HOME").unwrap())
+        .join(".local/share/dornguard/engines/eslint-10.14.0/node_modules/.bin/eslint");
+    let eslint = on_path("eslint")
+        .or_else(|| fs::canonicalize(managed).ok())
+        .expect("ESLint on PATH or managed");
+    let node = on_path("node").expect("Node.js on PATH");
+    let project = project("class Unused {}\n");
+    let root = project.path();
+    fs::remove_file(root.join("src/Example.java")).unwrap();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [javascript]\n",
+    )
+    .unwrap();
+    // The project provides ESLint but not the parser, PATH has only Node.js, and
+    // there is no managed copy.
+    fs::create_dir_all(root.join("node_modules/.bin")).unwrap();
+    std::os::unix::fs::symlink(eslint, root.join("node_modules/.bin/eslint")).unwrap();
+    fs::write(root.join("src/app.ts"), "export const n: number = 1;\n").unwrap();
+    let engines = tempfile::tempdir().unwrap();
+    let result = report(
+        check(root)
+            .env("DORNGUARD_ENGINE_DIR", engines.path())
+            .env("PATH", node.parent().unwrap())
+            .output()
+            .unwrap(),
+        3,
+    );
+    assert_eq!(result["complete"], false, "{result}");
+    let message = result["failures"][0]["message"].as_str().unwrap();
+    assert!(message.contains("@typescript-eslint/parser"), "{result}");
+}

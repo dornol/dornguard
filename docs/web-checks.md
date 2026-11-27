@@ -15,7 +15,8 @@ inline event attributes such as `onclick`, `onerror`, and the Thymeleaf
 The `javascript` profile requires ESLint 9 or 10. DornGuard prefers
 `node_modules/.bin/eslint` in the project, then PATH, then the copy that
 `dornguard engines install eslint` installs. It
-checks `.js`, `.mjs`, and `.cjs` with these ESLint core rules:
+checks `.js`, `.mjs`, `.cjs`, and TypeScript `.ts`, `.mts`, `.cts`, and `.tsx`
+with these ESLint core rules:
 
 | Area | Rules |
 | --- | --- |
@@ -26,6 +27,10 @@ checks `.js`, `.mjs`, and `.cjs` with these ESLint core rules:
 Each is reported as `javascript.<rule>`, for example `javascript.use-isnan`.
 `no-promise-executor-return` is not included, because it also reports the
 common `new Promise((resolve) => setTimeout(resolve, 10))`.
+TypeScript is parsed with `@typescript-eslint/parser` without type information,
+so the same rules apply and no `tsconfig.json` is read. Declaration files
+(`.d.ts`) are skipped, and the `format` rules do not check TypeScript. See
+[engine setup](engines.md) for where the parser comes from.
 It uses its own ESLint config
 and reports those findings as warnings unless the project overrides their severity. Files under
 `node_modules` are excluded. [ESLint setup](https://eslint.org/docs/latest/use/getting-started)
@@ -33,7 +38,8 @@ and reports those findings as warnings unless the project overrides their severi
 When a Maven or Gradle build is active, HTML and JavaScript are discovered
 under each selected module’s `src/main/webapp`, `src/main/resources/static`,
 `src/main/resources/public`, and template directory. JavaScript is also
-discovered under `src/main/js` and `src/main/frontend`.
+discovered under `src/main/js` and `src/main/frontend`. TypeScript is
+discovered in the same directories as JavaScript.
 
 ## JSP
 

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use dornguard_config::Rule;
-use dornguard_core::{Diagnostic, EngineName, Outcome};
+use dornguard_core::{Diagnostic, EngineName, Outcome, SourceLanguage};
 use miette::{IntoDiagnostic, Result, WrapErr, bail, miette};
 use serde::Deserialize;
 use serde_json::json;
@@ -40,7 +40,23 @@ async fn scan(request: Request<'_>, outcome: &mut Outcome) -> Result<()> {
         .iter()
         .map(|rule| Ok((rule.implementation()?.rule_id.as_str(), *rule)))
         .collect::<Result<BTreeMap<_, _>>>()?;
-    let config = write_config(temp.path(), &rules)?;
+    let typescript = request
+        .files
+        .iter()
+        .any(|file| SourceLanguage::of(file) == Some(SourceLanguage::Typescript));
+    let parser = if typescript {
+        Some(
+            crate::install::typescript_parser_base(request.root).ok_or_else(|| {
+                miette!(
+                    "TypeScript sources need @typescript-eslint/parser; run \
+                 'dornguard engines install eslint' or add it to the project's devDependencies"
+                )
+            })?,
+        )
+    } else {
+        None
+    };
+    let config = write_config(temp.path(), &rules, parser.as_deref())?;
     let mut sources = Sources::default();
 
     for batch in request.files.chunk_by(budgeted_batch()) {
@@ -161,7 +177,17 @@ fn record_report(
     Ok(())
 }
 
-fn write_config(dir: &std::path::Path, rules: &BTreeMap<&str, &Rule>) -> Result<PathBuf> {
+/// TypeScript sources, which ESLint does not lint unless a config names them.
+const TYPESCRIPT_FILES: [&str; 4] = ["**/*.ts", "**/*.mts", "**/*.cts", "**/*.tsx"];
+
+/// Write the ESLint flat config. With `parser`, the config also lints TypeScript
+/// with `@typescript-eslint/parser` resolved from that directory. The parser runs
+/// without type information, so only syntax-based rules apply.
+fn write_config(
+    dir: &std::path::Path,
+    rules: &BTreeMap<&str, &Rule>,
+    parser: Option<&std::path::Path>,
+) -> Result<PathBuf> {
     let config = dir.join("eslint.config.mjs");
     let enabled = rules
         .keys()
@@ -183,7 +209,24 @@ fn write_config(dir: &std::path::Path, rules: &BTreeMap<&str, &Rule>) -> Result<
         "languageOptions": { "globals": timer_globals },
         "rules": enabled,
     }]);
-    std::fs::write(&config, format!("export default {contents};\n"))
+    let source = match parser {
+        None => format!("export default {contents};\n"),
+        Some(base) => {
+            let anchor = serde_json::to_string(&base.join("package.json").to_string_lossy())
+                .into_diagnostic()?;
+            let files = json!(TYPESCRIPT_FILES);
+            format!(
+                "import {{ createRequire }} from \"node:module\";\n\
+                 const parser = createRequire({anchor})(\"@typescript-eslint/parser\");\n\
+                 export default [\n\
+                 ...{contents},\n\
+                 {{ files: {files}, languageOptions: {{ parser }} }},\n\
+                 {{ files: [\"**/*.tsx\"], languageOptions: {{ parserOptions: {{ ecmaFeatures: {{ jsx: true }} }} }} }},\n\
+                 ];\n"
+            )
+        }
+    };
+    std::fs::write(&config, source)
         .into_diagnostic()
         .wrap_err("Could not write ESLint configuration")?;
     Ok(config)
@@ -207,4 +250,36 @@ struct Finding {
     column: Option<u32>,
     end_line: Option<u32>,
     end_column: Option<u32>,
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+    use super::*;
+
+    #[test]
+    fn typescript_config_is_added_only_with_a_parser() {
+        let dir = tempfile::tempdir().unwrap();
+        let rules = BTreeMap::new();
+        let plain =
+            std::fs::read_to_string(write_config(dir.path(), &rules, None).unwrap()).unwrap();
+        assert!(plain.starts_with("export default [{"), "{plain}");
+        assert!(!plain.contains("typescript-eslint"), "{plain}");
+
+        let base = dir.path().join("project \"quoted\"");
+        let typed = std::fs::read_to_string(write_config(dir.path(), &rules, Some(&base)).unwrap())
+            .unwrap();
+        let anchor = serde_json::to_string(&base.join("package.json").to_string_lossy()).unwrap();
+        assert!(
+            typed.contains(&format!(
+                "createRequire({anchor})(\"@typescript-eslint/parser\")"
+            )),
+            "{typed}"
+        );
+        assert!(
+            typed.contains(r#"files: ["**/*.ts","**/*.mts","**/*.cts","**/*.tsx"]"#),
+            "{typed}"
+        );
+        assert!(typed.contains("jsx: true"), "{typed}");
+    }
 }

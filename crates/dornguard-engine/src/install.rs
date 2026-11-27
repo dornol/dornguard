@@ -47,7 +47,12 @@ pub async fn install(engine: EngineName) -> Result<PathBuf> {
     let (root, _guard) = lock_install_root().await?;
 
     let destination = engine_directory(&root, engine);
-    if managed_engine(&root, engine).is_some() {
+    // A managed ESLint installed from an older lock (for example one without the
+    // TypeScript parser) still runs, but installing again brings it up to date.
+    let current = engine != EngineName::Eslint
+        || fs::read_to_string(destination.join("package-lock.json"))
+            .is_ok_and(|lock| lock == ESLINT_LOCK);
+    if current && managed_engine(&root, engine).is_some() {
         return Ok(destination);
     }
 
@@ -353,6 +358,35 @@ pub async fn install_osv_scanner() -> Result<PathBuf> {
     Ok(destination)
 }
 
+/// The directory to resolve `@typescript-eslint/parser` from, in the order DornGuard
+/// picks ESLint: the project, the installation of the ESLint on `PATH` (including a
+/// global npm install), then the managed ESLint.
+pub(crate) fn typescript_parser_base(project: &Path) -> Option<PathBuf> {
+    let has_parser = |dir: &Path| {
+        dir.join("node_modules/@typescript-eslint/parser/package.json")
+            .is_file()
+    };
+    if has_parser(project) {
+        return Some(project.to_path_buf());
+    }
+    let executable = if cfg!(windows) {
+        "eslint.cmd"
+    } else {
+        "eslint"
+    };
+    // `.bin/eslint` links into `node_modules/eslint`, so the parser installed
+    // beside that ESLint is a sibling of an ancestor directory.
+    if let Some(eslint) = path_lookup(executable).and_then(|path| dunce::canonicalize(path).ok())
+        && let Some(base) = eslint.ancestors().skip(1).find(|dir| has_parser(dir))
+    {
+        return Some(base.to_path_buf());
+    }
+    let managed = engine_directory(&install_root()?, EngineName::Eslint);
+    has_parser(&managed)
+        .then(|| dunce::canonicalize(&managed).ok())
+        .flatten()
+}
+
 /// The managed ESLint, used only when neither the project nor `PATH` provides one.
 pub(crate) fn managed_eslint_fallback(executable: &str) -> Option<PathBuf> {
     if path_lookup(executable).is_some() {
@@ -537,6 +571,12 @@ async fn install_eslint(destination: &Path) -> Result<()> {
     let manifest: serde_json::Value = serde_json::from_str(&manifest).into_diagnostic()?;
     if manifest.get("version").and_then(serde_json::Value::as_str) != Some(ESLINT_INSTALL_VERSION) {
         bail!("Installed ESLint is not version {ESLINT_INSTALL_VERSION}");
+    }
+    if !destination
+        .join("node_modules/@typescript-eslint/parser/package.json")
+        .is_file()
+    {
+        bail!("The TypeScript parser for ESLint was not installed");
     }
     File::create(destination.join(READY)).into_diagnostic()?;
     Ok(())

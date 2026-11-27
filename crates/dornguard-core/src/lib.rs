@@ -40,10 +40,21 @@ pub enum SourceLanguage {
     Html,
     Template,
     Javascript,
+    Typescript,
     Jsp,
 }
 
 pub const TEMPLATE_DIR: &str = "src/main/resources/templates";
+
+fn is_declaration_file(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| {
+            [".d.ts", ".d.mts", ".d.cts"]
+                .iter()
+                .any(|ext| name.ends_with(ext))
+        })
+}
 
 impl SourceLanguage {
     pub fn of(path: &Path) -> Option<Self> {
@@ -55,6 +66,8 @@ impl SourceLanguage {
             }
             "html" | "htm" => Some(Self::Html),
             "js" | "mjs" | "cjs" => Some(Self::Javascript),
+            // Declaration files describe types only; they contain no code to check.
+            "ts" | "mts" | "cts" | "tsx" if !is_declaration_file(path) => Some(Self::Typescript),
             "jsp" | "jspx" | "jspf" | "tag" | "tagx" => Some(Self::Jsp),
             _ => None,
         }
@@ -66,6 +79,7 @@ impl SourceLanguage {
             Self::Kotlin => "kotlin",
             Self::Html | Self::Template => "html",
             Self::Javascript => "javascript",
+            Self::Typescript => "typescript",
             Self::Jsp => "regex",
         }
     }
@@ -457,6 +471,24 @@ pub struct RuleCount {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn typescript_sources_exclude_declaration_files() {
+        for name in ["a.ts", "a.mts", "a.cts", "a.tsx", "a.test.ts"] {
+            assert_eq!(
+                SourceLanguage::of(Path::new(name)),
+                Some(SourceLanguage::Typescript),
+                "{name}"
+            );
+        }
+        for name in ["a.d.ts", "a.d.mts", "a.d.cts"] {
+            assert_eq!(SourceLanguage::of(Path::new(name)), None, "{name}");
+        }
+        assert_eq!(
+            SourceLanguage::of(Path::new("a.js")),
+            Some(SourceLanguage::Javascript)
+        );
+    }
 
     #[test]
     fn failures_use_policy_precedence() {
