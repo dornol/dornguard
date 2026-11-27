@@ -1,0 +1,23 @@
+rules:
+  - id: java-lock-without-finally
+    languages: [java]
+    severity: WARNING
+    message: Release the lock in a finally block.
+    patterns:
+      - pattern-either:
+          - pattern: $LOCK.lock();
+          - pattern: $LOCK.lockInterruptibly();
+      # Only java.util.concurrent locks, so an unrelated lock() method is not reported.
+      - metavariable-pattern:
+          metavariable: $LOCK
+          patterns:
+            - pattern-either:
+                - pattern: (java.util.concurrent.locks.Lock $VAR)
+                - pattern: (java.util.concurrent.locks.ReentrantLock $VAR)
+                - pattern: $READ_WRITE.readLock()
+                - pattern: $READ_WRITE.writeLock()
+      - pattern-not-inside: |
+          $LOCK.$ACQUIRE();
+          try { ... } finally { ... }
+      - pattern-not-inside: |
+          try { ... } finally { ... }

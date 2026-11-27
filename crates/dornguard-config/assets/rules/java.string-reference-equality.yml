@@ -1,0 +1,8 @@
+id: java.string-reference-equality
+engine: pmd
+severity: error
+description: Strings are compared with == or != instead of equals.
+fix: Use equals, or Objects.equals when either side can be null. == compares object identity and fails for strings built at run time.
+implementation:
+  config: rules/pmd/java/string-reference-equality.xml
+  rule_id: UseEqualsToCompareStrings

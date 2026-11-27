@@ -59,7 +59,7 @@ These built-in rules have `medium` confidence:
 | Area | Rules |
 | --- | --- |
 | Security | `security.sql-injection`, `kotlin.sql-injection`, `security.disabled-tls-verification`, `security.csrf-disabled`, `security.weak-crypto`, `security.cors-wildcard`, `security.jackson-default-typing` |
-| Java | `java.resource-not-closed`, `java.preserve-stack-trace`, `java.ignored-interrupt`, `java.ignored-return-value`, `java.broken-null-check`, `java.fully-qualified-type`, `java.assert-throws-nested-call` |
+| Java | `java.resource-not-closed`, `java.preserve-stack-trace`, `java.ignored-interrupt`, `java.ignored-return-value`, `java.broken-null-check`, `java.fully-qualified-type`, `java.assert-throws-nested-call`, `java.lock-without-finally` |
 | Kotlin | `kotlin.fully-qualified-type`, `kotlin.swallowed-cancellation`, `kotlin.run-catching-cancellation` |
 | Spring | `spring.singleton-request-state`, `spring.shared-simple-date-format`, `spring.checked-exception-rollback`, `spring.jpa-entity-response` |
 | Templates | `thymeleaf.unescaped-output`, `jsp.unescaped-output` |
@@ -145,9 +145,14 @@ make it blocking.
 | `java.return-from-finally` | A return inside a `finally` block that can override an earlier return or suppress an exception, as reported by PMD |
 | `java.broken-null-check` | A null check that fails to guard a subsequent dereference, as reported by PMD |
 | `java.equals-hashcode-contract` | Overriding only one of `equals` and `hashCode`, as reported by PMD |
+| `java.log-format-arguments` | A log message whose `{}` placeholders do not match its arguments, as reported by PMD. A trailing exception needs no placeholder |
+| `java.string-reference-equality` | Strings compared with `==` or `!=`, as reported by PMD. Comparisons with `null` are not reported |
+| `java.throw-from-finally` | A `throw` inside a `finally` block, which replaces the exception or return value of the `try` block, as reported by PMD |
+| `java.double-checked-locking` | Double-checked lazy initialization of a field that is not `volatile`, as reported by PMD |
 | `java.print-stack-trace` and `kotlin.print-stack-trace` | A call to `printStackTrace()` that writes the stack trace to standard error |
 | `java.date-pattern-typo` and `kotlin.date-pattern-typo` | A `DateTimeFormatter`, `SimpleDateFormat`, or Commons Lang `FastDateFormat`/`DateFormatUtils` pattern literal with the week-based year `YYYY` and no week-of-year field `w`, or with the day of the year `D` together with a month `M`. Both format most dates correctly and fail near the end of the year or after January. Kotlin string templates and `applyPattern` calls are not checked |
 | `java.stdout-usage` and `kotlin.stdout-usage` | `System.out.println` or `println` calls. A call inside a `main` entry point is not reported, because a command-line tool writes to standard output by design. Helpers that `main` calls are still reported |
+| `java.lock-without-finally` | `lock()` or `lockInterruptibly()` on a `java.util.concurrent` lock, including `readLock()` and `writeLock()`, that is neither followed by nor inside a `try` block with `finally` |
 | `java.ignored-interrupt` | An `InterruptedException` catch with a single logging call, optionally followed by a bare return |
 | `kotlin.run-blocking-in-suspend` | `kotlinx.coroutines.runBlocking` inside a Kotlin suspend function |
 | `kotlin.thread-sleep-in-suspend` | `Thread.sleep` inside a Kotlin suspend function |

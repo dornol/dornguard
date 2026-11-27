@@ -1,0 +1,8 @@
+id: java.throw-from-finally
+engine: pmd
+severity: warning
+description: Throwing from finally replaces the exception or return value of the try block.
+fix: Keep cleanup in finally and throw outside it. If cleanup can fail, catch that failure and add it to the original exception with addSuppressed.
+implementation:
+  config: rules/pmd/java/throw-from-finally.xml
+  rule_id: DoNotThrowExceptionInFinally

@@ -452,9 +452,34 @@ const BUILTIN_RULES: &[&str] = &[
     include_str!("../assets/rules/spring.static-member-injection.yml"),
     include_str!("../assets/rules/security.jackson-default-typing.yml"),
     include_str!("../assets/rules/kotlin.date-pattern-typo.yml"),
+    include_str!("../assets/rules/java.log-format-arguments.yml"),
+    include_str!("../assets/rules/java.string-reference-equality.yml"),
+    include_str!("../assets/rules/java.throw-from-finally.yml"),
+    include_str!("../assets/rules/java.double-checked-locking.yml"),
+    include_str!("../assets/rules/java.lock-without-finally.yml"),
 ];
 
 const BUILTIN_ENGINE_CONFIGS: &[(&str, &str)] = &[
+    (
+        "rules/pmd/java/log-format-arguments.xml",
+        include_str!("../assets/rules/pmd/java/log-format-arguments.xml"),
+    ),
+    (
+        "rules/pmd/java/string-reference-equality.xml",
+        include_str!("../assets/rules/pmd/java/string-reference-equality.xml"),
+    ),
+    (
+        "rules/pmd/java/throw-from-finally.xml",
+        include_str!("../assets/rules/pmd/java/throw-from-finally.xml"),
+    ),
+    (
+        "rules/pmd/java/double-checked-locking.xml",
+        include_str!("../assets/rules/pmd/java/double-checked-locking.xml"),
+    ),
+    (
+        "rules/semgrep/java/lock-without-finally.yml",
+        include_str!("../assets/rules/semgrep/java/lock-without-finally.yml"),
+    ),
     (
         "rules/semgrep/kotlin/date-pattern-typo.yml",
         include_str!("../assets/rules/semgrep/kotlin/date-pattern-typo.yml"),
@@ -1154,12 +1179,13 @@ mod tests {
 
     /// Rules whose findings need a judgment. Adding to this list is a decision:
     /// a rule belongs here when it infers intent from code shape.
-    const MEDIUM_CONFIDENCE: [&str; 23] = [
+    const MEDIUM_CONFIDENCE: [&str; 24] = [
         "java.assert-throws-nested-call",
         "java.broken-null-check",
         "java.fully-qualified-type",
         "java.ignored-interrupt",
         "java.ignored-return-value",
+        "java.lock-without-finally",
         "java.preserve-stack-trace",
         "java.resource-not-closed",
         "jsp.unescaped-output",

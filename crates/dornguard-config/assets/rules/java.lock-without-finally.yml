@@ -1,0 +1,12 @@
+id: java.lock-without-finally
+engine: semgrep
+severity: warning
+confidence: medium
+description: A lock is acquired without a try/finally that releases it, so an exception keeps it held.
+fix: >-
+  Call lock() immediately before a try block and unlock() in its finally
+  block. If the lock is released by another method on purpose, suppress the
+  finding with a reason.
+implementation:
+  config: rules/semgrep/java/lock-without-finally.yml
+  rule_id: java-lock-without-finally

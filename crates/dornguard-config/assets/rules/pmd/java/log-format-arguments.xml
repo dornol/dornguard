@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ruleset name="DornGuard Java InvalidLogMessageFormat"
+    xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
+    <description>The number of {} placeholders in a log message does not match its arguments.</description>
+    <rule ref="category/java/errorprone.xml/InvalidLogMessageFormat"/>
+</ruleset>

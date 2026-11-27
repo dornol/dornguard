@@ -1,0 +1,8 @@
+id: java.log-format-arguments
+engine: pmd
+severity: warning
+description: The number of {} placeholders in a log message does not match its arguments.
+fix: Pass one argument for each {} placeholder. Pass an exception as the last argument without a placeholder so the logger records its stack trace.
+implementation:
+  config: rules/pmd/java/log-format-arguments.xml
+  rule_id: InvalidLogMessageFormat

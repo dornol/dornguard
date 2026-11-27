@@ -10,3 +10,7 @@ rules:
   - java.return-from-finally
   - java.broken-null-check
   - java.equals-hashcode-contract
+  - java.log-format-arguments
+  - java.string-reference-equality
+  - java.throw-from-finally
+  - java.double-checked-locking
