@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use dornguard_config::{CLIPPY_RULE, RUSTC_LINT_RULE, Rule};
-use dornguard_core::{Diagnostic, EngineName, Outcome, Severity, SourceEdit, fingerprint};
+use dornguard_core::{Diagnostic, EngineName, Outcome, Severity, fingerprint};
 use miette::{Result, bail, miette};
 use serde::Deserialize;
 use tokio::time::Instant;
@@ -162,7 +162,6 @@ struct Span {
     line_start: u32,
     is_primary: bool,
     suggested_replacement: Option<String>,
-    suggestion_applicability: Option<String>,
 }
 
 /// The rule that reports a lint, or `None` for a compiler error such as `E0308`.
@@ -229,7 +228,6 @@ impl Run<'_, '_> {
         )) {
             return;
         }
-        let edit = self.edit(&message, &path);
         let root = self.root;
         let source = self.sources.get(root, &path);
         let start = source.and_then(|source| source.position(span.byte_start));
@@ -274,7 +272,7 @@ impl Run<'_, '_> {
             confidence: rule.confidence,
             message: format!("{} ({lint})", message.message),
             fix: help.map_or_else(|| rule.fix.clone(), |help| capitalized_sentence(&help)),
-            edit,
+            edit: None,
             legacy_fingerprints: Vec::new(),
             group: None,
             fingerprint: identity.map(|identity| fingerprint(&format!("{lint}\n{identity}"))),
@@ -286,29 +284,6 @@ impl Run<'_, '_> {
         relative_path(self.root, &absolute)
             .or_else(|| relative_path(self.root, &dunce::canonicalize(&absolute).ok()?))
             .filter(|path| self.requested.contains(path.as_path()))
-    }
-
-    /// The suggestion rustc can apply without review, when it is one edit in `path`.
-    fn edit(&mut self, message: &Message, path: &Path) -> Option<SourceEdit> {
-        let mut suggestions = message
-            .children
-            .iter()
-            .flat_map(|child| &child.spans)
-            .filter(|span| span.suggestion_applicability.as_deref() == Some("MachineApplicable"));
-        let span = suggestions.next()?;
-        if suggestions.next().is_some()
-            || self.project_path(&span.file_name).as_deref() != Some(path)
-        {
-            return None;
-        }
-        let source = self.sources.get(self.root, path)?;
-        source.fragment(span.byte_start, span.byte_end)?;
-        Some(SourceEdit {
-            start_byte: span.byte_start,
-            end_byte: span.byte_end,
-            replacement: span.suggested_replacement.clone()?,
-            source_sha256: fingerprint(source.text()),
-        })
     }
 }
 
@@ -337,7 +312,7 @@ mod tests {
 
     #[test]
     fn compiler_messages_are_read_from_cargo_events() {
-        let line = br#"{"reason":"compiler-message","message":{"message":"length comparison to zero","level":"warning","code":{"code":"clippy::len_zero","explanation":null},"spans":[{"file_name":"src/main.rs","byte_start":10,"byte_end":20,"line_start":4,"is_primary":true,"suggested_replacement":null,"suggestion_applicability":null}],"children":[]}}"#;
+        let line = br#"{"reason":"compiler-message","message":{"message":"length comparison to zero","level":"warning","code":{"code":"clippy::len_zero","explanation":null},"spans":[{"file_name":"src/main.rs","byte_start":10,"byte_end":20,"line_start":4,"is_primary":true,"suggested_replacement":null}],"children":[]}}"#;
         let Ok(Event::CompilerMessage { message }) = serde_json::from_slice::<Event>(line) else {
             panic!("compiler message expected");
         };

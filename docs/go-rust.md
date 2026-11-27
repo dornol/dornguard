@@ -17,8 +17,8 @@ profiles: [go]        # or [rust], or both beside JVM profiles
 | `rust.rustc-lint` | `cargo clippy` | warning | Compiler lints such as `unused_variables` and `dead_code` |
 
 Each diagnostic names the analyzer or lint in `subject`, for example `printf`
-or `clippy::len_zero`, and in its message. When the tool offers one
-machine-applicable fix, the JSON report includes it as an `edit`.
+or `clippy::len_zero`, and in its message. The tool's own suggestion, when it
+has one, is the fix text. DornGuard does not apply or report automatic edits.
 
 `dornguard init` writes these profiles for a directory with `go.mod` or
 `Cargo.toml` and no Maven or Gradle build.

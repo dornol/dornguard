@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use dornguard_config::Rule;
-use dornguard_core::{Diagnostic, EngineName, Outcome, SourceEdit, fingerprint};
+use dornguard_core::{Diagnostic, EngineName, Outcome, fingerprint};
 use miette::{Result, miette};
 use serde::Deserialize;
 use serde_json::Value;
@@ -122,16 +122,6 @@ struct Finding {
 #[derive(Deserialize)]
 struct SuggestedFix {
     message: String,
-    #[serde(default)]
-    edits: Vec<TextEdit>,
-}
-
-#[derive(Deserialize)]
-struct TextEdit {
-    filename: String,
-    start: usize,
-    end: usize,
-    new: String,
 }
 
 struct Report {
@@ -262,22 +252,6 @@ fn record(
     let start_position = start.and_then(|start| source?.position(start));
     let end_position = end.and_then(|end| source?.position(end));
     let fix = finding.suggested_fixes.first();
-    let edit = fix
-        .filter(|fix| fix.edits.len() == 1)
-        .and_then(|fix| fix.edits.first())
-        .filter(|edit| {
-            relative_path(root, &directory.join(&edit.filename)).as_deref() == Some(path.as_path())
-        })
-        .and_then(|edit| {
-            let source = source?;
-            source.fragment(edit.start, edit.end)?;
-            Some(SourceEdit {
-                start_byte: edit.start,
-                end_byte: edit.end,
-                replacement: edit.new.clone(),
-                source_sha256: fingerprint(source.text()),
-            })
-        });
     let identity = start.and_then(|start| source?.range_fingerprint(start, end.unwrap_or(start)));
     outcome.diagnostics.push(Diagnostic {
         path: Some(display_path(&path)),
@@ -294,7 +268,7 @@ fn record(
         confidence: rule.confidence,
         message: format!("{} ({analyzer})", finding.message),
         fix: fix.map_or_else(|| rule.fix.clone(), |fix| format!("{}.", fix.message)),
-        edit,
+        edit: None,
         legacy_fingerprints: Vec::new(),
         group: None,
         fingerprint: identity.map(|identity| fingerprint(&format!("{analyzer}\n{identity}"))),

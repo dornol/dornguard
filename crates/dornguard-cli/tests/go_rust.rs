@@ -62,8 +62,12 @@ fn go_profile_reports_go_vet_findings_with_their_analyzer() {
         ],
         "{result}"
     );
-    let assign = &result["diagnostics"][1];
-    assert_eq!(assign["edit"]["replacement"], "", "{result}");
+    // Fix guidance is text; DornGuard reports no automatic edits.
+    assert_eq!(
+        result["diagnostics"][1]["fix"], "Remove self-assignment.",
+        "{result}"
+    );
+    assert!(result["diagnostics"][1].get("edit").is_none(), "{result}");
 }
 
 #[test]
