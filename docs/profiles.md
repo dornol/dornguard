@@ -58,7 +58,7 @@ These built-in rules have `medium` confidence:
 
 | Area | Rules |
 | --- | --- |
-| Security | `security.sql-injection`, `kotlin.sql-injection`, `security.disabled-tls-verification`, `security.csrf-disabled`, `security.weak-crypto`, `security.cors-wildcard` |
+| Security | `security.sql-injection`, `kotlin.sql-injection`, `security.disabled-tls-verification`, `security.csrf-disabled`, `security.weak-crypto`, `security.cors-wildcard`, `security.jackson-default-typing` |
 | Java | `java.resource-not-closed`, `java.preserve-stack-trace`, `java.ignored-interrupt`, `java.ignored-return-value`, `java.broken-null-check`, `java.fully-qualified-type`, `java.assert-throws-nested-call` |
 | Kotlin | `kotlin.fully-qualified-type`, `kotlin.swallowed-cancellation`, `kotlin.run-catching-cancellation` |
 | Spring | `spring.singleton-request-state`, `spring.shared-simple-date-format`, `spring.checked-exception-rollback`, `spring.jpa-entity-response` |
@@ -146,6 +146,7 @@ make it blocking.
 | `java.broken-null-check` | A null check that fails to guard a subsequent dereference, as reported by PMD |
 | `java.equals-hashcode-contract` | Overriding only one of `equals` and `hashCode`, as reported by PMD |
 | `java.print-stack-trace` and `kotlin.print-stack-trace` | A call to `printStackTrace()` that writes the stack trace to standard error |
+| `java.date-pattern-typo` | A `DateTimeFormatter`, `SimpleDateFormat`, or Commons Lang `FastDateFormat`/`DateFormatUtils` pattern literal with the week-based year `YYYY` and no week-of-year field `w`, or with the day of the year `D` together with a month `M`. Both format most dates correctly and fail near the end of the year or after January |
 | `java.stdout-usage` and `kotlin.stdout-usage` | `System.out.println` or `println` calls. A call inside a `main` entry point is not reported, because a command-line tool writes to standard output by design. Helpers that `main` calls are still reported |
 | `java.ignored-interrupt` | An `InterruptedException` catch with a single logging call, optionally followed by a bare return |
 | `kotlin.run-blocking-in-suspend` | `kotlinx.coroutines.runBlocking` inside a Kotlin suspend function |
@@ -158,6 +159,7 @@ make it blocking.
 | `security.weak-crypto` | MD2, MD5, SHA-1, DES, RC2, RC4, and AES in ECB or default mode |
 | `security.disabled-tls-verification` | Trust-all trust managers and host name verifiers that always return `true`. Code inside an `if` or conditional expression whose condition mentions `verif`, `insecure`, `trustAll`, `skip`, or `validat` is skipped, because it is an opt-in setting. The trust-all implementation itself is still reported; suppress it with a reason |
 | `security.csrf-disabled` | Spring Security `csrf` configuration that disables CSRF protection. Methods that set `SessionCreationPolicy.STATELESS` are skipped |
+| `security.jackson-default-typing` | Jackson `enableDefaultTyping`, `activateDefaultTyping` with `LaissezFaireSubTypeValidator`, and `@JsonTypeInfo(use = Id.CLASS)` or `Id.MINIMAL_CLASS`, which let the input name the class to deserialize. `activateDefaultTyping` with another validator and `Id.NAME` are not reported |
 | `kotlin.global-scope` | `GlobalScope.launch` or `GlobalScope.async` |
 | `spring.field-injection` | A field annotated with `@Autowired`, `@Inject` or `@Resource`, with or without annotation arguments. Setter and constructor injection are not reported |
 | `spring.singleton-request-state` | A Java Spring MVC singleton controller handler that stores a parameter directly in a `this` field |
@@ -167,6 +169,7 @@ make it blocking.
 | `spring.async-self-invocation` | A direct Java call to a same-class Spring `@Async` method |
 | `spring.cache-self-invocation` | A direct Java call to a same-class method with Spring `@Cacheable`, `@CacheEvict`, `@CachePut`, or `@Caching` |
 | `spring.retry-self-invocation` | A direct Java call to a same-class method with Spring Retry's `@Retryable` |
+| `spring.static-member-injection` | Spring's `@Value` on a static field or static method, or `@Autowired` on a static method. Spring skips static members, so the value stays unset. An `@Autowired` field, static or not, is reported once by `spring.field-injection` |
 
 The Spring self-invocation checks apply to proxy-based transactions, async
 execution, caching, and retries. They check unqualified calls and calls through `this`. For calls

@@ -1,0 +1,12 @@
+rules:
+  - id: security-jackson-default-typing
+    languages: [java]
+    severity: WARNING
+    message: Restrict the types that Jackson can deserialize from a class name.
+    pattern-either:
+      - pattern: $MAPPER.enableDefaultTyping(...)
+      - pattern: $MAPPER.enableDefaultTypingAsProperty(...)
+      - pattern: $MAPPER.activateDefaultTyping(com.fasterxml.jackson.databind.jsontype.impl.LaissezFaireSubTypeValidator.instance, ...)
+      - pattern: $MAPPER.activateDefaultTyping(new com.fasterxml.jackson.databind.jsontype.impl.LaissezFaireSubTypeValidator(), ...)
+      - pattern: '@com.fasterxml.jackson.annotation.JsonTypeInfo(..., use = com.fasterxml.jackson.annotation.JsonTypeInfo.Id.CLASS, ...)'
+      - pattern: '@com.fasterxml.jackson.annotation.JsonTypeInfo(..., use = com.fasterxml.jackson.annotation.JsonTypeInfo.Id.MINIMAL_CLASS, ...)'

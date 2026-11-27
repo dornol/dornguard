@@ -5,3 +5,4 @@ rules:
   - java.ignored-interrupt
   - java.fully-qualified-type
   - java.print-stack-trace
+  - java.date-pattern-typo

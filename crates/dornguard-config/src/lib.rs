@@ -448,9 +448,24 @@ const BUILTIN_RULES: &[&str] = &[
     include_str!("../assets/rules/jsp.scripting-element.yml"),
     include_str!("../assets/rules/jsp.unescaped-output.yml"),
     include_str!("../assets/rules/kotlin.run-catching-cancellation.yml"),
+    include_str!("../assets/rules/java.date-pattern-typo.yml"),
+    include_str!("../assets/rules/spring.static-member-injection.yml"),
+    include_str!("../assets/rules/security.jackson-default-typing.yml"),
 ];
 
 const BUILTIN_ENGINE_CONFIGS: &[(&str, &str)] = &[
+    (
+        "rules/semgrep/java/date-pattern-typo.yml",
+        include_str!("../assets/rules/semgrep/java/date-pattern-typo.yml"),
+    ),
+    (
+        "rules/semgrep/spring/static-member-injection.yml",
+        include_str!("../assets/rules/semgrep/spring/static-member-injection.yml"),
+    ),
+    (
+        "rules/semgrep/security/jackson-default-typing.yml",
+        include_str!("../assets/rules/semgrep/security/jackson-default-typing.yml"),
+    ),
     (
         "rules/pmd/java/ignored-return-value.xml",
         include_str!("../assets/rules/pmd/java/ignored-return-value.xml"),
@@ -1134,7 +1149,7 @@ mod tests {
 
     /// Rules whose findings need a judgment. Adding to this list is a decision:
     /// a rule belongs here when it infers intent from code shape.
-    const MEDIUM_CONFIDENCE: [&str; 22] = [
+    const MEDIUM_CONFIDENCE: [&str; 23] = [
         "java.assert-throws-nested-call",
         "java.broken-null-check",
         "java.fully-qualified-type",
@@ -1150,6 +1165,7 @@ mod tests {
         "security.cors-wildcard",
         "security.csrf-disabled",
         "security.disabled-tls-verification",
+        "security.jackson-default-typing",
         "security.sql-injection",
         "security.weak-crypto",
         "spring.checked-exception-rollback",

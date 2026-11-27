@@ -1,0 +1,10 @@
+id: spring.static-member-injection
+engine: semgrep
+severity: error
+description: Spring does not inject a static field or static method, so the value stays unset.
+fix: >-
+  Make the field or setter an instance member of the bean, or bind the value
+  with @ConfigurationProperties and pass the bean where it is needed.
+implementation:
+  config: rules/semgrep/spring/static-member-injection.yml
+  rule_id: spring-static-member-injection

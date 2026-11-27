@@ -1,0 +1,17 @@
+rules:
+  - id: java-date-pattern-typo
+    languages: [java]
+    severity: ERROR
+    message: Use yyyy for the calendar year and dd for the day of the month.
+    patterns:
+      - pattern-either:
+          - pattern: java.time.format.DateTimeFormatter.ofPattern("$PATTERN", ...)
+          - pattern: new java.text.SimpleDateFormat("$PATTERN", ...)
+          - pattern: (java.text.SimpleDateFormat $FORMAT).applyPattern("$PATTERN")
+          - pattern: org.apache.commons.lang3.time.FastDateFormat.getInstance("$PATTERN", ...)
+          - pattern: org.apache.commons.lang3.time.DateFormatUtils.format($DATE, "$PATTERN", ...)
+      # A week-based year without a week-of-year field, or the day of the year
+      # in a pattern that also has a month.
+      - metavariable-regex:
+          metavariable: $PATTERN
+          regex: ^(?:(?=[^w]*Y)[^w]*|(?=.*M)(?=.*D).*)$

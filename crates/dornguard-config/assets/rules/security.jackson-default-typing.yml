@@ -1,0 +1,13 @@
+id: security.jackson-default-typing
+engine: semgrep
+severity: warning
+confidence: medium
+description: Jackson reads a class name from the input and can instantiate a class the input chooses.
+fix: >-
+  Use JsonTypeInfo.Id.NAME with @JsonSubTypes to list the allowed subtypes. If
+  you need default typing, pass activateDefaultTyping a
+  BasicPolymorphicTypeValidator that allows only your own packages or base
+  types.
+implementation:
+  config: rules/semgrep/security/jackson-default-typing.yml
+  rule_id: security-jackson-default-typing

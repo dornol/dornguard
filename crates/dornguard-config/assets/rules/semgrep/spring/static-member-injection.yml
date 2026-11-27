@@ -1,0 +1,11 @@
+rules:
+  - id: spring-static-member-injection
+    languages: [java]
+    severity: ERROR
+    message: Spring does not inject static members.
+    # spring.field-injection already reports @Autowired on a field, static or not.
+    pattern-either:
+      - pattern: '@org.springframework.beans.factory.annotation.Value(...) static $TYPE $FIELD;'
+      - pattern: '@org.springframework.beans.factory.annotation.Value(...) static $TYPE $FIELD = $INIT;'
+      - pattern: '@org.springframework.beans.factory.annotation.Value(...) static $RETURN $METHOD(...) { ... }'
+      - pattern: '@org.springframework.beans.factory.annotation.Autowired(...) static $RETURN $METHOD(...) { ... }'
