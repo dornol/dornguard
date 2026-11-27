@@ -11,6 +11,8 @@ severity, confidence and profiles.
 | `java-source` | Semgrep Java source rules |
 | `java` | Semgrep and PMD Java source rules |
 | `java-review` | Opt-in Java and JUnit checks for recurring review findings |
+| `java-design` | Opt-in Java design checks: cognitive complexity, long parameter lists, god classes and collection implementation types |
+| `kotlin-review` | Opt-in Kotlin checks: the not-null assertion operator `!!` |
 | `format` | Java, Kotlin, and JavaScript source formatting |
 | `jspecify` | Requires all checked Java types to be in a JSpecify `@NullMarked` scope |
 | `kotlin` | Semgrep output and coroutine checks for Gradle Kotlin/JVM production sources |
@@ -27,7 +29,7 @@ severity, confidence and profiles.
 | `rust` | `cargo clippy` and compiler lints (see [Go and Rust](go-rust.md)) |
 | `security` | Java CORS wildcards, SQL built from strings, weak hashes and ciphers, disabled TLS verification, disabled CSRF protection, Jackson default typing, and XML parsers open to XXE |
 | `hexagonal` | Domain, application, and adapter dependencies |
-| `layered` | Controller, service, and repository dependencies |
+| `layered` | Controller, service, and repository dependencies: controllers do not use repositories, services do not use controllers, and repositories use neither |
 | `package-cycles` | Dependency cycles between packages in a module |
 | `rest-api` | Spring and security rules |
 | `scheduler` | Spring rules for scheduler modules |
@@ -63,9 +65,9 @@ These built-in rules have `medium` confidence:
 | Area | Rules |
 | --- | --- |
 | Security | `security.sql-injection`, `kotlin.sql-injection`, `security.disabled-tls-verification`, `security.csrf-disabled`, `security.weak-crypto`, `security.cors-wildcard`, `security.jackson-default-typing`, `security.xxe` |
-| Java | `java.resource-not-closed`, `java.preserve-stack-trace`, `java.ignored-interrupt`, `java.ignored-return-value`, `java.broken-null-check`, `java.fully-qualified-type`, `java.assert-throws-nested-call`, `java.lock-without-finally` |
-| Kotlin | `kotlin.fully-qualified-type`, `kotlin.swallowed-cancellation`, `kotlin.run-catching-cancellation` |
-| Spring | `spring.singleton-request-state`, `spring.shared-simple-date-format`, `spring.checked-exception-rollback`, `spring.jpa-entity-response` |
+| Java | `java.optional-misuse`, `java.cognitive-complexity`, `java.excessive-parameters`, `java.god-class`, `java.resource-not-closed`, `java.preserve-stack-trace`, `java.ignored-interrupt`, `java.ignored-return-value`, `java.broken-null-check`, `java.fully-qualified-type`, `java.assert-throws-nested-call`, `java.lock-without-finally` |
+| Kotlin | `kotlin.unmanaged-coroutine-scope`, `kotlin.fully-qualified-type`, `kotlin.swallowed-cancellation`, `kotlin.run-catching-cancellation` |
+| Spring | `spring.http-client-without-timeout`, `spring.open-in-view-enabled`, `spring.singleton-request-state`, `spring.shared-simple-date-format`, `spring.checked-exception-rollback`, `spring.jpa-entity-response` |
 | Templates | `thymeleaf.unescaped-output`, `jsp.unescaped-output` |
 
 A custom rule defaults to `high`. Set `confidence: medium` in its rule file to
@@ -184,6 +186,20 @@ make it blocking.
 | `spring.retry-self-invocation` | A direct Java call to a same-class method with Spring Retry's `@Retryable` |
 | `spring.static-member-injection` | Spring's `@Value` on a static field or static method, or `@Autowired` on a static method. Spring skips static members, so the value stays unset. An `@Autowired` field, static or not, is reported once by `spring.field-injection` |
 | `spring.request-mapping-without-method` | A handler method annotated with `@RequestMapping` without `method`, which answers every HTTP method. A class-level `@RequestMapping` is not reported |
+| `java.wildcard-import` | A non-static or static `import ...*;`. An unused wildcard import is reported once, by `java.unnecessary-import` |
+| `java.optional-misuse` | An `Optional` field or parameter, or `return null` in a method that returns `Optional`. Optional locals and return types are not reported, nor `return null` inside a lambda or anonymous class |
+| `java.unused-private-field`, `java.unused-private-method` and `java.unused-local-variable` | Private fields that are never read, private methods that are never called and local variables that are never used, as reported by PMD. `serialVersionUID`, Lombok-generated accessors and variables named `ignored...` or `unused...` are not reported |
+| `java.return-null-collection` | `return null` in a method that returns a collection, map or array, as reported by PMD |
+| `spring.redundant-autowired-constructor` | `@Autowired` on the only constructor of a class. With several constructors it selects the one Spring uses and is not reported |
+| `spring.jpa-entity-request-body` | A Spring MVC handler parameter of a JPA entity type that is bound from the request: `@RequestBody`, `@ModelAttribute`, or an unannotated object parameter. `@PathVariable` and `@RequestParam` parameters are not reported |
+| `spring.jpa-lombok-entity` | A JPA `@Entity` with Lombok `@Data`, or `@EqualsAndHashCode` or `@ToString` without arguments. Arguments such as `onlyExplicitlyIncluded = true` are taken as a deliberate choice |
+| `spring.jpa-eager-fetch` | An association or element collection mapped with `fetch = FetchType.EAGER` |
+| `spring.transactional-in-controller` | Spring or JTA `@Transactional` on a `@Controller` or `@RestController` class or on one of its methods |
+| `spring.http-client-without-timeout` | `new RestTemplate()` without a request factory set right after it, `RestClient.create(...)` and `WebClient.create(...)` |
+| `spring.open-in-view-enabled` | A `@SpringBootApplication` class in a module whose build file, or a parent build file, names `spring-boot-starter-data-jpa`, and whose `src/main/resources/application.properties`, `application.yml` or `application.yaml` does not set `spring.jpa.open-in-view` to `false` outside a profile-specific document. With `--changed`, it is checked only when the application class changes |
+| `kotlin.unmanaged-coroutine-scope` | A `val` initialized with `CoroutineScope(...)` in a class with no function that calls `cancel` on it |
+| `kotlin.missing-spring-plugin` | A Gradle Kotlin module without the `kotlin("plugin.spring")` or `allopen` plugin that has a final class or function annotated with `@Configuration`, `@SpringBootApplication`, `@Transactional`, `@Async`, a cache annotation, `@Retryable` or `@Validated`. Reported once per module |
+| `kotlin.missing-jpa-plugin` | A Gradle Kotlin module without the `kotlin("plugin.jpa")` or `noarg` plugin that declares an `@Entity`, `@Embeddable` or `@MappedSuperclass` class. Reported once per module |
 
 The Spring self-invocation checks apply to proxy-based transactions, async
 execution, caching, and retries. They check unqualified calls and calls through `this`. For calls
@@ -337,3 +353,24 @@ project's changes.
 |---|---|
 | `java.ignored-return-value` | PMD recognizes a method whose result should be used, such as `String.trim()` or `BigDecimal.add()`, and the caller discards it |
 | `java.assert-throws-nested-call` | A JUnit `assertThrows` or `assertThrowsExactly` lambda passes the result of another method call directly to the operation under test, so argument preparation may satisfy the assertion first |
+
+## Java design checks
+
+Add `java-design` to measure design debt. Its rules are warnings, and the
+size and complexity rules have `medium` confidence: a finding marks code to
+review, not a defect.
+
+| Rule | Finding |
+|---|---|
+| `java.cognitive-complexity` | A method with PMD cognitive complexity of 15 or more |
+| `java.excessive-parameters` | A method or constructor with eight or more parameters |
+| `java.god-class` | A class that PMD's GodClass rule finds large, complex and dependent on other classes' data |
+| `java.loose-coupling` | A field, parameter or return type declared as `ArrayList`, `HashMap` or another collection implementation |
+
+## Kotlin review checks
+
+Add `kotlin-review` for stricter Kotlin style.
+
+| Rule | Finding |
+|---|---|
+| `kotlin.not-null-assertion` | Each use of the not-null assertion operator `!!` |

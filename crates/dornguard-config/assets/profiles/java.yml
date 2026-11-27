@@ -14,3 +14,7 @@ rules:
   - java.string-reference-equality
   - java.throw-from-finally
   - java.double-checked-locking
+  - java.unused-private-field
+  - java.unused-private-method
+  - java.unused-local-variable
+  - java.return-null-collection

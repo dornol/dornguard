@@ -1,0 +1,42 @@
+rules:
+  - id: java-optional-misuse
+    languages: [java]
+    severity: WARNING
+    message: Use Optional only as a return type, and never return null from it.
+    pattern-either:
+      # An Optional field.
+      - patterns:
+          - pattern-either:
+              - pattern: java.util.Optional<$T> $FIELD;
+              - pattern: java.util.Optional<$T> $FIELD = $INIT;
+          - pattern-inside: |
+              class $CLASS { ... }
+          - pattern-not-inside: |
+              $RETURN $METHOD(...) { ... }
+          - pattern-not-inside: |
+              $CLASS(...) { ... }
+          - pattern-not-inside: |
+              ($PARAMS) -> { ... }
+          - pattern-not-inside: |
+              static { ... }
+          - pattern-not-inside: |
+              { ... }
+      # An Optional parameter.
+      - patterns:
+          - pattern-either:
+              - pattern: $RETURN $METHOD(..., java.util.Optional<$T> $PARAM, ...) { ... }
+              - pattern: $CLASS(..., java.util.Optional<$T> $PARAM, ...) { ... }
+          - focus-metavariable: $PARAM
+      # null returned where the caller expects an Optional.
+      - patterns:
+          - pattern: return null;
+          - pattern-inside: |
+              java.util.Optional<$T> $METHOD(...) { ... }
+          - pattern-not-inside: |
+              ($PARAMS) -> { ... }
+          - pattern-not-inside: |
+              () -> { ... }
+          - pattern-not-inside: |
+              $PARAM -> { ... }
+          - pattern-not-inside: |
+              new $TYPE(...) { ... }

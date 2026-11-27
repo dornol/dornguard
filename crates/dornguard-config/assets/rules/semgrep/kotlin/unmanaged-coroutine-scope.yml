@@ -1,0 +1,24 @@
+rules:
+  - id: kotlin-unmanaged-coroutine-scope
+    languages: [kotlin]
+    severity: WARNING
+    message: Cancel this coroutine scope when its owner is closed.
+    patterns:
+      - pattern: val $SCOPE = kotlinx.coroutines.CoroutineScope(...)
+      # A class that cancels the scope in one of its functions manages its lifecycle.
+      - pattern-not-inside: |
+          class $OWNER {
+            ...
+            fun $CLOSE(...) {
+              ...
+              $SCOPE.cancel(...)
+              ...
+            }
+            ...
+          }
+      - pattern-not-inside: |
+          class $OWNER {
+            ...
+            fun $CLOSE(...) = $SCOPE.cancel(...)
+            ...
+          }

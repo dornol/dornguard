@@ -1,0 +1,12 @@
+id: kotlin.unmanaged-coroutine-scope
+engine: semgrep
+severity: warning
+confidence: medium
+description: A class creates a CoroutineScope and never cancels it, so its coroutines keep running after the class is no longer used.
+fix: >-
+  Cancel the scope when the owner shuts down, for example in a @PreDestroy or
+  close() function, or launch the work in a scope with a lifecycle such as
+  coroutineScope { } or a framework-provided scope.
+implementation:
+  config: rules/semgrep/kotlin/unmanaged-coroutine-scope.yml
+  rule_id: kotlin-unmanaged-coroutine-scope

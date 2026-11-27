@@ -4,8 +4,9 @@ use std::process::{Output, Stdio};
 use std::time::Duration;
 
 use dornguard_config::{
-    ASYNC_SELF_RULE, CACHE_SELF_RULE, FormatConfig, JPA_RESPONSE_RULE, PartialParsingPolicy,
-    RETRY_SELF_RULE, Registry, Rule, TRANSACTIONAL_SELF_RULE,
+    ASYNC_SELF_RULE, CACHE_SELF_RULE, FormatConfig, JPA_REQUEST_RULE, JPA_RESPONSE_RULE,
+    OPEN_IN_VIEW_RULE, PartialParsingPolicy, RETRY_SELF_RULE, Registry, Rule,
+    TRANSACTIONAL_SELF_RULE,
 };
 use dornguard_core::{EngineName, Failure, FailureKind, FailureStage, Outcome, SourceLanguage};
 use miette::{IntoDiagnostic, Result, WrapErr, bail};
@@ -19,6 +20,7 @@ mod go_vet;
 mod install;
 mod java_names;
 mod jspecify;
+mod open_in_view;
 mod pmd;
 mod rust_clippy;
 mod semgrep;
@@ -89,6 +91,20 @@ pub async fn check_builtin(
             .filter(|path| SourceLanguage::of(path) == Some(SourceLanguage::Java))
             .cloned()
             .collect::<Vec<_>>();
+        let (open_in_view, java_rules): (Vec<_>, Vec<_>) = java_rules
+            .into_iter()
+            .partition(|rule| rule.id == OPEN_IN_VIEW_RULE);
+        for rule in open_in_view {
+            let mut result = open_in_view::check(
+                Request {
+                    files: &java_files,
+                    ..request
+                },
+                rule,
+            );
+            result.scanned_files.extend(java_files.iter().cloned());
+            outcome.merge(result);
+        }
         let (spring_rules, jspecify_rules): (Vec<_>, Vec<_>) =
             java_rules.into_iter().partition(|rule| {
                 matches!(
@@ -98,6 +114,7 @@ pub async fn check_builtin(
                         | RETRY_SELF_RULE
                         | TRANSACTIONAL_SELF_RULE
                         | JPA_RESPONSE_RULE
+                        | JPA_REQUEST_RULE
                 )
             });
         if !jspecify_rules.is_empty() {

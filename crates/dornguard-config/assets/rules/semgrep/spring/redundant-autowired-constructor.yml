@@ -1,0 +1,24 @@
+rules:
+  - id: spring-redundant-autowired-constructor
+    languages: [java]
+    severity: WARNING
+    message: Spring injects through a single constructor without @Autowired.
+    patterns:
+      - pattern-either:
+          - pattern: |
+              @org.springframework.beans.factory.annotation.Autowired
+              $CLASS(...) { ... }
+          - pattern: |
+              @org.springframework.beans.factory.annotation.Autowired()
+              $CLASS(...) { ... }
+      - pattern-inside: |
+          class $CLASS { ... }
+      # With several constructors, @Autowired chooses the one Spring uses.
+      - pattern-not-inside: |
+          class $CLASS {
+            ...
+            $CLASS(...) { ... }
+            ...
+            $CLASS(...) { ... }
+            ...
+          }

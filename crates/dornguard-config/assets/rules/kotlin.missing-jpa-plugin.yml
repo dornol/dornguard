@@ -1,0 +1,8 @@
+id: kotlin.missing-jpa-plugin
+engine: gradle
+severity: error
+description: A Gradle module declares Kotlin JPA entities without the Kotlin JPA compiler plugin, so the entities have no no-arg constructor for JPA to instantiate them.
+fix: >-
+  Apply the Kotlin JPA plugin, for example
+  plugins { kotlin("plugin.jpa") version "<kotlin version>" }, which adds a
+  no-arg constructor to @Entity, @Embeddable and @MappedSuperclass classes.

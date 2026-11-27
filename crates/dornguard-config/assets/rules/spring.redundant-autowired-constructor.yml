@@ -1,0 +1,8 @@
+id: spring.redundant-autowired-constructor
+engine: semgrep
+severity: warning
+description: The class's only constructor is annotated with @Autowired, which Spring does not need for a single constructor.
+fix: Remove @Autowired from the constructor.
+implementation:
+  config: rules/semgrep/spring/redundant-autowired-constructor.yml
+  rule_id: spring-redundant-autowired-constructor

@@ -1,0 +1,6 @@
+rules:
+  - id: kotlin-not-null-assertion
+    languages: [kotlin]
+    severity: WARNING
+    message: Handle the null case instead of asserting non-null.
+    pattern: $VALUE!!

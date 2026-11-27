@@ -12,3 +12,10 @@ rules:
   - spring.retry-self-invocation
   - spring.static-member-injection
   - spring.request-mapping-without-method
+  - spring.redundant-autowired-constructor
+  - spring.jpa-lombok-entity
+  - spring.jpa-eager-fetch
+  - spring.transactional-in-controller
+  - spring.http-client-without-timeout
+  - spring.jpa-entity-request-body
+  - spring.open-in-view-enabled

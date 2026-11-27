@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ruleset name="DornGuard Java LooseCoupling"
+    xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
+    <description>A field, parameter or return type names a collection implementation such as ArrayList or HashMap instead of its interface.</description>
+    <rule ref="category/java/bestpractices.xml/LooseCoupling"/>
+</ruleset>

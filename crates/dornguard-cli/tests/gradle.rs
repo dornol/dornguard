@@ -351,6 +351,10 @@ fn hexagonal_layered_and_library_profiles_each_report_their_own_violations() {
             "package example.admin.repository;\npublic final class AdminRepository {\n    Class<?> upward = example.admin.service.AdminService.class;\n}\n",
         ),
         (
+            "admin/src/main/java/example/admin/service/AdminReport.java",
+            "package example.admin.service;\npublic final class AdminReport {\n    Class<?> web = example.admin.controller.AdminController.class;\n}\n",
+        ),
+        (
             "common/src/main/java/example/common/Managed.java",
             "package example.common;\n@org.springframework.stereotype.Component\npublic class Managed {}\n",
         ),
@@ -399,6 +403,10 @@ fn hexagonal_layered_and_library_profiles_each_report_their_own_violations() {
         (
             "architecture.repository-independence",
             "example.admin.repository.AdminRepository",
+        ),
+        (
+            "architecture.service-independence",
+            "example.admin.service.AdminReport",
         ),
     ]
     .map(|(rule, class)| (rule.to_owned(), class.to_owned()));

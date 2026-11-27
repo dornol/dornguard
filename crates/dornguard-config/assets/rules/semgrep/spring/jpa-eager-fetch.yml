@@ -1,0 +1,8 @@
+rules:
+  - id: spring-jpa-eager-fetch
+    languages: [java]
+    severity: WARNING
+    message: Load this association lazily.
+    pattern-either:
+      - pattern: '@$RELATION(..., fetch = jakarta.persistence.FetchType.EAGER, ...) $TYPE $FIELD;'
+      - pattern: '@$RELATION(..., fetch = javax.persistence.FetchType.EAGER, ...) $TYPE $FIELD;'

@@ -6,11 +6,13 @@ use dornguard_core::{Diagnostic, Outcome};
 
 const UNNECESSARY_IMPORT: &str = "java.unnecessary-import";
 const FULLY_QUALIFIED_TYPE: &str = "java.fully-qualified-type";
+const WILDCARD_IMPORT: &str = "java.wildcard-import";
 
 /// A type that is imported but written with its full name is one problem: the fix is to
 /// use the simple name, which also makes the import necessary. Removing the import, as
 /// `java.unnecessary-import` alone suggests, is the wrong advice for these files.
 pub fn merge(outcome: &mut Outcome) {
+    drop_unused_wildcards(outcome);
     let qualified: BTreeSet<(String, String)> = outcome
         .diagnostics
         .iter()
@@ -55,6 +57,25 @@ pub fn merge(outcome: &mut Outcome) {
             "Replace the fully qualified name with `{name}`. Keep the existing import, which then becomes used."
         );
     }
+}
+
+/// An unused wildcard import is one problem: the fix is to remove it, as
+/// `java.unnecessary-import` says, not to expand it into single-type imports.
+fn drop_unused_wildcards(outcome: &mut Outcome) {
+    let unused: BTreeSet<(String, u32)> = outcome
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.rule_id == UNNECESSARY_IMPORT)
+        .filter_map(line_key)
+        .collect();
+    outcome.diagnostics.retain(|diagnostic| {
+        diagnostic.rule_id != WILDCARD_IMPORT
+            || !line_key(diagnostic).is_some_and(|item| unused.contains(&item))
+    });
+}
+
+fn line_key(diagnostic: &Diagnostic) -> Option<(String, u32)> {
+    Some((diagnostic.path.clone()?, diagnostic.line?))
 }
 
 fn key(diagnostic: &Diagnostic) -> Option<(String, String)> {
@@ -115,6 +136,26 @@ mod tests {
             merged.message
         );
         assert!(merged.fix.contains("Keep the existing import"));
+    }
+
+    #[test]
+    fn an_unused_wildcard_import_is_reported_only_as_unnecessary() {
+        let mut used = diagnostic(WILDCARD_IMPORT, "A.java", "java.util.*");
+        used.line = Some(2);
+        let mut outcome = Outcome {
+            diagnostics: vec![
+                diagnostic(UNNECESSARY_IMPORT, "A.java", "java.io.*"),
+                diagnostic(WILDCARD_IMPORT, "A.java", "java.io.*"),
+                used,
+            ],
+            ..Outcome::default()
+        };
+        merge(&mut outcome);
+        assert_eq!(
+            rules(&outcome),
+            [(UNNECESSARY_IMPORT, "A.java"), (WILDCARD_IMPORT, "A.java")]
+        );
+        assert_eq!(outcome.diagnostics[1].line, Some(2));
     }
 
     #[test]

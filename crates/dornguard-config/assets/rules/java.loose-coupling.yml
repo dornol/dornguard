@@ -1,0 +1,8 @@
+id: java.loose-coupling
+engine: pmd
+severity: warning
+description: A field, parameter or return type names a collection implementation such as ArrayList or HashMap instead of its interface.
+fix: Declare the type as List, Set, Map or another interface, and choose the implementation only where the object is created.
+implementation:
+  config: rules/pmd/java/loose-coupling.xml
+  rule_id: LooseCoupling

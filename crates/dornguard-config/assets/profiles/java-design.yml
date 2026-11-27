@@ -1,0 +1,7 @@
+name: java-design
+description: Opt-in Java design checks for complexity, size and coupling
+rules:
+  - java.cognitive-complexity
+  - java.excessive-parameters
+  - java.god-class
+  - java.loose-coupling

@@ -1,0 +1,8 @@
+id: spring.jpa-eager-fetch
+engine: semgrep
+severity: warning
+description: This JPA association is fetched eagerly, so every query for the entity loads it, often with one extra query per row.
+fix: Use FetchType.LAZY and load the association where it is needed with a fetch join, an entity graph or a DTO query.
+implementation:
+  config: rules/semgrep/spring/jpa-eager-fetch.yml
+  rule_id: spring-jpa-eager-fetch

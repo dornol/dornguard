@@ -23,6 +23,9 @@ pub struct Module {
     #[serde(default)]
     pub compile_sources: BTreeSet<PathBuf>,
     pub kotlin_source_dirs: Vec<PathBuf>,
+    /// Applied Kotlin compiler plugins that open classes or add no-arg constructors.
+    #[serde(default)]
+    pub kotlin_compiler_plugins: Vec<String>,
     #[serde(default)]
     pub kotlin_compiled: bool,
     pub class_dirs: Vec<PathBuf>,

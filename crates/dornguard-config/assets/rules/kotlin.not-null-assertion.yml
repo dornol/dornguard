@@ -1,0 +1,10 @@
+id: kotlin.not-null-assertion
+engine: semgrep
+severity: warning
+description: The not-null assertion operator (!!) throws a NullPointerException with no context when the value is null.
+fix: >-
+  Handle null explicitly with ?., ?: or a smart cast, or use requireNotNull or
+  checkNotNull with a message that says why the value cannot be null.
+implementation:
+  config: rules/semgrep/kotlin/not-null-assertion.yml
+  rule_id: kotlin-not-null-assertion

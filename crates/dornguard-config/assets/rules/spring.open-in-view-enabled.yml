@@ -1,0 +1,9 @@
+id: spring.open-in-view-enabled
+engine: builtin
+severity: warning
+confidence: medium
+description: This Spring Boot application uses Spring Data JPA and leaves spring.jpa.open-in-view at its default of true, so every web request holds a database connection until the response is written and lazy loading can run queries from the view.
+fix: >-
+  Set spring.jpa.open-in-view=false in application.properties or
+  application.yml, and load what each response needs in the service with fetch
+  joins, entity graphs or DTO queries.

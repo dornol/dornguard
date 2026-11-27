@@ -1,0 +1,12 @@
+id: java.optional-misuse
+engine: semgrep
+severity: warning
+confidence: medium
+description: Optional is used as a field or parameter type, or a method that returns Optional returns null.
+fix: >-
+  Return Optional.empty() instead of null. Store a nullable field and expose an
+  Optional getter, and take the plain type as a parameter with an overload for
+  the absent case.
+implementation:
+  config: rules/semgrep/java/optional-misuse.yml
+  rule_id: java-optional-misuse

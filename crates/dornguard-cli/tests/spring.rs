@@ -283,9 +283,11 @@ profiles: [spring-boot]
         [
             ("spring.transactional-self-invocation", 5),
             ("spring.private-transactional", 13),
+            ("java.unused-private-method", 14),
             ("spring.transactional-self-invocation", 17),
             ("java.ignored-interrupt", 31),
             ("java.ignored-interrupt", 34),
+            ("java.unused-private-method", 50),
         ],
         "{result}"
     );
@@ -584,12 +586,36 @@ class ExplicitSingleton {
                 "this.lastUser = user;"
             ),
             (
+                "java.unused-private-field".to_owned(),
+                "private String lastUser;"
+            ),
+            (
                 "java.resource-not-closed".to_owned(),
                 "InputStream in = Files.newInputStream(file);"
             ),
             (
                 "java.preserve-stack-trace".to_owned(),
                 "catch (NumberFormatException failure) { throw new IllegalStateException(failure.getMessage()); }"
+            ),
+            (
+                "spring.transactional-in-controller".to_owned(),
+                "void update() throws IOException {"
+            ),
+            (
+                "spring.transactional-in-controller".to_owned(),
+                "void updateSql() throws SQLException {"
+            ),
+            (
+                "spring.transactional-in-controller".to_owned(),
+                "void configured() throws IOException {"
+            ),
+            (
+                "spring.transactional-in-controller".to_owned(),
+                "void caught() {"
+            ),
+            (
+                "spring.transactional-in-controller".to_owned(),
+                "Task deferred() {"
             ),
             (
                 "spring.singleton-request-state".to_owned(),

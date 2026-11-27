@@ -400,6 +400,8 @@ class Service {
     assert_eq!(
         findings,
         [
+            // The fixture does not apply the Kotlin Spring plugin.
+            (6, "kotlin.missing-spring-plugin", file),
             (6, "kotlin.transactional-suspend", file),
             (9, "kotlin.transactional-suspend", file),
             (18, "kotlin.print-stack-trace", file),
@@ -486,11 +488,14 @@ class Library @Autowired constructor(private val catalog: Catalog)
         findings,
         [
             (10, "kotlin.jpa-data-class-entity"),
+            // The fixture applies neither the Kotlin JPA nor the Spring plugin.
+            (10, "kotlin.missing-jpa-plugin"),
             (13, "kotlin.jpa-data-class-entity"),
             (24, "kotlin.field-injection"),
             (27, "kotlin.field-injection"),
             (30, "kotlin.field-injection"),
             (33, "kotlin.field-injection"),
+            (39, "kotlin.missing-spring-plugin"),
             (39, "kotlin.private-transactional"),
             (42, "kotlin.private-transactional"),
         ],
@@ -578,4 +583,121 @@ class Repository(val jdbc: JdbcTemplate, val signature: Signature) {
         .collect::<Vec<_>>();
     lines.sort_unstable();
     assert_eq!(lines, [5, 6, 7], "{result}");
+}
+
+#[test]
+#[ignore = "requires Gradle, JDK 21 and the pinned Semgrep"]
+fn kotlin_spring_and_jpa_plugins_open_classes_and_add_constructors() {
+    let project = kotlin_fixture("kotlin-single");
+    let root = project.path();
+    let build = fs::read_to_string(root.join("build.gradle.kts")).unwrap();
+    fs::write(
+        root.join("build.gradle.kts"),
+        build.replace(
+            "    kotlin(\"jvm\") version \"2.4.21\"\n",
+            "    kotlin(\"jvm\") version \"2.4.21\"\n    kotlin(\"plugin.spring\") version \"2.4.21\"\n    kotlin(\"plugin.jpa\") version \"2.4.21\"\n",
+        ),
+    )
+    .unwrap();
+    fs::write(
+        root.join("src/main/kotlin/example/Example.kt"),
+        r#"package example
+
+import jakarta.persistence.Entity
+import jakarta.persistence.Id
+import org.springframework.context.annotation.Configuration
+import org.springframework.transaction.annotation.Transactional
+
+@Configuration
+class AppConfig
+
+@Transactional
+class Catalog
+
+@Entity
+class Shelf(@Id val id: Long)
+"#,
+    )
+    .unwrap();
+    let result = report(check(root).output().unwrap(), 0);
+    assert_eq!(result["complete"], true, "{result}");
+    assert!(
+        result["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|finding| !finding["rule_id"]
+                .as_str()
+                .unwrap()
+                .starts_with("kotlin.missing-")),
+        "{result}"
+    );
+}
+
+#[test]
+#[ignore = "requires Gradle, JDK 21 and the pinned Semgrep"]
+fn kotlin_reports_unmanaged_scopes_and_opt_in_not_null_assertions() {
+    let project = kotlin_fixture("kotlin-single");
+    let root = project.path();
+    let file = "src/main/kotlin/example/Example.kt";
+    fs::write(
+        root.join(file),
+        r#"package example
+
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+
+class Poller {
+    private val scope = CoroutineScope(Dispatchers.Default)
+
+    fun label(name: String?): Int = name!!.length
+}
+
+class Closing {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    fun close() {
+        scope.cancel()
+    }
+}
+
+class Shorthand {
+    private val scope = CoroutineScope(Dispatchers.Default)
+
+    fun close() = scope.cancel()
+
+    fun text(): String = "a!!b"
+}
+"#,
+    )
+    .unwrap();
+    let findings = |profile: &str| {
+        let result = report(
+            check(root).args(["--profile", profile]).output().unwrap(),
+            0,
+        );
+        assert_eq!(result["complete"], true, "{result}");
+        let mut found = result["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|finding| {
+                (
+                    finding["line"].as_u64().unwrap(),
+                    finding["rule_id"].as_str().unwrap().to_owned(),
+                )
+            })
+            .collect::<Vec<_>>();
+        found.sort_unstable();
+        found
+    };
+    assert_eq!(
+        findings("kotlin-review"),
+        [
+            (9, "kotlin.unmanaged-coroutine-scope".to_owned()),
+            (11, "kotlin.not-null-assertion".to_owned()),
+        ]
+    );
 }

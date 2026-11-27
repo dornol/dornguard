@@ -85,6 +85,8 @@ fn scope_features(
         .find(|rule| rule.id == FLYWAY_RULE)
         .map(|rule| rule.severity);
     let has = |rules: &[&Rule], id: &str| rules.iter().any(|rule| rule.id == id);
+    // The request-body rule reads every entity too, but a changed check keeps its
+    // scope: it reports changed handlers, and a full check covers the rest.
     let mut jpa = has(rules, JPA_RESPONSE_RULE);
     let mut jspecify = has(rules, "java.jspecify-null-marked");
     for module_name in config.modules.keys() {

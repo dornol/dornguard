@@ -1,0 +1,58 @@
+rules:
+  - id: spring-transactional-in-controller
+    languages: [java]
+    severity: WARNING
+    message: Move the transaction boundary to a service.
+    pattern-either:
+      # A transactional handler method in a controller.
+      - patterns:
+          - pattern-either:
+              - pattern-inside: |
+                  @org.springframework.web.bind.annotation.RestController
+                  class $CONTROLLER { ... }
+              - pattern-inside: |
+                  @org.springframework.web.bind.annotation.RestController(...)
+                  class $CONTROLLER { ... }
+              - pattern-inside: |
+                  @org.springframework.stereotype.Controller
+                  class $CONTROLLER { ... }
+              - pattern-inside: |
+                  @org.springframework.stereotype.Controller(...)
+                  class $CONTROLLER { ... }
+          - pattern-either:
+              - pattern: |
+                  @org.springframework.transaction.annotation.Transactional(...)
+                  $RETURN $METHOD(...) { ... }
+              - pattern: |
+                  @jakarta.transaction.Transactional(...)
+                  $RETURN $METHOD(...) { ... }
+              - pattern: |
+                  @javax.transaction.Transactional(...)
+                  $RETURN $METHOD(...) { ... }
+          - focus-metavariable: $METHOD
+      # A transactional controller class.
+      - patterns:
+          - pattern-either:
+              - pattern: |
+                  @org.springframework.transaction.annotation.Transactional(...)
+                  class $CONTROLLER { ... }
+              - pattern: |
+                  @jakarta.transaction.Transactional(...)
+                  class $CONTROLLER { ... }
+              - pattern: |
+                  @javax.transaction.Transactional(...)
+                  class $CONTROLLER { ... }
+          - pattern-either:
+              - pattern: |
+                  @org.springframework.web.bind.annotation.RestController
+                  class $CONTROLLER { ... }
+              - pattern: |
+                  @org.springframework.web.bind.annotation.RestController(...)
+                  class $CONTROLLER { ... }
+              - pattern: |
+                  @org.springframework.stereotype.Controller
+                  class $CONTROLLER { ... }
+              - pattern: |
+                  @org.springframework.stereotype.Controller(...)
+                  class $CONTROLLER { ... }
+          - focus-metavariable: $CONTROLLER

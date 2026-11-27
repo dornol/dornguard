@@ -1,0 +1,6 @@
+rules:
+  - id: java-wildcard-import
+    languages: [java]
+    severity: WARNING
+    message: Import each type by name.
+    pattern-regex: '(?m)^[ \t]*import[ \t]+(?:static[ \t]+)?[\w$]+(?:[ \t]*\.[ \t]*[\w$]+)*[ \t]*\.[ \t]*\*[ \t]*;'

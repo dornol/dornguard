@@ -1,0 +1,8 @@
+id: java.unused-private-field
+engine: pmd
+severity: warning
+description: This private field is never read.
+fix: Remove the field, or use it where its value was meant to be read.
+implementation:
+  config: rules/pmd/java/unused-private-field.xml
+  rule_id: UnusedPrivateField

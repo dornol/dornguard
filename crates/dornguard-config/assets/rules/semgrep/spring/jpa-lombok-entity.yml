@@ -1,0 +1,30 @@
+rules:
+  - id: spring-jpa-lombok-entity
+    languages: [java]
+    severity: WARNING
+    message: Do not generate equals, hashCode or toString from every field of a JPA entity.
+    patterns:
+      - pattern-either:
+          - pattern: |
+              @jakarta.persistence.Entity
+              class $ENTITY { ... }
+          - pattern: |
+              @javax.persistence.Entity
+              class $ENTITY { ... }
+      - pattern-either:
+          - pattern: |
+              @lombok.Data
+              class $ENTITY { ... }
+          - pattern: |
+              @lombok.EqualsAndHashCode
+              class $ENTITY { ... }
+          - pattern: |
+              @lombok.EqualsAndHashCode()
+              class $ENTITY { ... }
+          - pattern: |
+              @lombok.ToString
+              class $ENTITY { ... }
+          - pattern: |
+              @lombok.ToString()
+              class $ENTITY { ... }
+      - focus-metavariable: $ENTITY

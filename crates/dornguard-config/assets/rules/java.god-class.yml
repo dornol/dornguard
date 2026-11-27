@@ -1,0 +1,9 @@
+id: java.god-class
+engine: pmd
+severity: warning
+confidence: medium
+description: This class is large, complex and uses many other classes' data, which suggests it has too many responsibilities.
+fix: Split the class by responsibility and move behavior next to the data it uses.
+implementation:
+  config: rules/pmd/java/god-class.xml
+  rule_id: GodClass

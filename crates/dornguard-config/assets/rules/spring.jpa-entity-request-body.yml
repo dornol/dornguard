@@ -1,0 +1,5 @@
+id: spring.jpa-entity-request-body
+engine: builtin
+severity: warning
+description: A Spring MVC handler binds request data directly to a JPA entity, so a client can set any of its fields, including ones it must not change (mass assignment).
+fix: Bind the request to a DTO or record with only the fields the client may set, validate it, and copy those fields onto the entity in the service.

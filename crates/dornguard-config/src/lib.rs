@@ -22,6 +22,8 @@ pub const DEFAULT_CONFIG: &str = "version: 1\nprofiles: [java]\n";
 pub const BUILTIN_VERSION: &str = "1.6.0";
 pub const FLYWAY_RULE: &str = "flyway.changed-versioned-migration";
 pub const JPA_RESPONSE_RULE: &str = "spring.jpa-entity-response";
+pub const JPA_REQUEST_RULE: &str = "spring.jpa-entity-request-body";
+pub const OPEN_IN_VIEW_RULE: &str = "spring.open-in-view-enabled";
 pub const TRANSACTIONAL_SELF_RULE: &str = "spring.transactional-self-invocation";
 pub const ASYNC_SELF_RULE: &str = "spring.async-self-invocation";
 pub const CACHE_SELF_RULE: &str = "spring.cache-self-invocation";
@@ -897,13 +899,17 @@ mod tests {
 
     /// Rules whose findings need a judgment. Adding to this list is a decision:
     /// a rule belongs here when it infers intent from code shape.
-    const MEDIUM_CONFIDENCE: [&str; 25] = [
+    const MEDIUM_CONFIDENCE: [&str; 32] = [
         "java.assert-throws-nested-call",
         "java.broken-null-check",
+        "java.cognitive-complexity",
+        "java.excessive-parameters",
         "java.fully-qualified-type",
+        "java.god-class",
         "java.ignored-interrupt",
         "java.ignored-return-value",
         "java.lock-without-finally",
+        "java.optional-misuse",
         "java.preserve-stack-trace",
         "java.resource-not-closed",
         "jsp.unescaped-output",
@@ -911,6 +917,7 @@ mod tests {
         "kotlin.run-catching-cancellation",
         "kotlin.sql-injection",
         "kotlin.swallowed-cancellation",
+        "kotlin.unmanaged-coroutine-scope",
         "security.cors-wildcard",
         "security.csrf-disabled",
         "security.disabled-tls-verification",
@@ -919,7 +926,9 @@ mod tests {
         "security.weak-crypto",
         "security.xxe",
         "spring.checked-exception-rollback",
+        "spring.http-client-without-timeout",
         "spring.jpa-entity-response",
+        "spring.open-in-view-enabled",
         "spring.shared-simple-date-format",
         "spring.singleton-request-state",
         "thymeleaf.unescaped-output",

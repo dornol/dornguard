@@ -1,0 +1,8 @@
+id: java.return-null-collection
+engine: pmd
+severity: warning
+description: A method that returns a collection or array returns null.
+fix: Return an empty collection or array, such as List.of() or new String[0], so callers need no null check.
+implementation:
+  config: rules/pmd/java/return-null-collection.xml
+  rule_id: ReturnEmptyCollectionRatherThanNull

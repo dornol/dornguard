@@ -3,3 +3,4 @@ description: Enforce dependencies between controller, service, and repository la
 rules:
   - architecture.controller-repository
   - architecture.repository-independence
+  - architecture.service-independence

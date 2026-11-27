@@ -1,0 +1,8 @@
+id: architecture.service-independence
+engine: archunit
+severity: error
+description: A service must not depend on the controller layer.
+fix: Move web types such as request and response objects to the controller, and pass the service plain values or domain types.
+options:
+  from: [service]
+  forbidden: [controller]

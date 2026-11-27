@@ -32,6 +32,24 @@ ARM64. Linux ARM64 is new; `install.sh` selects it on `aarch64` machines.
     `no-constant-binary-expression`, `no-unsafe-negation`,
     `no-unsafe-optional-chaining`, `use-isnan`, `valid-typeof` and
     `no-script-url` (warnings).
+- More Java, Spring and Kotlin rules from recurring review findings:
+  - `java-source`: `java.wildcard-import` and `java.optional-misuse` (medium
+    confidence).
+  - `java`: `java.unused-private-field`, `java.unused-private-method`,
+    `java.unused-local-variable` and `java.return-null-collection`.
+  - `spring-boot`: `spring.redundant-autowired-constructor`,
+    `spring.jpa-entity-request-body`, `spring.jpa-lombok-entity`,
+    `spring.jpa-eager-fetch`, `spring.transactional-in-controller`,
+    `spring.http-client-without-timeout` and `spring.open-in-view-enabled`
+    (the last two with medium confidence).
+  - `kotlin`: `kotlin.unmanaged-coroutine-scope` (medium confidence), and
+    `kotlin.missing-spring-plugin` and `kotlin.missing-jpa-plugin` (errors) for
+    Gradle modules without the Kotlin Spring or JPA compiler plugin.
+  - `layered`: `architecture.service-independence` (error) keeps services from
+    depending on controllers.
+  - New opt-in profiles: `java-design` (`java.cognitive-complexity`,
+    `java.excessive-parameters`, `java.god-class`, `java.loose-coupling`) and
+    `kotlin-review` (`kotlin.not-null-assertion`).
 - `dornguard engines install eslint` installs a pinned ESLint, TypeScript parser
   and TypeScript from a lockfile with integrity hashes, without install scripts.
   `dornguard engines install osv-scanner` downloads a pinned, checksum-verified
@@ -52,8 +70,10 @@ ARM64. Linux ARM64 is new; `install.sh` selects it on `aarch64` machines.
 
 New default rules can add findings, and the error-severity rules among them
 (`java.date-pattern-typo`, `java.string-reference-equality`,
-`spring.static-member-injection`, `kotlin.date-pattern-typo` and
-`kotlin.field-injection`) can fail a check that passed before. Run
+`spring.static-member-injection`, `kotlin.date-pattern-typo`,
+`kotlin.field-injection`, `kotlin.missing-spring-plugin`,
+`kotlin.missing-jpa-plugin` and, with `layered`,
+`architecture.service-independence`) can fail a check that passed before. Run
 `dornguard check` after upgrading, then fix the findings, suppress them with a
 reason, or record them with `dornguard baseline create --force`.
 

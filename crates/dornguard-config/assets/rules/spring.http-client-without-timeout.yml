@@ -1,0 +1,12 @@
+id: spring.http-client-without-timeout
+engine: semgrep
+severity: warning
+confidence: medium
+description: This HTTP client is created with the default settings, which wait for a connection or a response without a time limit.
+fix: >-
+  Build the client from RestTemplateBuilder, RestClient.builder() or
+  WebClient.builder() with a request factory or connector that sets connect and
+  read timeouts, and share it as a bean.
+implementation:
+  config: rules/semgrep/spring/http-client-without-timeout.yml
+  rule_id: spring-http-client-without-timeout

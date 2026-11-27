@@ -1,0 +1,4 @@
+name: kotlin-review
+description: Opt-in Kotlin checks for recurring review findings
+rules:
+  - kotlin.not-null-assertion

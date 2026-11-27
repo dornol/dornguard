@@ -1,0 +1,19 @@
+rules:
+  - id: spring-http-client-without-timeout
+    languages: [java]
+    severity: WARNING
+    message: Configure connect and read timeouts for this HTTP client.
+    pattern-either:
+      - patterns:
+          - pattern: new org.springframework.web.client.RestTemplate()
+          # A request factory set right after creation supplies the timeouts.
+          - pattern-not-inside: |
+              $TYPE $CLIENT = new org.springframework.web.client.RestTemplate();
+              ...
+              $CLIENT.setRequestFactory(...);
+          - pattern-not-inside: |
+              $CLIENT = new org.springframework.web.client.RestTemplate();
+              ...
+              $CLIENT.setRequestFactory(...);
+      - pattern: org.springframework.web.client.RestClient.create(...)
+      - pattern: org.springframework.web.reactive.function.client.WebClient.create(...)

@@ -12,6 +12,7 @@ use miette::{Result, miette};
 
 use crate::{SourceFiles, changed::Changes, failure, run_source_engines};
 
+mod kotlin_plugins;
 mod model;
 mod sources;
 use model::{Acquired, acquire_model};
@@ -652,7 +653,7 @@ pub async fn check(check: Check<'_>) -> Outcome {
         acquired: &acquired,
     };
     let mut queued = Queued::default();
-    for module in selected {
+    for module in selected.iter().copied() {
         if let Err(error) = queue_module(&run, module, &mut queued, &mut outcome) {
             return failure(FailureKind::PreparationError, error);
         }
@@ -707,6 +708,11 @@ pub async fn check(check: Check<'_>) -> Outcome {
             rule,
             &dependency_checks,
         ));
+    }
+
+    match kotlin_plugins::diagnostics(&plan, sources, &selected) {
+        Ok(found) => outcome.diagnostics.extend(found),
+        Err(error) => outcome.merge(failure(FailureKind::PreparationError, error)),
     }
 
     let source_checks = run_source_groups(root, registry, config, required, source_groups);

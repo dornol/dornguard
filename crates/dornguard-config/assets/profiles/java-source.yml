@@ -7,3 +7,5 @@ rules:
   - java.print-stack-trace
   - java.date-pattern-typo
   - java.lock-without-finally
+  - java.wildcard-import
+  - java.optional-misuse

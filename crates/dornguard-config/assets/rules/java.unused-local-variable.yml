@@ -1,0 +1,8 @@
+id: java.unused-local-variable
+engine: pmd
+severity: warning
+description: This local variable is assigned but never used.
+fix: Remove the variable, or use its value where it was meant to be used.
+implementation:
+  config: rules/pmd/java/unused-local-variable.xml
+  rule_id: UnusedLocalVariable

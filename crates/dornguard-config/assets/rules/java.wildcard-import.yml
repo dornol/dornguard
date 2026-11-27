@@ -1,0 +1,8 @@
+id: java.wildcard-import
+engine: semgrep
+severity: warning
+description: A wildcard import hides which types the file uses and can make a new type in the package collide with another import.
+fix: Replace the wildcard with an import for each type the file uses.
+implementation:
+  config: rules/semgrep/java/wildcard-import.yml
+  rule_id: java-wildcard-import

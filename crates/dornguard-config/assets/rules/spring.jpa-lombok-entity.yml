@@ -1,0 +1,12 @@
+id: spring.jpa-lombok-entity
+engine: semgrep
+severity: warning
+description: Lombok generates equals, hashCode or toString for this JPA entity from all of its fields, which loads lazy associations, can recurse through bidirectional relations and changes the hash code when the entity is saved.
+fix: >-
+  Remove @Data, @EqualsAndHashCode and @ToString from the entity. Use @Getter
+  and @Setter, base equality on the identifier with
+  @EqualsAndHashCode(onlyExplicitlyIncluded = true), and list the fields
+  toString prints.
+implementation:
+  config: rules/semgrep/spring/jpa-lombok-entity.yml
+  rule_id: spring-jpa-lombok-entity

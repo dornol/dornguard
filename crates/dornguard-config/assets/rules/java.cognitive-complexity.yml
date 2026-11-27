@@ -1,0 +1,9 @@
+id: java.cognitive-complexity
+engine: pmd
+severity: warning
+confidence: medium
+description: This method's cognitive complexity is 15 or more, which makes it hard to read and test.
+fix: Extract nested conditions and loops into well-named methods, return early, or replace branching on a type with polymorphism.
+implementation:
+  config: rules/pmd/java/cognitive-complexity.xml
+  rule_id: CognitiveComplexity

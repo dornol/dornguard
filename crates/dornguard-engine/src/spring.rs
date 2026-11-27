@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use dornguard_config::{
-    ASYNC_SELF_RULE, CACHE_SELF_RULE, JPA_RESPONSE_RULE, RETRY_SELF_RULE, Rule,
+    ASYNC_SELF_RULE, CACHE_SELF_RULE, JPA_REQUEST_RULE, JPA_RESPONSE_RULE, RETRY_SELF_RULE, Rule,
     TRANSACTIONAL_SELF_RULE,
 };
 use dornguard_core::{Diagnostic, EngineName, Outcome, SourceLanguage};
@@ -42,7 +42,7 @@ fn scan(request: Request<'_>, required: bool, outcome: &mut Outcome) -> Result<(
     let entities = if request
         .rules
         .iter()
-        .any(|rule| rule.id == JPA_RESPONSE_RULE)
+        .any(|rule| matches!(rule.id.as_str(), JPA_RESPONSE_RULE | JPA_REQUEST_RULE))
     {
         entity_names(request.root, &mut parser, required)?
     } else {
@@ -102,6 +102,11 @@ fn scan(request: Request<'_>, required: bool, outcome: &mut Outcome) -> Result<(
                     ),
                     JPA_RESPONSE_RULE => {
                         entity_responses(class, &methods, &imports, &entities, |node, name| {
+                            emit(outcome, file, &source, rule, node, name);
+                        })
+                    }
+                    JPA_REQUEST_RULE => {
+                        entity_requests(class, &methods, &imports, &entities, |node, name| {
                             emit(outcome, file, &source, rule, node, name);
                         })
                     }
@@ -362,6 +367,90 @@ fn is_type_declaration(node: Node<'_>) -> bool {
             | "enum_declaration"
             | "annotation_type_declaration"
     )
+}
+
+const MAPPINGS: [&str; 6] = [
+    "RequestMapping",
+    "GetMapping",
+    "PostMapping",
+    "PutMapping",
+    "PatchMapping",
+    "DeleteMapping",
+];
+
+fn is_controller(class: Node<'_>, imports: &Imports<'_>) -> bool {
+    imports.annotated(class, &format!("{WEB}.RestController"))
+        || imports.annotated(class, "org.springframework.stereotype.Controller")
+}
+
+fn is_handler(method: Node<'_>, imports: &Imports<'_>) -> bool {
+    MAPPINGS
+        .iter()
+        .any(|annotation| imports.annotated(method, &format!("{WEB}.{annotation}")))
+}
+
+/// Type names that refer to a class or method type parameter or a nested type,
+/// not to an entity with the same simple name.
+fn shadowed_names<'s>(class: Node<'_>, method: Node<'_>, source: &'s str) -> BTreeSet<&'s str> {
+    [class, method]
+        .into_iter()
+        .filter_map(|node| node.child_by_field_name("type_parameters"))
+        .flat_map(children)
+        .filter_map(|param| children(param).find(|child| child.kind() == "type_identifier"))
+        .chain(
+            class
+                .child_by_field_name("body")
+                .into_iter()
+                .flat_map(children)
+                .filter(|node| is_type_declaration(*node))
+                .filter_map(|node| node.child_by_field_name("name")),
+        )
+        .map(|name| text(name, source))
+        .collect()
+}
+
+/// Handler parameters that Spring binds from the request body or the request
+/// parameters: `@RequestBody`, `@ModelAttribute`, and unannotated object
+/// parameters, which Spring MVC treats as model attributes.
+fn entity_requests(
+    class: Node<'_>,
+    methods: &[Node<'_>],
+    imports: &Imports<'_>,
+    entities: &BTreeMap<String, bool>,
+    mut found: impl FnMut(Node<'_>, String),
+) {
+    if !is_controller(class, imports) {
+        return;
+    }
+    for method in methods
+        .iter()
+        .filter(|method| is_handler(**method, imports))
+    {
+        let Some(parameters) = method.child_by_field_name("parameters") else {
+            continue;
+        };
+        let shadowed = shadowed_names(class, *method, imports.source);
+        for parameter in children(parameters).filter(|node| node.kind() == "formal_parameter") {
+            let annotations = children(parameter)
+                .filter(|node| node.kind() == "modifiers")
+                .flat_map(children)
+                .filter(|node| matches!(node.kind(), "annotation" | "marker_annotation"))
+                .collect::<Vec<_>>();
+            let bound = annotations.is_empty()
+                || [
+                    format!("{WEB}.RequestBody"),
+                    format!("{WEB}.ModelAttribute"),
+                ]
+                .iter()
+                .any(|canonical| imports.annotated(parameter, canonical));
+            if !bound {
+                continue;
+            }
+            if let Some(kind) = parameter.child_by_field_name("type") {
+                response_entities(kind, imports, entities, &shadowed, &mut found);
+            }
+        }
+    }
 }
 
 fn entity_responses(

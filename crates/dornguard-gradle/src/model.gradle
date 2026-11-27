@@ -44,6 +44,12 @@ gradle.projectsEvaluated {
                         compile.source.files*.canonicalPath.sort() : [],
                     kotlinCompiled: project in compileProjects && hasCompileOutput(compileKotlin),
                     kotlinSourceDirs: kotlinMain == null ? [] : kotlinMain.kotlin.srcDirs*.canonicalPath.sort(),
+                    kotlinCompilerPlugins: [
+                        'org.jetbrains.kotlin.plugin.spring',
+                        'org.jetbrains.kotlin.plugin.allopen',
+                        'org.jetbrains.kotlin.plugin.jpa',
+                        'org.jetbrains.kotlin.plugin.noarg',
+                    ].findAll { project.plugins.hasPlugin(it) },
                     classDirs: main == null ? [] : main.output.classesDirs.files*.canonicalPath.sort(),
                     classpath: main != null && project in compileProjects ? main.compileClasspath.files*.canonicalPath : [],
                     javaTarget: compile == null ? null : javaVersion(compile, 'target', compile.targetCompatibility),

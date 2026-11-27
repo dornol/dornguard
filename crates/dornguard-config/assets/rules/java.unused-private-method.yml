@@ -1,0 +1,8 @@
+id: java.unused-private-method
+engine: pmd
+severity: warning
+description: This private method is never called.
+fix: Remove the method, or call it where it was meant to run.
+implementation:
+  config: rules/pmd/java/unused-private-method.xml
+  rule_id: UnusedPrivateMethod

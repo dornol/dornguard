@@ -1,0 +1,9 @@
+id: kotlin.missing-spring-plugin
+engine: gradle
+severity: error
+description: A Gradle module declares final Kotlin classes that Spring must proxy, such as @Configuration or @Transactional classes, without the Kotlin Spring compiler plugin.
+fix: >-
+  Apply the Kotlin Spring plugin, for example
+  plugins { kotlin("plugin.spring") version "<kotlin version>" }, which opens
+  Spring-annotated classes and their members. Declaring each class and
+  function open also works.

@@ -15,3 +15,6 @@ rules:
   - kotlin.field-injection
   - kotlin.private-transactional
   - kotlin.jpa-data-class-entity
+  - kotlin.unmanaged-coroutine-scope
+  - kotlin.missing-spring-plugin
+  - kotlin.missing-jpa-plugin

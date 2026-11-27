@@ -1,0 +1,8 @@
+id: spring.transactional-in-controller
+engine: semgrep
+severity: warning
+description: A Spring MVC controller declares a transaction, which holds the database connection while the response is rendered and mixes web handling with the unit of work.
+fix: Move @Transactional to the service method the controller calls, and keep the controller to request mapping and response building.
+implementation:
+  config: rules/semgrep/spring/transactional-in-controller.yml
+  rule_id: spring-transactional-in-controller
