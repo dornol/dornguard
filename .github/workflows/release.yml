@@ -46,8 +46,10 @@ jobs:
           for run in $runs; do
             artifacts=$(gh api "repos/$GH_REPO/actions/runs/$run/artifacts?per_page=100" --jq '
               [.artifacts[] | select(.expired == false)
-                | select(.name == "dornguard-linux-x86_64" or .name == "dornguard-macos-arm64")]
-              | select((map(.name) | sort) == ["dornguard-linux-x86_64", "dornguard-macos-arm64"])
+                | select(.name == "dornguard-linux-x86_64" or .name == "dornguard-linux-arm64"
+                    or .name == "dornguard-macos-arm64")]
+              | select((map(.name) | sort)
+                  == ["dornguard-linux-arm64", "dornguard-linux-x86_64", "dornguard-macos-arm64"])
               | map(.id) | join(",")')
             if [[ -n "$artifacts" ]]; then
               echo "Reusing verified packages from run $run."
@@ -68,6 +70,7 @@ jobs:
       matrix:
         include:
           - { runner: ubuntu-24.04, platform: linux-x86_64 }
+          - { runner: ubuntu-24.04-arm, platform: linux-arm64 }
           - { runner: macos-15, platform: macos-arm64 }
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
@@ -117,6 +120,12 @@ jobs:
           cp scripts/ci-eslint/package.json scripts/ci-eslint/package-lock.json .ci-tools/eslint/
           (cd .ci-tools/eslint && ../../scripts/retry.sh npm ci --no-audit --no-fund)
           echo "$GITHUB_WORKSPACE/.ci-tools/eslint/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Make Go available for the go profile tests
+        run: |
+          if ! command -v go >/dev/null; then
+            if [ "$RUNNER_OS" = macOS ]; then brew install go; else { sudo apt-get update -q && sudo apt-get install -y golang-go; }; fi
+          fi
+          go version
       - name: Build CLI
         run: |
           cargo build --release --locked
@@ -128,7 +137,6 @@ jobs:
         run: |
           scripts/retry.sh target/release/dornguard engines install
           target/release/dornguard doctor
-          go version
           cargo test --workspace --locked -- --include-ignored
           target/release/dornguard check examples/spring-boot-multimodule --format json
       - name: Package release
@@ -179,7 +187,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           assets=()
-          for platform in linux-x86_64 macos-arm64; do
+          for platform in linux-x86_64 linux-arm64 macos-arm64; do
             name="dornguard-$GITHUB_REF_NAME-$platform.zip"
             (cd dist && sha256sum -- "$name" | diff - "$name.sha256")
             assets+=("dist/$name" "dist/$name.sha256")

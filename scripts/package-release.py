@@ -37,7 +37,7 @@ def smoke_test(archive_path, name, executable):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("platform", choices=["linux-x86_64", "macos-arm64"])
+    parser.add_argument("platform", choices=["linux-x86_64", "linux-arm64", "macos-arm64"])
     parser.add_argument("--output", type=Path, default=ROOT / "dist")
     parser.add_argument("--tag")
     parser.add_argument("--smoke-test", action="store_true")

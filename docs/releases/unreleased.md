@@ -4,7 +4,8 @@
 to vX.Y.Z.md, fills in the version, the ruleset version and the links, and
 starts a new draft. Add an entry here with every user-visible change. -->
 
-Release archives are available for Linux x86-64 (AMD64) and macOS ARM64.
+Release archives are available for Linux x86-64 (AMD64), Linux ARM64 and macOS
+ARM64. Linux ARM64 is new; `install.sh` selects it on `aarch64` machines.
 
 - Go and Rust checks. The `go` profile reports `go vet` findings as `go.vet`.
   The `rust` profile reports `cargo clippy` lints as `rust.clippy` and compiler

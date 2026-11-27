@@ -116,8 +116,10 @@ jobs:
         run: |
           cargo fmt --all -- --check
           cargo clippy --locked --workspace --all-targets -- -D warnings
-      - name: Show the Go toolchain the go profile tests use
-        run: go version
+      - name: Make Go available for the go profile tests
+        run: |
+          command -v go >/dev/null || { sudo apt-get update -q && sudo apt-get install -y golang-go; }
+          go version
       - name: Test real engines
         run: cargo test --locked --workspace -- --include-ignored
       - name: Check the complete example
