@@ -1,0 +1,7 @@
+id: javascript.use-isnan
+engine: eslint
+severity: warning
+description: A comparison with NaN is always false.
+fix: Use Number.isNaN(value). In a switch, test Number.isNaN before the switch.
+implementation:
+  rule_id: use-isnan

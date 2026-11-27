@@ -5,3 +5,11 @@ rules:
   - javascript.no-implied-eval
   - javascript.no-new-func
   - javascript.no-async-promise-executor
+  - javascript.no-unsafe-finally
+  - javascript.no-self-compare
+  - javascript.no-constant-binary-expression
+  - javascript.no-unsafe-negation
+  - javascript.no-unsafe-optional-chaining
+  - javascript.use-isnan
+  - javascript.valid-typeof
+  - javascript.no-script-url

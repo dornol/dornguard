@@ -15,8 +15,18 @@ inline event attributes such as `onclick`, `onerror`, and the Thymeleaf
 The `javascript` profile requires ESLint 9 or 10. DornGuard prefers
 `node_modules/.bin/eslint` in the project, then PATH, then the copy that
 `dornguard engines install eslint` installs. It
-checks `.js`, `.mjs`, and `.cjs` with `no-eval`, `no-implied-eval`,
-`no-new-func`, and `no-async-promise-executor`. It uses its own ESLint config
+checks `.js`, `.mjs`, and `.cjs` with these ESLint core rules:
+
+| Area | Rules |
+| --- | --- |
+| Code evaluation | `no-eval`, `no-implied-eval`, `no-new-func`, `no-script-url` |
+| Comparisons that are always true or false | `no-self-compare`, `no-constant-binary-expression`, `use-isnan`, `valid-typeof`, `no-unsafe-negation` |
+| Lost results and errors | `no-unsafe-finally`, `no-unsafe-optional-chaining`, `no-async-promise-executor` |
+
+Each is reported as `javascript.<rule>`, for example `javascript.use-isnan`.
+`no-promise-executor-return` is not included, because it also reports the
+common `new Promise((resolve) => setTimeout(resolve, 10))`.
+It uses its own ESLint config
 and reports those findings as warnings unless the project overrides their severity. Files under
 `node_modules` are excluded. [ESLint setup](https://eslint.org/docs/latest/use/getting-started)
 

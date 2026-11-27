@@ -1,0 +1,7 @@
+id: javascript.no-self-compare
+engine: eslint
+severity: warning
+description: A value is compared with itself, which is always true or false except for NaN.
+fix: Compare with the intended value. Use Number.isNaN(value) to test for NaN.
+implementation:
+  rule_id: no-self-compare

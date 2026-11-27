@@ -1,0 +1,7 @@
+id: javascript.no-constant-binary-expression
+engine: eslint
+severity: warning
+description: A comparison or logical expression has a result that does not depend on its operands.
+fix: Check operator precedence and compare with the intended value. A new object or array never equals another value, and a ?? b has no effect when a cannot be null.
+implementation:
+  rule_id: no-constant-binary-expression

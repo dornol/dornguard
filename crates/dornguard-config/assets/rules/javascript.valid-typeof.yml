@@ -1,0 +1,7 @@
+id: javascript.valid-typeof
+engine: eslint
+severity: warning
+description: typeof is compared with a string it never returns.
+fix: 'Compare with one of "undefined", "object", "boolean", "number", "string", "function", "symbol" or "bigint".'
+implementation:
+  rule_id: valid-typeof

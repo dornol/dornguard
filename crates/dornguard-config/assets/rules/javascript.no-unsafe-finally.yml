@@ -1,0 +1,7 @@
+id: javascript.no-unsafe-finally
+engine: eslint
+severity: warning
+description: A return, throw, break or continue in finally replaces the outcome of the try block.
+fix: Keep cleanup in finally and return or throw outside it.
+implementation:
+  rule_id: no-unsafe-finally

@@ -460,6 +460,14 @@ const BUILTIN_RULES: &[&str] = &[
     include_str!("../assets/rules/kotlin.field-injection.yml"),
     include_str!("../assets/rules/kotlin.private-transactional.yml"),
     include_str!("../assets/rules/kotlin.jpa-data-class-entity.yml"),
+    include_str!("../assets/rules/javascript.no-unsafe-finally.yml"),
+    include_str!("../assets/rules/javascript.no-self-compare.yml"),
+    include_str!("../assets/rules/javascript.no-constant-binary-expression.yml"),
+    include_str!("../assets/rules/javascript.no-unsafe-negation.yml"),
+    include_str!("../assets/rules/javascript.no-unsafe-optional-chaining.yml"),
+    include_str!("../assets/rules/javascript.use-isnan.yml"),
+    include_str!("../assets/rules/javascript.valid-typeof.yml"),
+    include_str!("../assets/rules/javascript.no-script-url.yml"),
 ];
 
 const BUILTIN_ENGINE_CONFIGS: &[(&str, &str)] = &[

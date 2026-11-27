@@ -1,0 +1,7 @@
+id: javascript.no-script-url
+engine: eslint
+severity: warning
+description: 'A javascript: URL runs code like eval and is blocked by a strict Content Security Policy.'
+fix: Attach an event listener, or use a regular URL.
+implementation:
+  rule_id: no-script-url

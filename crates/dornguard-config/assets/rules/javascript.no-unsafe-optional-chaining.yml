@@ -1,0 +1,7 @@
+id: javascript.no-unsafe-optional-chaining
+engine: eslint
+severity: warning
+description: An optional chain that can be undefined is used where undefined throws a TypeError.
+fix: Provide a fallback such as (obj?.items ?? []) before calling, spreading or destructuring the result.
+implementation:
+  rule_id: no-unsafe-optional-chaining

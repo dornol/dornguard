@@ -1,0 +1,7 @@
+id: javascript.no-unsafe-negation
+engine: eslint
+severity: warning
+description: The ! operator applies to the left operand of in or instanceof instead of the whole test.
+fix: Parenthesize the test, for example !(key in object) or !(value instanceof Type).
+implementation:
+  rule_id: no-unsafe-negation
