@@ -221,6 +221,7 @@ pub(crate) enum EngineAction {
 pub(crate) enum InstallTarget {
     Semgrep,
     Pmd,
+    Eslint,
 }
 
 #[derive(Subcommand)]

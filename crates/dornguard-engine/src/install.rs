@@ -9,10 +9,12 @@ use miette::{IntoDiagnostic, Result, WrapErr, bail, miette};
 use sha2::{Digest, Sha256};
 use tokio::process::Command;
 
-use crate::{PMD_VERSION, SEMGREP_VERSION, supported_version};
+use crate::{ESLINT_INSTALL_VERSION, PMD_VERSION, SEMGREP_VERSION, supported_version};
 
 const MANAGED: &str = ".dornguard-managed";
 const READY: &str = ".dornguard-ready";
+const ESLINT_PACKAGE: &str = include_str!("../engines/eslint/package.json");
+const ESLINT_LOCK: &str = include_str!("../engines/eslint/package-lock.json");
 const PMD_CHECKSUM: &str = "d27177c185b837fa57f097e482d1253468aa035379c5eb2671fa0a279109b179";
 
 pub async fn install(engine: EngineName) -> Result<PathBuf> {
@@ -44,6 +46,7 @@ pub async fn install(engine: EngineName) -> Result<PathBuf> {
     match engine {
         EngineName::Semgrep => install_semgrep(&root, &destination).await?,
         EngineName::Pmd => install_pmd(&root, &destination).await?,
+        EngineName::Eslint => install_eslint(&destination).await?,
         _ => {
             bail!("The ArchUnit runner is distributed with DornGuard releases");
         }
@@ -200,11 +203,21 @@ fn install_root() -> Option<PathBuf> {
 }
 
 fn engine_directory(root: &Path, engine: EngineName) -> PathBuf {
-    root.join(format!(
-        "{}-{}",
-        engine.executable(),
+    let version = if engine == EngineName::Eslint {
+        ESLINT_INSTALL_VERSION
+    } else {
         supported_version(engine)
-    ))
+    };
+    root.join(format!("{}-{version}", engine.executable()))
+}
+
+/// The managed ESLint, used only when neither the project nor `PATH` provides one.
+pub(crate) fn managed_eslint_fallback(executable: &str) -> Option<PathBuf> {
+    if path_lookup(executable).is_some() {
+        return None;
+    }
+    let root = install_root()?;
+    managed_engine(&root, EngineName::Eslint).and_then(|path| dunce::canonicalize(path).ok())
 }
 
 fn managed_engine(root: &Path, engine: EngineName) -> Option<PathBuf> {
@@ -214,8 +227,14 @@ fn managed_engine(root: &Path, engine: EngineName) -> Option<PathBuf> {
         EngineName::Semgrep => directory.join("bin/semgrep"),
         EngineName::Pmd if cfg!(windows) => directory.join("bin/pmd.bat"),
         EngineName::Pmd => directory.join("bin/pmd"),
+        EngineName::Eslint if cfg!(windows) => directory.join("node_modules/.bin/eslint.cmd"),
+        EngineName::Eslint => directory.join("node_modules/.bin/eslint"),
         _ => return None,
     };
+    if engine == EngineName::Eslint && !directory.join("node_modules/eslint/package.json").is_file()
+    {
+        return None;
+    }
     // A managed Semgrep is a venv. If the interpreter it was built from is gone
     // (for example after a Homebrew Python upgrade), its `python` link dangles
     // and the engine cannot start, so it must not count as installed.
@@ -305,6 +324,78 @@ async fn install_semgrep(root: &Path, destination: &Path) -> Result<()> {
         "install Semgrep",
     )
     .await?;
+    File::create(destination.join(READY)).into_diagnostic()?;
+    Ok(())
+}
+
+/// Whether a Node.js version satisfies ESLint's `^20.19.0 || ^22.13.0 || >=24`.
+fn node_supported(version: &str) -> bool {
+    let mut parts = version
+        .trim()
+        .trim_start_matches('v')
+        .split('.')
+        .map(|part| part.parse::<u32>().ok());
+    let (Some(Some(major)), Some(Some(minor))) = (parts.next(), parts.next()) else {
+        return false;
+    };
+    match major {
+        20 => minor >= 19,
+        22 => minor >= 13,
+        major => major >= 24,
+    }
+}
+
+async fn install_eslint(destination: &Path) -> Result<()> {
+    let node = path_lookup(if cfg!(windows) { "node.exe" } else { "node" })
+        .ok_or_else(|| miette!("Install Node.js 20.19, 22.13 or 24 or later to install ESLint"))?;
+    let npm = path_lookup(if cfg!(windows) { "npm.cmd" } else { "npm" })
+        .ok_or_else(|| miette!("Install npm (it ships with Node.js) to install ESLint"))?;
+    let output = tokio::time::timeout(
+        Duration::from_secs(15),
+        Command::new(&node).arg("--version").output(),
+    )
+    .await
+    .into_diagnostic()
+    .wrap_err("Node.js version check timed out")?
+    .into_diagnostic()
+    .wrap_err("Could not run node")?;
+    let node_version = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+    if !node_supported(&node_version) {
+        bail!(
+            "Node.js {node_version} cannot run ESLint {ESLINT_INSTALL_VERSION}; \
+             install Node.js 20.19, 22.13 or 24 or later"
+        );
+    }
+    if destination.exists() {
+        if !destination.join(MANAGED).is_file() {
+            bail!(
+                "Refusing to overwrite an unmanaged engine directory at {}",
+                destination.display()
+            );
+        }
+        fs::remove_dir_all(destination).into_diagnostic()?;
+    }
+    fs::create_dir(destination).into_diagnostic()?;
+    File::create(destination.join(MANAGED)).into_diagnostic()?;
+    fs::write(destination.join("package.json"), ESLINT_PACKAGE).into_diagnostic()?;
+    fs::write(destination.join("package-lock.json"), ESLINT_LOCK).into_diagnostic()?;
+    // `npm ci` installs exactly the locked, integrity-checked tree and fails on any
+    // mismatch. Install scripts never run.
+    run(
+        Command::new(&npm)
+            .args(["ci", "--ignore-scripts", "--no-audit", "--no-fund"])
+            .current_dir(destination),
+        "install ESLint with npm",
+    )
+    .await?;
+    let installed = destination.join("node_modules/eslint/package.json");
+    let manifest = fs::read_to_string(&installed)
+        .into_diagnostic()
+        .wrap_err("ESLint was not installed")?;
+    let manifest: serde_json::Value = serde_json::from_str(&manifest).into_diagnostic()?;
+    if manifest.get("version").and_then(serde_json::Value::as_str) != Some(ESLINT_INSTALL_VERSION) {
+        bail!("Installed ESLint is not version {ESLINT_INSTALL_VERSION}");
+    }
     File::create(destination.join(READY)).into_diagnostic()?;
     Ok(())
 }
@@ -498,5 +589,38 @@ mod tests {
         fs::write(directory.join("bin/python"), "")?;
         assert!(managed_engine(root.path(), EngineName::Semgrep).is_some());
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod eslint_tests {
+    use super::*;
+
+    #[test]
+    fn node_versions_follow_the_eslint_engine_range() {
+        for supported in [
+            "v20.19.0", "v20.20.1", "v22.13.0", "v22.20.0", "v24.0.0", "v26.1.0",
+        ] {
+            assert!(node_supported(supported), "{supported}");
+        }
+        for unsupported in [
+            "v18.20.0", "v20.18.9", "v21.7.0", "v22.12.0", "v23.5.0", "", "node",
+        ] {
+            assert!(!node_supported(unsupported), "{unsupported}");
+        }
+    }
+
+    #[test]
+    fn pinned_lockfile_matches_the_install_version() {
+        let package: serde_json::Value = serde_json::from_str(ESLINT_PACKAGE).unwrap_or_default();
+        assert_eq!(
+            package["dependencies"]["eslint"].as_str(),
+            Some(ESLINT_INSTALL_VERSION)
+        );
+        let lock: serde_json::Value = serde_json::from_str(ESLINT_LOCK).unwrap_or_default();
+        assert_eq!(
+            lock["packages"]["node_modules/eslint"]["version"].as_str(),
+            Some(ESLINT_INSTALL_VERSION)
+        );
     }
 }

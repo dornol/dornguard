@@ -28,14 +28,21 @@ dornguard engines install
 dornguard doctor
 ```
 
-To install an individual engine, add `semgrep` or `pmd` to the install
-command. Semgrep requires Python 3.10 through 3.14. Set `DORNGUARD_PYTHON`
+To install an individual engine, add `semgrep`, `pmd` or `eslint` to the
+install command. Semgrep requires Python 3.10 through 3.14. Set `DORNGUARD_PYTHON`
 to select an executable. PMD requires JDK 21 and uses curl and unzip
 (`tar.exe` on Windows) for managed installation.
 
 For the optional `javascript` profile, install ESLint 9 or 10 in the
-project or make it available on PATH. See [web checks](web-checks.md) for
-the ESLint rules and the independent CSP command.
+project or make it available on PATH, or run `dornguard engines install
+eslint` to install ESLint 10.14.0 into DornGuard's engine directory. That
+install needs Node.js 20.19, 22.13 or 24 or later and npm. It runs `npm ci
+--ignore-scripts` against a lockfile bundled with DornGuard, so every package is
+checked against its recorded integrity hash and no install script runs. A plain
+`dornguard engines install` does not install ESLint, so Java-only projects
+need no Node.js. A project or PATH installation takes precedence over the
+managed one. See [web checks](web-checks.md) for the ESLint rules and the
+independent CSP command.
 
 The `jspecify` profile uses a Java parser bundled with DornGuard and runs
 without a separate engine installation.

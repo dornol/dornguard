@@ -32,6 +32,9 @@ pub use semgrep::Semgrep;
 
 pub const SEMGREP_VERSION: &str = "1.182.0";
 pub const PMD_VERSION: &str = "7.29.0";
+/// The ESLint release `engines install eslint` installs. Any 9.x or 10.x already
+/// on the project or `PATH` is also accepted.
+pub const ESLINT_INSTALL_VERSION: &str = "10.14.0";
 
 #[derive(Clone, Copy)]
 pub struct Request<'a> {
@@ -206,6 +209,8 @@ fn command(engine: EngineName, root: &Path) -> Result<Command> {
         let local = root.join("node_modules").join(".bin").join(executable);
         if local.is_file() {
             Command::new(local)
+        } else if let Some(managed) = install::managed_eslint_fallback(executable) {
+            Command::new(managed)
         } else {
             Command::new(executable)
         }
@@ -245,9 +250,14 @@ async fn run_command(
     command.process_group(0);
     let child = command.spawn().into_diagnostic().wrap_err_with(|| {
         format!(
-            "Could not execute {}; install version {} and make it available on PATH",
+            "Could not execute {}; install version {} and make it available on PATH{}",
             engine.executable(),
-            supported_version(engine)
+            supported_version(engine),
+            if engine == EngineName::Eslint {
+                ", or run dornguard engines install eslint"
+            } else {
+                ""
+            }
         )
     })?;
     #[cfg(unix)]

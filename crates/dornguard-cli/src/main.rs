@@ -213,6 +213,7 @@ async fn install_engines(engine: Option<InstallTarget>) -> Result<u8> {
     let engines: &[EngineName] = match engine {
         Some(InstallTarget::Semgrep) => &[EngineName::Semgrep],
         Some(InstallTarget::Pmd) => &[EngineName::Pmd],
+        Some(InstallTarget::Eslint) => &[EngineName::Eslint],
         None => &[EngineName::Semgrep, EngineName::Pmd],
     };
     for &engine in engines {
@@ -220,7 +221,11 @@ async fn install_engines(engine: Option<InstallTarget>) -> Result<u8> {
             Ok(path) => println!(
                 "{} {} installed at {}",
                 engine.executable(),
-                supported_version(engine),
+                if engine == EngineName::Eslint {
+                    dornguard_engine::ESLINT_INSTALL_VERSION
+                } else {
+                    supported_version(engine)
+                },
                 path.display()
             ),
             Err(error) => {
