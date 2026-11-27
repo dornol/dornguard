@@ -7,3 +7,4 @@ rules:
   - security.disabled-tls-verification
   - security.csrf-disabled
   - security.jackson-default-typing
+  - security.xxe

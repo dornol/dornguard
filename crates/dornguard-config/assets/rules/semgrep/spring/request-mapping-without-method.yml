@@ -1,0 +1,18 @@
+rules:
+  - id: spring-request-mapping-without-method
+    languages: [java]
+    severity: WARNING
+    message: Name the HTTP method of this handler.
+    # Only handler methods: a class-level @RequestMapping shares a path prefix.
+    patterns:
+      - pattern-either:
+          - pattern: |
+              @org.springframework.web.bind.annotation.RequestMapping
+              $RETURN $METHOD(...) { ... }
+          - pattern: |
+              @org.springframework.web.bind.annotation.RequestMapping(...)
+              $RETURN $METHOD(...) { ... }
+      - pattern-not: |
+          @org.springframework.web.bind.annotation.RequestMapping(..., method = $HTTP, ...)
+          $RETURN $METHOD(...) { ... }
+      - focus-metavariable: $METHOD

@@ -1,0 +1,10 @@
+id: spring.request-mapping-without-method
+engine: semgrep
+severity: warning
+description: This @RequestMapping handler names no HTTP method, so it answers every method, including state-changing requests sent as GET.
+fix: >-
+  Use @GetMapping, @PostMapping, @PutMapping, @PatchMapping or @DeleteMapping,
+  or set method = RequestMethod.X on the @RequestMapping.
+implementation:
+  config: rules/semgrep/spring/request-mapping-without-method.yml
+  rule_id: spring-request-mapping-without-method

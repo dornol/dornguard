@@ -25,7 +25,7 @@ severity, confidence and profiles.
 | `jsp` | JSP scripting elements and JSTL output with escaping disabled |
 | `go` | `go vet` findings (see [Go and Rust](go-rust.md)) |
 | `rust` | `cargo clippy` and compiler lints (see [Go and Rust](go-rust.md)) |
-| `security` | Java CORS wildcards, SQL built from strings, weak hashes and ciphers, disabled TLS verification, and disabled CSRF protection |
+| `security` | Java CORS wildcards, SQL built from strings, weak hashes and ciphers, disabled TLS verification, disabled CSRF protection, Jackson default typing, and XML parsers open to XXE |
 | `hexagonal` | Domain, application, and adapter dependencies |
 | `layered` | Controller, service, and repository dependencies |
 | `package-cycles` | Dependency cycles between packages in a module |
@@ -62,7 +62,7 @@ These built-in rules have `medium` confidence:
 
 | Area | Rules |
 | --- | --- |
-| Security | `security.sql-injection`, `kotlin.sql-injection`, `security.disabled-tls-verification`, `security.csrf-disabled`, `security.weak-crypto`, `security.cors-wildcard`, `security.jackson-default-typing` |
+| Security | `security.sql-injection`, `kotlin.sql-injection`, `security.disabled-tls-verification`, `security.csrf-disabled`, `security.weak-crypto`, `security.cors-wildcard`, `security.jackson-default-typing`, `security.xxe` |
 | Java | `java.resource-not-closed`, `java.preserve-stack-trace`, `java.ignored-interrupt`, `java.ignored-return-value`, `java.broken-null-check`, `java.fully-qualified-type`, `java.assert-throws-nested-call`, `java.lock-without-finally` |
 | Kotlin | `kotlin.fully-qualified-type`, `kotlin.swallowed-cancellation`, `kotlin.run-catching-cancellation` |
 | Spring | `spring.singleton-request-state`, `spring.shared-simple-date-format`, `spring.checked-exception-rollback`, `spring.jpa-entity-response` |
@@ -172,6 +172,7 @@ make it blocking.
 | `security.disabled-tls-verification` | Trust-all trust managers and host name verifiers that always return `true`. Code inside an `if` or conditional expression whose condition mentions `verif`, `insecure`, `trustAll`, `skip`, or `validat` is skipped, because it is an opt-in setting. The trust-all implementation itself is still reported; suppress it with a reason |
 | `security.csrf-disabled` | Spring Security `csrf` configuration that disables CSRF protection. Methods that set `SessionCreationPolicy.STATELESS` are skipped |
 | `security.jackson-default-typing` | Jackson `enableDefaultTyping`, `activateDefaultTyping` with `LaissezFaireSubTypeValidator`, and `@JsonTypeInfo(use = Id.CLASS)` or `Id.MINIMAL_CLASS`, which let the input name the class to deserialize. `activateDefaultTyping` with another validator and `Id.NAME` are not reported |
+| `security.xxe` | A `DocumentBuilderFactory`, `SAXParserFactory`, `XMLInputFactory`, `TransformerFactory` or `SchemaFactory` created without disabling DOCTYPE declarations or external DTD access later in the same method. `disallow-doctype-decl` set to `true`, `XMLConstants.ACCESS_EXTERNAL_DTD` set to `""` and `XMLInputFactory.SUPPORT_DTD` set to `false` count as protection. A factory configured in another method is reported, so suppress it with a reason |
 | `kotlin.global-scope` | `GlobalScope.launch` or `GlobalScope.async` |
 | `spring.field-injection` | A field annotated with `@Autowired`, `@Inject` or `@Resource`, with or without annotation arguments. Setter and constructor injection are not reported |
 | `spring.singleton-request-state` | A Java Spring MVC singleton controller handler that stores a parameter directly in a `this` field |
@@ -182,6 +183,7 @@ make it blocking.
 | `spring.cache-self-invocation` | A direct Java call to a same-class method with Spring `@Cacheable`, `@CacheEvict`, `@CachePut`, or `@Caching` |
 | `spring.retry-self-invocation` | A direct Java call to a same-class method with Spring Retry's `@Retryable` |
 | `spring.static-member-injection` | Spring's `@Value` on a static field or static method, or `@Autowired` on a static method. Spring skips static members, so the value stays unset. An `@Autowired` field, static or not, is reported once by `spring.field-injection` |
+| `spring.request-mapping-without-method` | A handler method annotated with `@RequestMapping` without `method`, which answers every HTTP method. A class-level `@RequestMapping` is not reported |
 
 The Spring self-invocation checks apply to proxy-based transactions, async
 execution, caching, and retries. They check unqualified calls and calls through `this`. For calls

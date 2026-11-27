@@ -1,0 +1,13 @@
+id: security.xxe
+engine: semgrep
+severity: warning
+confidence: medium
+description: This XML parser factory accepts DOCTYPE declarations and external entities, which allows XML external entity (XXE) attacks on untrusted input.
+fix: >-
+  Disable DOCTYPE declarations on the factory before use, for example
+  factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true),
+  or set XMLConstants.ACCESS_EXTERNAL_DTD and ACCESS_EXTERNAL_SCHEMA to "".
+  For XMLInputFactory, set XMLInputFactory.SUPPORT_DTD to false.
+implementation:
+  config: rules/semgrep/security/xxe.yml
+  rule_id: security-xxe

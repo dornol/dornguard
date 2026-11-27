@@ -21,8 +21,10 @@ ARM64. Linux ARM64 is new; `install.sh` selects it on `aarch64` machines.
     (error), `java.log-format-arguments`, `java.throw-from-finally`,
     `java.double-checked-locking` and `java.lock-without-finally` (warnings,
     the last with medium confidence).
-  - `spring-boot`: `spring.static-member-injection` (error).
-  - `security`: `security.jackson-default-typing` (warning, medium confidence).
+  - `spring-boot`: `spring.static-member-injection` (error) and
+    `spring.request-mapping-without-method` (warning).
+  - `security`: `security.jackson-default-typing` and `security.xxe`
+    (warnings, medium confidence).
   - `kotlin`: `kotlin.date-pattern-typo` and `kotlin.field-injection` (errors),
     `kotlin.private-transactional` and `kotlin.jpa-data-class-entity`
     (warnings).

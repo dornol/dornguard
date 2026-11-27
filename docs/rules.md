@@ -86,12 +86,14 @@ covers and [rule confidence](profiles.md#rule-confidence) for how to treat findi
 | `security.jackson-default-typing` | semgrep | warning | medium | `security` | Jackson reads a class name from the input and can instantiate a class the input chooses. |
 | `security.sql-injection` | semgrep | error | medium | `security` | SQL text built by string concatenation or formatting can allow SQL injection. |
 | `security.weak-crypto` | semgrep | warning | medium | `security` | This hash or cipher algorithm is weak or uses an unsafe mode. |
+| `security.xxe` | semgrep | warning | medium | `security` | This XML parser factory accepts DOCTYPE declarations and external entities, which allows XML external entity (XXE) attacks on untrusted input. |
 | `spring.async-self-invocation` | builtin | warning | high | `spring-boot` | This direct call bypasses the target method's asynchronous advice in Spring proxy mode. |
 | `spring.cache-self-invocation` | builtin | warning | high | `spring-boot` | This direct call bypasses the target method's cache advice in Spring proxy mode. |
 | `spring.checked-exception-rollback` | semgrep | warning | medium | `spring-rollback` | Review rollback for this checked exception under Spring's default policy. |
 | `spring.field-injection` | semgrep | error | high | `spring-boot` | Spring field injection hides a class's dependencies. |
 | `spring.jpa-entity-response` | builtin | warning | medium | `jpa-web` | This Spring MVC endpoint declares a JPA entity as a response type. |
 | `spring.private-transactional` | semgrep | warning | high | `spring-boot` | Spring proxy mode cannot apply transaction advice to a private method. |
+| `spring.request-mapping-without-method` | semgrep | warning | high | `spring-boot` | This @RequestMapping handler names no HTTP method, so it answers every method, including state-changing requests sent as GET. |
 | `spring.retry-self-invocation` | builtin | warning | high | `spring-boot` | This direct call bypasses the target method's retry advice in Spring proxy mode. |
 | `spring.shared-simple-date-format` | semgrep | warning | medium | `spring-boot` | A Spring singleton holds a non-thread-safe SimpleDateFormat. |
 | `spring.singleton-request-state` | semgrep | warning | medium | `spring-boot` | This singleton controller stores a request-handler parameter in an instance field. |

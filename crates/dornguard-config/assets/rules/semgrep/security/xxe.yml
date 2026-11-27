@@ -1,0 +1,54 @@
+rules:
+  - id: security-xxe
+    languages: [java]
+    severity: WARNING
+    message: Disable DOCTYPE declarations or external entities on this XML parser factory.
+    # A factory is safe when the same method configures it after creating it.
+    # Factories configured in another method are reported; suppress them with a reason.
+    patterns:
+      - pattern-either:
+          - pattern: $FACTORY = javax.xml.parsers.DocumentBuilderFactory.$NEW(...);
+          - pattern: $TYPE $FACTORY = javax.xml.parsers.DocumentBuilderFactory.$NEW(...);
+          - pattern: $FACTORY = javax.xml.parsers.SAXParserFactory.$NEW(...);
+          - pattern: $TYPE $FACTORY = javax.xml.parsers.SAXParserFactory.$NEW(...);
+          - pattern: $FACTORY = javax.xml.stream.XMLInputFactory.$NEW(...);
+          - pattern: $TYPE $FACTORY = javax.xml.stream.XMLInputFactory.$NEW(...);
+          - pattern: $FACTORY = javax.xml.transform.TransformerFactory.$NEW(...);
+          - pattern: $TYPE $FACTORY = javax.xml.transform.TransformerFactory.$NEW(...);
+          - pattern: $FACTORY = javax.xml.validation.SchemaFactory.$NEW(...);
+          - pattern: $TYPE $FACTORY = javax.xml.validation.SchemaFactory.$NEW(...);
+      - metavariable-regex:
+          metavariable: $NEW
+          regex: ^(newInstance|newDefaultInstance|newFactory|newDefaultFactory|newNSInstance|newDefaultNSInstance)$
+      - pattern-not-inside: |
+          $FACTORY = $X;
+          ...
+          $FACTORY.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+      - pattern-not-inside: |
+          $TYPE $FACTORY = $X;
+          ...
+          $FACTORY.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+      - pattern-not-inside: |
+          $FACTORY = $X;
+          ...
+          $FACTORY.setAttribute(javax.xml.XMLConstants.ACCESS_EXTERNAL_DTD, "");
+      - pattern-not-inside: |
+          $TYPE $FACTORY = $X;
+          ...
+          $FACTORY.setAttribute(javax.xml.XMLConstants.ACCESS_EXTERNAL_DTD, "");
+      - pattern-not-inside: |
+          $FACTORY = $X;
+          ...
+          $FACTORY.setProperty(javax.xml.XMLConstants.ACCESS_EXTERNAL_DTD, "");
+      - pattern-not-inside: |
+          $TYPE $FACTORY = $X;
+          ...
+          $FACTORY.setProperty(javax.xml.XMLConstants.ACCESS_EXTERNAL_DTD, "");
+      - pattern-not-inside: |
+          $FACTORY = $X;
+          ...
+          $FACTORY.setProperty(javax.xml.stream.XMLInputFactory.SUPPORT_DTD, false);
+      - pattern-not-inside: |
+          $TYPE $FACTORY = $X;
+          ...
+          $FACTORY.setProperty(javax.xml.stream.XMLInputFactory.SUPPORT_DTD, false);
