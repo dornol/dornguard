@@ -359,330 +359,8 @@ pub struct Implementation {
     pub rule_id: String,
 }
 
-const BUILTIN_PROFILES: &[&str] = &[
-    include_str!("../assets/profiles/java-source.yml"),
-    include_str!("../assets/profiles/java.yml"),
-    include_str!("../assets/profiles/java-review.yml"),
-    include_str!("../assets/profiles/format.yml"),
-    include_str!("../assets/profiles/jspecify.yml"),
-    include_str!("../assets/profiles/kotlin.yml"),
-    include_str!("../assets/profiles/security.yml"),
-    include_str!("../assets/profiles/spring-boot.yml"),
-    include_str!("../assets/profiles/spring-rollback.yml"),
-    include_str!("../assets/profiles/thymeleaf.yml"),
-    include_str!("../assets/profiles/thymeleaf-output-review.yml"),
-    include_str!("../assets/profiles/hexagonal.yml"),
-    include_str!("../assets/profiles/layered.yml"),
-    include_str!("../assets/profiles/package-cycles.yml"),
-    include_str!("../assets/profiles/java-library.yml"),
-    include_str!("../assets/profiles/rest-api.yml"),
-    include_str!("../assets/profiles/flyway.yml"),
-    include_str!("../assets/profiles/jpa-web.yml"),
-    include_str!("../assets/profiles/scheduler.yml"),
-    include_str!("../assets/profiles/html.yml"),
-    include_str!("../assets/profiles/javascript.yml"),
-    include_str!("../assets/profiles/jsp.yml"),
-];
-
-const BUILTIN_RULES: &[&str] = &[
-    include_str!("../assets/rules/format.indentation.yml"),
-    include_str!("../assets/rules/format.line-ending.yml"),
-    include_str!("../assets/rules/format.final-newline.yml"),
-    include_str!("../assets/rules/format.trailing-whitespace.yml"),
-    include_str!("../assets/rules/format.blank-lines.yml"),
-    include_str!("../assets/rules/format.control-spacing.yml"),
-    include_str!("../assets/rules/java.stdout-usage.yml"),
-    include_str!("../assets/rules/flyway.changed-versioned-migration.yml"),
-    include_str!("../assets/rules/spring.jpa-entity-response.yml"),
-    include_str!("../assets/rules/java.empty-catch.yml"),
-    include_str!("../assets/rules/java.ignored-return-value.yml"),
-    include_str!("../assets/rules/java.assert-throws-nested-call.yml"),
-    include_str!("../assets/rules/java.jspecify-null-marked.yml"),
-    include_str!("../assets/rules/kotlin.stdout-usage.yml"),
-    include_str!("../assets/rules/security.cors-wildcard.yml"),
-    include_str!("../assets/rules/spring.field-injection.yml"),
-    include_str!("../assets/rules/thymeleaf.restricted-bean-access.yml"),
-    include_str!("../assets/rules/architecture.domain-independence.yml"),
-    include_str!("../assets/rules/architecture.application-independence.yml"),
-    include_str!("../assets/rules/architecture.adapter-isolation.yml"),
-    include_str!("../assets/rules/architecture.framework-independence.yml"),
-    include_str!("../assets/rules/architecture.controller-repository.yml"),
-    include_str!("../assets/rules/architecture.repository-independence.yml"),
-    include_str!("../assets/rules/architecture.package-cycle.yml"),
-    include_str!("../assets/rules/security.sql-injection.yml"),
-    include_str!("../assets/rules/security.weak-crypto.yml"),
-    include_str!("../assets/rules/security.disabled-tls-verification.yml"),
-    include_str!("../assets/rules/security.csrf-disabled.yml"),
-    include_str!("../assets/rules/architecture.module-dependency.yml"),
-    include_str!("../assets/rules/architecture.library-framework-independence.yml"),
-    include_str!("../assets/rules/java.ignored-interrupt.yml"),
-    include_str!("../assets/rules/kotlin.run-blocking-in-suspend.yml"),
-    include_str!("../assets/rules/kotlin.global-scope.yml"),
-    include_str!("../assets/rules/spring.private-transactional.yml"),
-    include_str!("../assets/rules/spring.transactional-self-invocation.yml"),
-    include_str!("../assets/rules/java.unnecessary-import.yml"),
-    include_str!("../assets/rules/spring.shared-simple-date-format.yml"),
-    include_str!("../assets/rules/java.preserve-stack-trace.yml"),
-    include_str!("../assets/rules/java.resource-not-closed.yml"),
-    include_str!("../assets/rules/kotlin.swallowed-cancellation.yml"),
-    include_str!("../assets/rules/spring.singleton-request-state.yml"),
-    include_str!("../assets/rules/spring.checked-exception-rollback.yml"),
-    include_str!("../assets/rules/java.fully-qualified-type.yml"),
-    include_str!("../assets/rules/kotlin.fully-qualified-type.yml"),
-    include_str!("../assets/rules/html.inline-script.yml"),
-    include_str!("../assets/rules/html.inline-event-handler.yml"),
-    include_str!("../assets/rules/javascript.no-eval.yml"),
-    include_str!("../assets/rules/javascript.no-implied-eval.yml"),
-    include_str!("../assets/rules/javascript.no-new-func.yml"),
-    include_str!("../assets/rules/java.bigdecimal-from-floating-point-literal.yml"),
-    include_str!("../assets/rules/java.return-from-finally.yml"),
-    include_str!("../assets/rules/spring.async-self-invocation.yml"),
-    include_str!("../assets/rules/spring.cache-self-invocation.yml"),
-    include_str!("../assets/rules/spring.retry-self-invocation.yml"),
-    include_str!("../assets/rules/java.print-stack-trace.yml"),
-    include_str!("../assets/rules/kotlin.print-stack-trace.yml"),
-    include_str!("../assets/rules/kotlin.transactional-suspend.yml"),
-    include_str!("../assets/rules/kotlin.sql-injection.yml"),
-    include_str!("../assets/rules/kotlin.thread-sleep-in-suspend.yml"),
-    include_str!("../assets/rules/thymeleaf.unescaped-output.yml"),
-    include_str!("../assets/rules/java.broken-null-check.yml"),
-    include_str!("../assets/rules/java.equals-hashcode-contract.yml"),
-    include_str!("../assets/rules/javascript.no-async-promise-executor.yml"),
-    include_str!("../assets/rules/jsp.scripting-element.yml"),
-    include_str!("../assets/rules/jsp.unescaped-output.yml"),
-    include_str!("../assets/rules/kotlin.run-catching-cancellation.yml"),
-    include_str!("../assets/rules/java.date-pattern-typo.yml"),
-    include_str!("../assets/rules/spring.static-member-injection.yml"),
-    include_str!("../assets/rules/security.jackson-default-typing.yml"),
-    include_str!("../assets/rules/kotlin.date-pattern-typo.yml"),
-    include_str!("../assets/rules/java.log-format-arguments.yml"),
-    include_str!("../assets/rules/java.string-reference-equality.yml"),
-    include_str!("../assets/rules/java.throw-from-finally.yml"),
-    include_str!("../assets/rules/java.double-checked-locking.yml"),
-    include_str!("../assets/rules/java.lock-without-finally.yml"),
-    include_str!("../assets/rules/kotlin.field-injection.yml"),
-    include_str!("../assets/rules/kotlin.private-transactional.yml"),
-    include_str!("../assets/rules/kotlin.jpa-data-class-entity.yml"),
-    include_str!("../assets/rules/javascript.no-unsafe-finally.yml"),
-    include_str!("../assets/rules/javascript.no-self-compare.yml"),
-    include_str!("../assets/rules/javascript.no-constant-binary-expression.yml"),
-    include_str!("../assets/rules/javascript.no-unsafe-negation.yml"),
-    include_str!("../assets/rules/javascript.no-unsafe-optional-chaining.yml"),
-    include_str!("../assets/rules/javascript.use-isnan.yml"),
-    include_str!("../assets/rules/javascript.valid-typeof.yml"),
-    include_str!("../assets/rules/javascript.no-script-url.yml"),
-];
-
-const BUILTIN_ENGINE_CONFIGS: &[(&str, &str)] = &[
-    (
-        "rules/semgrep/kotlin/field-injection.yml",
-        include_str!("../assets/rules/semgrep/kotlin/field-injection.yml"),
-    ),
-    (
-        "rules/semgrep/kotlin/private-transactional.yml",
-        include_str!("../assets/rules/semgrep/kotlin/private-transactional.yml"),
-    ),
-    (
-        "rules/semgrep/kotlin/jpa-data-class-entity.yml",
-        include_str!("../assets/rules/semgrep/kotlin/jpa-data-class-entity.yml"),
-    ),
-    (
-        "rules/pmd/java/log-format-arguments.xml",
-        include_str!("../assets/rules/pmd/java/log-format-arguments.xml"),
-    ),
-    (
-        "rules/pmd/java/string-reference-equality.xml",
-        include_str!("../assets/rules/pmd/java/string-reference-equality.xml"),
-    ),
-    (
-        "rules/pmd/java/throw-from-finally.xml",
-        include_str!("../assets/rules/pmd/java/throw-from-finally.xml"),
-    ),
-    (
-        "rules/pmd/java/double-checked-locking.xml",
-        include_str!("../assets/rules/pmd/java/double-checked-locking.xml"),
-    ),
-    (
-        "rules/semgrep/java/lock-without-finally.yml",
-        include_str!("../assets/rules/semgrep/java/lock-without-finally.yml"),
-    ),
-    (
-        "rules/semgrep/kotlin/date-pattern-typo.yml",
-        include_str!("../assets/rules/semgrep/kotlin/date-pattern-typo.yml"),
-    ),
-    (
-        "rules/semgrep/java/date-pattern-typo.yml",
-        include_str!("../assets/rules/semgrep/java/date-pattern-typo.yml"),
-    ),
-    (
-        "rules/semgrep/spring/static-member-injection.yml",
-        include_str!("../assets/rules/semgrep/spring/static-member-injection.yml"),
-    ),
-    (
-        "rules/semgrep/security/jackson-default-typing.yml",
-        include_str!("../assets/rules/semgrep/security/jackson-default-typing.yml"),
-    ),
-    (
-        "rules/pmd/java/ignored-return-value.xml",
-        include_str!("../assets/rules/pmd/java/ignored-return-value.xml"),
-    ),
-    (
-        "rules/semgrep/java/assert-throws-nested-call.yml",
-        include_str!("../assets/rules/semgrep/java/assert-throws-nested-call.yml"),
-    ),
-    (
-        "rules/pmd/java/broken-null-check.xml",
-        include_str!("../assets/rules/pmd/java/broken-null-check.xml"),
-    ),
-    (
-        "rules/pmd/java/equals-hashcode-contract.xml",
-        include_str!("../assets/rules/pmd/java/equals-hashcode-contract.xml"),
-    ),
-    (
-        "rules/semgrep/jsp/scripting-element.yml",
-        include_str!("../assets/rules/semgrep/jsp/scripting-element.yml"),
-    ),
-    (
-        "rules/semgrep/jsp/unescaped-output.yml",
-        include_str!("../assets/rules/semgrep/jsp/unescaped-output.yml"),
-    ),
-    (
-        "rules/semgrep/kotlin/run-catching-cancellation.yml",
-        include_str!("../assets/rules/semgrep/kotlin/run-catching-cancellation.yml"),
-    ),
-    (
-        "rules/pmd/java/bigdecimal-from-floating-point-literal.xml",
-        include_str!("../assets/rules/pmd/java/bigdecimal-from-floating-point-literal.xml"),
-    ),
-    (
-        "rules/pmd/java/return-from-finally.xml",
-        include_str!("../assets/rules/pmd/java/return-from-finally.xml"),
-    ),
-    (
-        "rules/semgrep/kotlin/thread-sleep-in-suspend.yml",
-        include_str!("../assets/rules/semgrep/kotlin/thread-sleep-in-suspend.yml"),
-    ),
-    (
-        "rules/semgrep/thymeleaf/unescaped-output.yml",
-        include_str!("../assets/rules/semgrep/thymeleaf/unescaped-output.yml"),
-    ),
-    (
-        "rules/semgrep/java/stdout-usage.yml",
-        include_str!("../assets/rules/semgrep/java/stdout-usage.yml"),
-    ),
-    (
-        "rules/semgrep/java/print-stack-trace.yml",
-        include_str!("../assets/rules/semgrep/java/print-stack-trace.yml"),
-    ),
-    (
-        "rules/semgrep/kotlin/print-stack-trace.yml",
-        include_str!("../assets/rules/semgrep/kotlin/print-stack-trace.yml"),
-    ),
-    (
-        "rules/semgrep/kotlin/sql-injection.yml",
-        include_str!("../assets/rules/semgrep/kotlin/sql-injection.yml"),
-    ),
-    (
-        "rules/semgrep/kotlin/transactional-suspend.yml",
-        include_str!("../assets/rules/semgrep/kotlin/transactional-suspend.yml"),
-    ),
-    (
-        "rules/pmd/java/empty-catch.xml",
-        include_str!("../assets/rules/pmd/java/empty-catch.xml"),
-    ),
-    (
-        "rules/semgrep/kotlin/stdout-usage.yml",
-        include_str!("../assets/rules/semgrep/kotlin/stdout-usage.yml"),
-    ),
-    (
-        "rules/semgrep/security/cors-wildcard.yml",
-        include_str!("../assets/rules/semgrep/security/cors-wildcard.yml"),
-    ),
-    (
-        "rules/semgrep/security/sql-injection.yml",
-        include_str!("../assets/rules/semgrep/security/sql-injection.yml"),
-    ),
-    (
-        "rules/semgrep/security/weak-crypto.yml",
-        include_str!("../assets/rules/semgrep/security/weak-crypto.yml"),
-    ),
-    (
-        "rules/semgrep/security/disabled-tls-verification.yml",
-        include_str!("../assets/rules/semgrep/security/disabled-tls-verification.yml"),
-    ),
-    (
-        "rules/semgrep/security/csrf-disabled.yml",
-        include_str!("../assets/rules/semgrep/security/csrf-disabled.yml"),
-    ),
-    (
-        "rules/semgrep/thymeleaf/restricted-bean-access.yml",
-        include_str!("../assets/rules/semgrep/thymeleaf/restricted-bean-access.yml"),
-    ),
-    (
-        "rules/semgrep/spring/field-injection.yml",
-        include_str!("../assets/rules/semgrep/spring/field-injection.yml"),
-    ),
-    (
-        "rules/semgrep/java/ignored-interrupt.yml",
-        include_str!("../assets/rules/semgrep/java/ignored-interrupt.yml"),
-    ),
-    (
-        "rules/semgrep/kotlin/run-blocking-in-suspend.yml",
-        include_str!("../assets/rules/semgrep/kotlin/run-blocking-in-suspend.yml"),
-    ),
-    (
-        "rules/semgrep/kotlin/global-scope.yml",
-        include_str!("../assets/rules/semgrep/kotlin/global-scope.yml"),
-    ),
-    (
-        "rules/semgrep/spring/private-transactional.yml",
-        include_str!("../assets/rules/semgrep/spring/private-transactional.yml"),
-    ),
-    (
-        "rules/pmd/java/unnecessary-import.xml",
-        include_str!("../assets/rules/pmd/java/unnecessary-import.xml"),
-    ),
-    (
-        "rules/semgrep/spring/shared-simple-date-format.yml",
-        include_str!("../assets/rules/semgrep/spring/shared-simple-date-format.yml"),
-    ),
-    (
-        "rules/pmd/java/preserve-stack-trace.xml",
-        include_str!("../assets/rules/pmd/java/preserve-stack-trace.xml"),
-    ),
-    (
-        "rules/pmd/java/resource-not-closed.xml",
-        include_str!("../assets/rules/pmd/java/resource-not-closed.xml"),
-    ),
-    (
-        "rules/semgrep/kotlin/swallowed-cancellation.yml",
-        include_str!("../assets/rules/semgrep/kotlin/swallowed-cancellation.yml"),
-    ),
-    (
-        "rules/semgrep/spring/singleton-request-state.yml",
-        include_str!("../assets/rules/semgrep/spring/singleton-request-state.yml"),
-    ),
-    (
-        "rules/semgrep/spring/checked-exception-rollback.yml",
-        include_str!("../assets/rules/semgrep/spring/checked-exception-rollback.yml"),
-    ),
-    (
-        "rules/semgrep/java/fully-qualified-type.yml",
-        include_str!("../assets/rules/semgrep/java/fully-qualified-type.yml"),
-    ),
-    (
-        "rules/semgrep/kotlin/fully-qualified-type.yml",
-        include_str!("../assets/rules/semgrep/kotlin/fully-qualified-type.yml"),
-    ),
-    (
-        "rules/semgrep/html/inline-script.yml",
-        include_str!("../assets/rules/semgrep/html/inline-script.yml"),
-    ),
-    (
-        "rules/semgrep/html/inline-event-handler.yml",
-        include_str!("../assets/rules/semgrep/html/inline-event-handler.yml"),
-    ),
-];
+// BUILTIN_PROFILES, BUILTIN_RULES and BUILTIN_ENGINE_CONFIGS, generated by build.rs.
+include!(concat!(env!("OUT_DIR"), "/builtin_assets.rs"));
 
 pub struct Registry {
     profiles: BTreeMap<String, Profile>,
@@ -1241,6 +919,100 @@ mod tests {
             .map(|rule| rule.id.as_str())
             .collect::<Vec<_>>();
         assert_eq!(medium, MEDIUM_CONFIDENCE);
+    }
+
+    #[test]
+    fn every_engine_configuration_belongs_to_a_rule() {
+        let registry = Registry::builtin().unwrap();
+        let used = registry
+            .rules()
+            .filter_map(|rule| rule.implementation.as_ref())
+            .map(|implementation| implementation.config.as_str())
+            .collect::<BTreeSet<_>>();
+        let orphans = registry
+            .engine_configs
+            .keys()
+            .filter(|path| !used.contains(path.as_str()))
+            .collect::<Vec<_>>();
+        assert!(
+            orphans.is_empty(),
+            "unused engine configurations: {orphans:?}"
+        );
+    }
+
+    #[test]
+    fn every_builtin_rule_is_in_a_profile_or_configured_directly() {
+        let registry = Registry::builtin().unwrap();
+        let listed = registry
+            .profiles()
+            .flat_map(|profile| &profile.rules)
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>();
+        let unlisted = registry
+            .rules()
+            .map(|rule| rule.id.as_str())
+            .filter(|id| !listed.contains(id))
+            .collect::<Vec<_>>();
+        // module_dependencies.forbid enables the module dependency rule.
+        assert_eq!(unlisted, ["architecture.module-dependency"]);
+    }
+
+    fn rule_catalog(registry: &Registry) -> String {
+        let mut out = String::from(
+            "# Rule catalog\n\n\
+             <!-- Generated from the built-in rules. Regenerate with\n\
+             DORNGUARD_BLESS=1 cargo test -p dornguard-config rule_catalog -->\n\n\
+             Every built-in rule with its engine, default severity, confidence and\n\
+             the profiles that enable it. Run `dornguard rules explain RULE` for the\n\
+             fix guidance. See [policy bundles](profiles.md) for what each profile\n\
+             covers and [rule confidence](profiles.md#rule-confidence) for how to treat findings.\n\n\
+             | Rule | Engine | Severity | Confidence | Profiles | Description |\n\
+             | --- | --- | --- | --- | --- | --- |\n",
+        );
+        for rule in registry.rules() {
+            let profiles = registry
+                .profiles()
+                .filter(|profile| profile.rules.contains(&rule.id))
+                .map(|profile| format!("`{}`", profile.name))
+                .collect::<Vec<_>>();
+            let profiles = if profiles.is_empty() {
+                "`module_dependencies`".to_owned()
+            } else {
+                profiles.join(", ")
+            };
+            let description = rule
+                .description
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .replace('|', "\\|");
+            let name = |value: serde_json::Value| value.as_str().unwrap_or_default().to_owned();
+            out.push_str(&format!(
+                "| `{}` | {} | {} | {} | {} | {} |\n",
+                rule.id,
+                name(serde_json::to_value(rule.engine).unwrap()),
+                name(serde_json::to_value(rule.severity).unwrap()),
+                name(serde_json::to_value(rule.confidence).unwrap()),
+                profiles,
+                description,
+            ));
+        }
+        out
+    }
+
+    #[test]
+    fn rule_catalog_documents_every_builtin_rule() {
+        let registry = Registry::builtin().unwrap();
+        let expected = rule_catalog(&registry);
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/rules.md");
+        if std::env::var_os("DORNGUARD_BLESS").is_some() {
+            fs::write(&path, &expected).unwrap();
+        }
+        let actual = fs::read_to_string(&path).unwrap_or_default();
+        assert!(
+            actual == expected,
+            "docs/rules.md is out of date; run DORNGUARD_BLESS=1 cargo test -p dornguard-config rule_catalog"
+        );
     }
 
     #[test]
