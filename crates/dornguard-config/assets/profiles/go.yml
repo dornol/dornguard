@@ -1,0 +1,4 @@
+name: go
+description: Go checks using go vet
+rules:
+  - go.vet

@@ -8,7 +8,10 @@ that receive no manual review.
 
 DornGuard applies quality, security, and architecture policies to Java,
 Spring Boot, and Kotlin/JVM projects. It runs Semgrep, PMD, and ArchUnit
-through one CLI with project and module profiles.
+through one CLI with project and module profiles. The same CLI checks HTML,
+JSP and Thymeleaf templates, JavaScript and TypeScript with ESLint, Go with
+`go vet`, and Rust with `cargo clippy`, and audits Maven dependencies with
+OSV-Scanner. See the [rule catalog](docs/rules.md) for every built-in rule.
 
 ## Install or update on Ubuntu and WSL
 
@@ -109,6 +112,10 @@ See [Maven dependency audit](docs/dependency-audit.md) for setup and scope.
 The `html` and `javascript` profiles check inline scripts and JavaScript
 evaluation. Use `dornguard csp URL` to inspect an HTTP response.
 See [HTML, JavaScript, and CSP](docs/web-checks.md).
+
+The `go` and `rust` profiles run `go vet` and `cargo clippy` from the
+project's own toolchain and report their findings like any other rule.
+See [Go and Rust](docs/go-rust.md).
 
 ## Verify
 

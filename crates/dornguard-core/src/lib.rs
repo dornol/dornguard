@@ -42,9 +42,22 @@ pub enum SourceLanguage {
     Javascript,
     Typescript,
     Jsp,
+    Go,
+    Rust,
 }
 
 pub const TEMPLATE_DIR: &str = "src/main/resources/templates";
+
+/// Directories whose sources the Go and Rust toolchains do not build as project code.
+fn is_vendored(path: &Path, directories: &[&str]) -> bool {
+    path.parent().is_some_and(|parent| {
+        parent.components().any(|part| {
+            part.as_os_str()
+                .to_str()
+                .is_some_and(|name| directories.contains(&name))
+        })
+    })
+}
 
 fn is_declaration_file(path: &Path) -> bool {
     path.file_name()
@@ -69,6 +82,8 @@ impl SourceLanguage {
             // Declaration files describe types only; they contain no code to check.
             "ts" | "mts" | "cts" | "tsx" if !is_declaration_file(path) => Some(Self::Typescript),
             "jsp" | "jspx" | "jspf" | "tag" | "tagx" => Some(Self::Jsp),
+            "go" if !is_vendored(path, &["vendor", "testdata"]) => Some(Self::Go),
+            "rs" if !is_vendored(path, &["target"]) => Some(Self::Rust),
             _ => None,
         }
     }
@@ -81,6 +96,8 @@ impl SourceLanguage {
             Self::Javascript => "javascript",
             Self::Typescript => "typescript",
             Self::Jsp => "regex",
+            Self::Go => "go",
+            Self::Rust => "rust",
         }
     }
 }
@@ -94,6 +111,10 @@ pub enum EngineName {
     Builtin,
     Archunit,
     Gradle,
+    /// `go vet`, run through the `go` command.
+    GoVet,
+    /// `cargo clippy`.
+    Clippy,
 }
 
 impl EngineName {
@@ -105,6 +126,8 @@ impl EngineName {
             Self::Builtin => "builtin",
             Self::Archunit => "java",
             Self::Gradle => "gradlew",
+            Self::GoVet => "go",
+            Self::Clippy => "cargo",
         }
     }
 }
@@ -471,6 +494,28 @@ pub struct RuleCount {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn go_and_rust_sources_exclude_vendored_and_build_output() {
+        assert_eq!(
+            SourceLanguage::of(Path::new("cmd/main.go")),
+            Some(SourceLanguage::Go)
+        );
+        assert_eq!(
+            SourceLanguage::of(Path::new("a_test.go")),
+            Some(SourceLanguage::Go)
+        );
+        assert_eq!(SourceLanguage::of(Path::new("vendor/x/y.go")), None);
+        assert_eq!(SourceLanguage::of(Path::new("pkg/testdata/z.go")), None);
+        assert_eq!(
+            SourceLanguage::of(Path::new("src/lib.rs")),
+            Some(SourceLanguage::Rust)
+        );
+        assert_eq!(
+            SourceLanguage::of(Path::new("target/debug/build/out.rs")),
+            None
+        );
+    }
 
     #[test]
     fn typescript_sources_exclude_declaration_files() {

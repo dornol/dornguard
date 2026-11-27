@@ -1,0 +1,5 @@
+name: rust
+description: Rust checks using cargo clippy
+rules:
+  - rust.clippy
+  - rust.rustc-lint

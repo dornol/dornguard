@@ -30,6 +30,9 @@ pub const IGNORED_RETURN_VALUE_RULE: &str = "java.ignored-return-value";
 pub const UNNECESSARY_IMPORT_RULE: &str = "java.unnecessary-import";
 pub const RESOURCE_RULE: &str = "java.resource-not-closed";
 pub const PRESERVE_STACK_TRACE_RULE: &str = "java.preserve-stack-trace";
+pub const GO_VET_RULE: &str = "go.vet";
+pub const CLIPPY_RULE: &str = "rust.clippy";
+pub const RUSTC_LINT_RULE: &str = "rust.rustc-lint";
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -286,6 +289,8 @@ impl Rule {
             ),
             EngineName::Builtin if self.id == FLYWAY_RULE => false,
             EngineName::Pmd | EngineName::Builtin => language == SourceLanguage::Java,
+            EngineName::GoVet => language == SourceLanguage::Go,
+            EngineName::Clippy => language == SourceLanguage::Rust,
             EngineName::Semgrep => self.semgrep_languages.iter().any(|name| {
                 name == language.semgrep_name()
                     || (matches!(language, SourceLanguage::Java | SourceLanguage::Kotlin)
@@ -430,7 +435,12 @@ impl Registry {
                     self.engine_configs.insert(path.clone(), contents);
                 }
                 EngineName::Archunit => {}
-                EngineName::Pmd | EngineName::Eslint | EngineName::Builtin | EngineName::Gradle => {
+                EngineName::Pmd
+                | EngineName::Eslint
+                | EngineName::Builtin
+                | EngineName::Gradle
+                | EngineName::GoVet
+                | EngineName::Clippy => {
                     bail!("Custom rules support Semgrep patterns and ArchUnit package checks");
                 }
             }
@@ -503,7 +513,11 @@ impl Registry {
                     "Rule {id} requires architecture options with either forbidden packages or cycles: true"
                 );
             }
-            EngineName::Archunit | EngineName::Builtin | EngineName::Gradle => {}
+            EngineName::Archunit
+            | EngineName::Builtin
+            | EngineName::Gradle
+            | EngineName::GoVet
+            | EngineName::Clippy => {}
         }
         if id.is_empty() || self.rules.insert(id.clone(), rule).is_some() {
             bail!("Empty or duplicate rule ID: {id}");

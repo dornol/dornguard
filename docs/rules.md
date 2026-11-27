@@ -26,6 +26,7 @@ covers and [rule confidence](profiles.md#rule-confidence) for how to treat findi
 | `format.indentation` | builtin | error | high | `format` | Use spaces and the configured indentation for this language. |
 | `format.line-ending` | builtin | error | high | `format` | This file uses a different line ending than the configured format. |
 | `format.trailing-whitespace` | builtin | error | high | `format` | Remove trailing spaces and tabs. |
+| `go.vet` | go_vet | error | high | `go` | go vet reported a suspicious construct. |
 | `html.inline-event-handler` | semgrep | warning | high | `html` | This HTML or Thymeleaf attribute contains an inline event handler. |
 | `html.inline-script` | semgrep | warning | high | `html` | This HTML script contains inline JavaScript. |
 | `java.assert-throws-nested-call` | semgrep | warning | medium | `java-review` | A call that prepares an argument can throw before JUnit reaches the operation under test. |
@@ -77,6 +78,8 @@ covers and [rule confidence](profiles.md#rule-confidence) for how to treat findi
 | `kotlin.swallowed-cancellation` | semgrep | warning | medium | `kotlin` | This catch consumes a coroutine cancellation exception. |
 | `kotlin.thread-sleep-in-suspend` | semgrep | warning | high | `kotlin` | Thread.sleep blocks the thread inside a suspend function. |
 | `kotlin.transactional-suspend` | semgrep | warning | high | `kotlin` | A Spring @Transactional suspend function needs a reactive transaction manager; a blocking one can lose its transaction across suspension points. |
+| `rust.clippy` | clippy | warning | high | `rust` | Clippy reported a lint. |
+| `rust.rustc-lint` | clippy | warning | high | `rust` | The Rust compiler reported a lint warning. |
 | `security.cors-wildcard` | semgrep | error | medium | `security` | A wildcard CORS origin allows requests from arbitrary origins. |
 | `security.csrf-disabled` | semgrep | warning | medium | `security` | Disabling CSRF protection is only safe for stateless APIs that do not use cookie-based sessions. |
 | `security.disabled-tls-verification` | semgrep | error | medium | `security` | This code disables TLS certificate or host name verification. |

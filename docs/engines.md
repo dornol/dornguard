@@ -56,6 +56,11 @@ TypeScript files reports an engine error.
 The `jspecify` profile uses a Java parser bundled with DornGuard and runs
 without a separate engine installation.
 
+The `go` and `rust` profiles use the project's own toolchain: Go 1.22 or
+later and Rust with the Clippy component on PATH. `dornguard engines install`
+does not install them; `dornguard doctor` checks them. See
+[Go and Rust](go-rust.md).
+
 Managed installations use `DORNGUARD_ENGINE_DIR` when set and otherwise
 use the operating system's local application data directory. The CLI looks
 there first and then on PATH for the supported version.

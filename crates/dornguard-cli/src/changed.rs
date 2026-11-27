@@ -228,6 +228,11 @@ fn policy_or_build_path(path: &Path) -> bool {
             | "gradle.properties"
             | "settings.gradle"
             | "settings.gradle.kts"
+            | "go.mod"
+            | "go.work"
+            | "Cargo.toml"
+            | "clippy.toml"
+            | ".clippy.toml"
     ) || name.ends_with(".gradle")
         || name.ends_with(".gradle.kts")
         || path.components().any(|part| {

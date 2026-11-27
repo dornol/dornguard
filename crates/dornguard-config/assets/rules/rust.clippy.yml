@@ -1,0 +1,5 @@
+id: rust.clippy
+engine: clippy
+severity: warning
+description: Clippy reported a lint.
+fix: Follow the Clippy suggestion, or allow the lint in code with a reason when it does not apply.

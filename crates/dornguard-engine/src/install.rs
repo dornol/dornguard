@@ -85,12 +85,16 @@ pub(crate) fn engine_command(engine: EngineName) -> Result<Command> {
     }
     let executable = managed
         .or_else(|| path_lookup(engine.executable()))
-        .ok_or_else(|| {
-            miette!(
+        .ok_or_else(|| match engine {
+            EngineName::GoVet => miette!("Could not find go; install Go 1.22 or later and put it on PATH"),
+            EngineName::Clippy => miette!(
+                "Could not find cargo; install Rust with rustup and run 'rustup component add clippy'"
+            ),
+            _ => miette!(
                 "Could not find {}; run dornguard engines install {}",
                 engine.executable(),
                 engine.executable()
-            )
+            ),
         })?;
     Ok(Command::new(executable))
 }

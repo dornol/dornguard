@@ -8,7 +8,7 @@ use dornguard_config::{
     CONFIG_FILE, FLYWAY_RULE, JPA_RESPONSE_RULE, PartialParsing, ProjectConfig, Registry, Rule,
 };
 use dornguard_core::{EngineName, Failure, FailureKind, Outcome, Scope, SourceLanguage};
-use dornguard_engine::{Engine, Eslint, Pmd, Request, Semgrep, check_builtin};
+use dornguard_engine::{Clippy, Engine, Eslint, GoVet, Pmd, Request, Semgrep, check_builtin};
 use ignore::WalkBuilder;
 use miette::{IntoDiagnostic, Result, WrapErr, bail, miette};
 
@@ -494,6 +494,8 @@ async fn run_engines(
                 .await
             }
             EngineName::Eslint => Eslint.check(request).await,
+            EngineName::GoVet => GoVet.check(request).await,
+            EngineName::Clippy => Clippy.check(request).await,
             EngineName::Builtin => {
                 check_builtin(request, &config.format, &config.partial_parsing_policy()).await
             }
@@ -510,6 +512,8 @@ async fn run_engines(
             &[SourceLanguage::Javascript],
             &[SourceLanguage::Typescript],
             &[SourceLanguage::Jsp],
+            &[SourceLanguage::Go],
+            &[SourceLanguage::Rust],
         ] {
             let files: Vec<_> = files
                 .iter()
@@ -535,14 +539,18 @@ async fn run_engines(
         }
         outcome
     };
-    let (mut outcome, pmd, eslint, builtin) = tokio::join!(
+    let (mut outcome, pmd, eslint, go_vet, clippy, builtin) = tokio::join!(
         semgrep,
         check_group(EngineName::Pmd, files.to_vec(), |_| true),
         check_group(EngineName::Eslint, files.to_vec(), |_| true),
+        check_group(EngineName::GoVet, files.to_vec(), |_| true),
+        check_group(EngineName::Clippy, files.to_vec(), |_| true),
         check_group(EngineName::Builtin, files.to_vec(), |_| true),
     );
     outcome.merge(pmd);
     outcome.merge(eslint);
+    outcome.merge(go_vet);
+    outcome.merge(clippy);
     outcome.merge(builtin);
     outcome
 }

@@ -1,0 +1,5 @@
+id: go.vet
+engine: go_vet
+severity: error
+description: go vet reported a suspicious construct.
+fix: Fix the reported construct; go vet findings are almost always bugs.

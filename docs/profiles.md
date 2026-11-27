@@ -3,6 +3,8 @@
 Run `dornguard profiles list` to see available profiles and
 `dornguard profiles show NAME` for their direct rules and parent profiles.
 Use `dornguard rules explain ID` for the reason and guidance for a rule.
+The [rule catalog](rules.md) lists every built-in rule with its engine,
+severity, confidence and profiles.
 
 | Profile | Checks |
 | --- | --- |
@@ -19,8 +21,10 @@ Use `dornguard rules explain ID` for the reason and guidance for a rule.
 | `thymeleaf` | Spring bean references in restricted template attributes |
 | `thymeleaf-output-review` | Thymeleaf compatibility checks plus warnings for dynamic expressions rendered without HTML escaping |
 | `html` | Executable inline scripts and common inline event handlers |
-| `javascript` | ESLint checks for JavaScript evaluated from strings and async Promise executors |
+| `javascript` | ESLint checks for JavaScript and TypeScript, such as strings evaluated as code, unsafe `finally` and constant comparisons |
 | `jsp` | JSP scripting elements and JSTL output with escaping disabled |
+| `go` | `go vet` findings (see [Go and Rust](go-rust.md)) |
+| `rust` | `cargo clippy` and compiler lints (see [Go and Rust](go-rust.md)) |
 | `security` | Java CORS wildcards, SQL built from strings, weak hashes and ciphers, disabled TLS verification, and disabled CSRF protection |
 | `hexagonal` | Domain, application, and adapter dependencies |
 | `layered` | Controller, service, and repository dependencies |

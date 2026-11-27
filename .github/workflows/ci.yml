@@ -116,6 +116,8 @@ jobs:
         run: |
           cargo fmt --all -- --check
           cargo clippy --locked --workspace --all-targets -- -D warnings
+      - name: Show the Go toolchain the go profile tests use
+        run: go version
       - name: Test real engines
         run: cargo test --locked --workspace -- --include-ignored
       - name: Check the complete example

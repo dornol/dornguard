@@ -498,7 +498,12 @@ fn queue_module<'x>(
         .filter(|rule| {
             matches!(
                 rule.engine,
-                EngineName::Semgrep | EngineName::Pmd | EngineName::Eslint | EngineName::Builtin
+                EngineName::Semgrep
+                    | EngineName::Pmd
+                    | EngineName::Eslint
+                    | EngineName::GoVet
+                    | EngineName::Clippy
+                    | EngineName::Builtin
             )
         })
         .collect::<Vec<_>>();
@@ -1183,6 +1188,8 @@ fn source_dirs(
         SourceLanguage::Kotlin => Cow::Borrowed(&module.kotlin_source_dirs),
         SourceLanguage::Template => Cow::Owned(vec![module.project_dir.join(TEMPLATE_DIR)]),
         SourceLanguage::Jsp => Cow::Owned(vec![module.project_dir.join("src/main/webapp")]),
+        // Go and Rust sources are checked in source-only projects, not in JVM build modules.
+        SourceLanguage::Go | SourceLanguage::Rust => Cow::Owned(Vec::new()),
         SourceLanguage::Html | SourceLanguage::Javascript | SourceLanguage::Typescript => {
             let mut dirs = vec![
                 "src/main/resources/static",

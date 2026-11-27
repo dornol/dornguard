@@ -48,7 +48,11 @@ pub(crate) async fn doctor(profiles: &[String], config: Option<&Path>) -> Result
     for engine in engines.iter().copied().filter(|engine| {
         matches!(
             engine,
-            EngineName::Semgrep | EngineName::Pmd | EngineName::Eslint
+            EngineName::Semgrep
+                | EngineName::Pmd
+                | EngineName::Eslint
+                | EngineName::GoVet
+                | EngineName::Clippy
         )
     }) {
         match inspect(engine, root).await {

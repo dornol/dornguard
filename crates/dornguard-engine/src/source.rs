@@ -101,6 +101,26 @@ impl Source {
         (!prefix.ends_with('\r')).then(|| (line as u32, prefix.encode_utf16().count() as u32 + 1))
     }
 
+    /// The byte offset of a one-based line and one-based UTF-8 byte column.
+    pub fn byte_column_offset(&self, (line, column): (u32, u32)) -> Option<usize> {
+        let row = line.checked_sub(1)? as usize;
+        let start = *self.lines.get(row)?;
+        let end = self.lines.get(row + 1).copied().unwrap_or(self.text.len());
+        let offset = start + column.checked_sub(1)? as usize;
+        (offset <= end && self.text.is_char_boundary(offset)).then_some(offset)
+    }
+
+    /// The fingerprint of a byte range, or of its whole line when the range is empty.
+    pub fn range_fingerprint(&self, start: usize, end: usize) -> Option<String> {
+        if start < end {
+            return fragment_fingerprint(self.fragment(start, end)?);
+        }
+        let line = self.lines.partition_point(|line| *line <= start);
+        let from = self.lines[line.checked_sub(1)?];
+        let to = self.lines.get(line).copied().unwrap_or(self.text.len());
+        fragment_fingerprint(self.fragment(from, to)?)
+    }
+
     pub fn offset(&self, (line, column): (u32, u32)) -> Option<usize> {
         let row = line.checked_sub(1)? as usize;
         let start = *self.lines.get(row)?;

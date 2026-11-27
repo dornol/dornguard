@@ -254,6 +254,30 @@ async fn install_engines(engine: Option<InstallTarget>) -> Result<u8> {
     Ok(0)
 }
 
+/// The configuration `init` writes: the `java` profile, or the `go` and `rust`
+/// profiles for a Go module or Cargo package without a JVM build.
+fn initial_config(root: &Path) -> String {
+    let jvm = [
+        "pom.xml",
+        "build.gradle",
+        "build.gradle.kts",
+        "settings.gradle",
+        "settings.gradle.kts",
+    ]
+    .iter()
+    .any(|name| root.join(name).is_file());
+    let profiles = [("go.mod", "go"), ("Cargo.toml", "rust")]
+        .into_iter()
+        .filter(|(manifest, _)| root.join(manifest).is_file())
+        .map(|(_, profile)| profile)
+        .collect::<Vec<_>>();
+    if jvm || profiles.is_empty() {
+        DEFAULT_CONFIG.to_owned()
+    } else {
+        format!("version: 1\nprofiles: [{}]\n", profiles.join(", "))
+    }
+}
+
 async fn dispatch(action: Action) -> Result<u8> {
     match action {
         Action::Check(args) => Box::pin(run_check(args)).await,
@@ -270,7 +294,8 @@ async fn dispatch(action: Action) -> Result<u8> {
                 .open(CONFIG_FILE)
                 .into_diagnostic()
                 .wrap_err_with(|| format!("Could not create {CONFIG_FILE}"))?;
-            if let Err(error) = (&file).write_all(DEFAULT_CONFIG.as_bytes()) {
+            let contents = initial_config(Path::new("."));
+            if let Err(error) = (&file).write_all(contents.as_bytes()) {
                 drop(file);
                 let _ = fs::remove_file(CONFIG_FILE);
                 return Err(error)
@@ -305,6 +330,8 @@ async fn dispatch(action: Action) -> Result<u8> {
                 EngineName::Semgrep,
                 EngineName::Pmd,
                 EngineName::Eslint,
+                EngineName::GoVet,
+                EngineName::Clippy,
                 EngineName::Builtin,
             ] {
                 println!("{} {}", engine.executable(), supported_version(engine));

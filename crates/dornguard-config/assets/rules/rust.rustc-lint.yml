@@ -1,0 +1,5 @@
+id: rust.rustc-lint
+engine: clippy
+severity: warning
+description: The Rust compiler reported a lint warning.
+fix: Fix the warning, or allow the lint in code with a reason when it does not apply.

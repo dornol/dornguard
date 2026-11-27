@@ -15,10 +15,12 @@ use tokio::time::{Instant, timeout_at};
 mod archunit;
 mod eslint;
 mod format;
+mod go_vet;
 mod install;
 mod java_names;
 mod jspecify;
 mod pmd;
+mod rust_clippy;
 mod semgrep;
 mod source;
 mod spring;
@@ -26,8 +28,10 @@ mod thymeleaf;
 
 pub use archunit::{ArchModule, check_architecture, inspect_archunit, maven_model_path};
 pub use eslint::Eslint;
+pub use go_vet::GoVet;
 pub use install::{inspect_java, install, install_osv_scanner, osv_scanner_executable};
 pub use pmd::Pmd;
+pub use rust_clippy::Clippy;
 pub use semgrep::Semgrep;
 
 pub const SEMGREP_VERSION: &str = "1.182.0";
@@ -147,6 +151,8 @@ pub fn supported_version(engine: EngineName) -> &'static str {
         EngineName::Builtin => "bundled",
         EngineName::Archunit => "21",
         EngineName::Gradle => "9.9.1",
+        EngineName::GoVet => "Go 1.22 or later",
+        EngineName::Clippy => "Rust with the Clippy component",
     }
 }
 
@@ -159,12 +165,22 @@ pub async fn inspect(engine: EngineName, root: &Path) -> Result<()> {
 
 async fn check_version(engine: EngineName, root: &Path, deadline: Instant) -> Result<()> {
     let mut command = command(engine, root)?;
-    command.arg("--version");
+    match engine {
+        EngineName::GoVet => command.arg("version"),
+        EngineName::Clippy => command.args(["clippy", "--version"]),
+        _ => command.arg("--version"),
+    };
     if engine == EngineName::Semgrep {
         command.args(["--disable-version-check", "--metrics=off"]);
     }
     let version = run_command(engine, &mut command, deadline).await?;
     if !version.status.success() {
+        if engine == EngineName::Clippy {
+            bail!(
+                "cargo clippy is not available ({}); install it with 'rustup component add clippy'",
+                version.status
+            );
+        }
         bail!(
             "{} version check failed ({})",
             engine.executable(),
@@ -179,6 +195,16 @@ async fn check_version(engine: EngineName, root: &Path, deadline: Instant) -> Re
             line.strip_prefix("PMD ")
                 .and_then(|rest| rest.split_whitespace().next())
         }),
+        // go version go1.27.4 darwin/arm64
+        EngineName::GoVet => text
+            .split_whitespace()
+            .find_map(|word| word.strip_prefix("go1."))
+            .map(|rest| rest.trim()),
+        // clippy 0.1.95 (59807616e1 2026-04-14)
+        EngineName::Clippy => text
+            .lines()
+            .find_map(|line| line.strip_prefix("clippy "))
+            .and_then(|rest| rest.split_whitespace().next()),
         EngineName::Archunit | EngineName::Builtin | EngineName::Gradle => None,
     };
     let Some(detected) = detected.filter(|value| !value.is_empty()) else {
@@ -188,6 +214,15 @@ async fn check_version(engine: EngineName, root: &Path, deadline: Instant) -> Re
         detected
             .split_once('.')
             .is_some_and(|(major, _)| matches!(major, "9" | "10"))
+    } else if engine == EngineName::GoVet {
+        // `detected` is the part after "go1.", such as "27.4" or "22rc1".
+        let minor = detected
+            .split(|c: char| !c.is_ascii_digit())
+            .next()
+            .and_then(|minor| minor.parse::<u32>().ok());
+        minor.is_some_and(|minor| minor >= 22)
+    } else if engine == EngineName::Clippy {
+        true
     } else {
         detected == supported_version(engine)
     };
@@ -223,8 +258,11 @@ fn command(engine: EngineName, root: &Path) -> Result<Command> {
     if engine == EngineName::Eslint {
         command.env_remove("NODE_OPTIONS");
     }
+    // The Go and Cargo environment (GOFLAGS, CARGO_HOME, CARGO_TARGET_DIR, ...)
+    // configures the project's own toolchain, so it is kept.
     let prefix = format!("{}_", engine.executable().to_ascii_uppercase());
-    for (key, _) in std::env::vars_os() {
+    let scrub = !matches!(engine, EngineName::GoVet | EngineName::Clippy);
+    for (key, _) in std::env::vars_os().filter(|_| scrub) {
         if key
             .to_string_lossy()
             .to_ascii_uppercase()
@@ -297,6 +335,15 @@ fn relative_path(root: &Path, path: &Path) -> Option<PathBuf> {
         }
     }
     (!normalized.as_os_str().is_empty()).then_some(normalized)
+}
+
+/// The directory of the nearest `manifest` file above a project-relative `file`,
+/// relative to `root`, without leaving `root`.
+fn nearest_manifest(root: &Path, file: &Path, manifest: &str) -> Option<PathBuf> {
+    file.parent()?
+        .ancestors()
+        .find(|directory| root.join(directory).join(manifest).is_file())
+        .map(Path::to_path_buf)
 }
 
 fn display_path(path: &Path) -> String {
