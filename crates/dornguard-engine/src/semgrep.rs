@@ -194,11 +194,12 @@ fn literal_markup_hint(root: &Path, path: &Path, line: u64, column: u64) -> Opti
     let line_index = usize::try_from(line.checked_sub(1)?).ok()?;
     let column_index = usize::try_from(column.checked_sub(1)?).ok()?;
     let source_line = text.lines().nth(line_index)?;
-    let rest: String = source_line.chars().skip(column_index).collect();
+    // Semgrep reports columns as UTF-8 byte offsets, not characters.
+    let rest = source_line.get(column_index..)?;
     match rest.chars().next()? {
         '>' => Some("A literal `>` in text should be written as `&gt;`.".to_owned()),
         '&' => Some("A literal `&` in text should be written as `&amp;`.".to_owned()),
-        '<' => duplicate_closing_tag(&text, line_index, &rest),
+        '<' => duplicate_closing_tag(&text, line_index, rest),
         _ => None,
     }
 }
@@ -522,5 +523,48 @@ fn normalize(
         outcome
             .scanned_files
             .extend(scanned.difference(&state.failed_files).cloned());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn hint_for(source: &str, line: u64, column: u64) -> std::io::Result<Option<String>> {
+        let directory = tempfile::tempdir()?;
+        std::fs::write(directory.path().join("page.html"), source)?;
+        Ok(literal_markup_hint(
+            directory.path(),
+            Path::new("page.html"),
+            line,
+            column,
+        ))
+    }
+
+    #[test]
+    fn hint_uses_byte_columns_after_multibyte_text() -> std::io::Result<()> {
+        // Semgrep columns are 1-based UTF-8 byte offsets: the `>` is at byte 12.
+        let hint = hint_for("<title>가 > 나</title>\n", 1, 12)?;
+        assert_eq!(
+            hint.as_deref(),
+            Some("A literal `>` in text should be written as `&gt;`.")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn hint_for_ampersand_after_korean_text() -> std::io::Result<()> {
+        let hint = hint_for("<th>대출일 & 예약일</th>\n", 1, 15)?;
+        assert_eq!(
+            hint.as_deref(),
+            Some("A literal `&` in text should be written as `&amp;`.")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn column_inside_a_character_gives_no_hint() -> std::io::Result<()> {
+        assert_eq!(hint_for("<p>가</p>\n", 1, 5)?, None);
+        Ok(())
     }
 }
