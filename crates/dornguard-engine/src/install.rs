@@ -9,7 +9,9 @@ use miette::{IntoDiagnostic, Result, WrapErr, bail, miette};
 use sha2::{Digest, Sha256};
 use tokio::process::Command;
 
-use crate::{ESLINT_INSTALL_VERSION, PMD_VERSION, SEMGREP_VERSION, supported_version};
+use crate::{
+    ESLINT_INSTALL_VERSION, OSV_SCANNER_VERSION, PMD_VERSION, SEMGREP_VERSION, supported_version,
+};
 
 const MANAGED: &str = ".dornguard-managed";
 const READY: &str = ".dornguard-ready";
@@ -17,12 +19,13 @@ const ESLINT_PACKAGE: &str = include_str!("../engines/eslint/package.json");
 const ESLINT_LOCK: &str = include_str!("../engines/eslint/package-lock.json");
 const PMD_CHECKSUM: &str = "d27177c185b837fa57f097e482d1253468aa035379c5eb2671fa0a279109b179";
 
-pub async fn install(engine: EngineName) -> Result<PathBuf> {
+/// Create the install root and take the exclusive install lock until the guard drops.
+async fn lock_install_root() -> Result<(PathBuf, File)> {
     let root = install_root()
         .ok_or_else(|| miette!("Set DORNGUARD_ENGINE_DIR to a tool installation directory"))?;
     fs::create_dir_all(&root).into_diagnostic()?;
     let root = dunce::canonicalize(root).into_diagnostic()?;
-    let _guard = tokio::task::spawn_blocking({
+    let guard = tokio::task::spawn_blocking({
         let root = root.clone();
         move || -> Result<File> {
             let guard = File::options()
@@ -37,6 +40,11 @@ pub async fn install(engine: EngineName) -> Result<PathBuf> {
     })
     .await
     .into_diagnostic()??;
+    Ok((root, guard))
+}
+
+pub async fn install(engine: EngineName) -> Result<PathBuf> {
+    let (root, _guard) = lock_install_root().await?;
 
     let destination = engine_directory(&root, engine);
     if managed_engine(&root, engine).is_some() {
@@ -209,6 +217,140 @@ fn engine_directory(root: &Path, engine: EngineName) -> PathBuf {
         supported_version(engine)
     };
     root.join(format!("{}-{version}", engine.executable()))
+}
+
+/// Release asset and SHA-256 for OSV-Scanner on one platform, from the release's
+/// published `osv-scanner_SHA256SUMS`.
+fn osv_scanner_asset(os: &str, arch: &str) -> Option<(&'static str, &'static str)> {
+    match (os, arch) {
+        ("macos", "x86_64") => Some((
+            "osv-scanner_darwin_amd64",
+            "e82c5df7ab0a42dff29a1cd0660711447b56b4c0483ff66ad8634df10fd81a45",
+        )),
+        ("macos", "aarch64") => Some((
+            "osv-scanner_darwin_arm64",
+            "d4926ef8da134332543be276dff157e4c170f99ad91fc48e89448a8816bdf70b",
+        )),
+        ("linux", "x86_64") => Some((
+            "osv-scanner_linux_amd64",
+            "160c6253e2922e9e0a6a9771c5c4c40a4b3c6090b34a3cdd5e80c96cc2e4218b",
+        )),
+        ("linux", "aarch64") => Some((
+            "osv-scanner_linux_arm64",
+            "4061ef4c021ed3c47f203b818f337e351336cc5cd67c0274fc36bd1dfc728dd7",
+        )),
+        ("windows", "x86_64") => Some((
+            "osv-scanner_windows_amd64.exe",
+            "9964ed64ec9a387391eb4cc006ad5c531154821aef29b793e02c448de4686438",
+        )),
+        ("windows", "aarch64") => Some((
+            "osv-scanner_windows_arm64.exe",
+            "3e630381c1f1fd3c9c4d447e6ff2ef6c737083371722773db8337eead0f97962",
+        )),
+        _ => None,
+    }
+}
+
+fn osv_scanner_directory(root: &Path) -> PathBuf {
+    root.join(format!("osv-scanner-{OSV_SCANNER_VERSION}"))
+}
+
+fn managed_osv_scanner(root: &Path) -> Option<PathBuf> {
+    let directory = osv_scanner_directory(root);
+    let binary = directory.join(if cfg!(windows) {
+        "osv-scanner.exe"
+    } else {
+        "osv-scanner"
+    });
+    (directory.join(READY).is_file() && binary.is_file()).then_some(binary)
+}
+
+/// The OSV-Scanner to run: one on `PATH`, else the managed install, else the bare
+/// name so that a missing scanner reports a start failure.
+pub fn osv_scanner_executable() -> PathBuf {
+    let name = if cfg!(windows) {
+        "osv-scanner.exe"
+    } else {
+        "osv-scanner"
+    };
+    if path_lookup(name).is_some() {
+        return PathBuf::from(name);
+    }
+    install_root()
+        .and_then(|root| managed_osv_scanner(&root))
+        .and_then(|path| dunce::canonicalize(path).ok())
+        .unwrap_or_else(|| PathBuf::from(name))
+}
+
+/// Download the pinned OSV-Scanner release and verify it against its recorded SHA-256.
+pub async fn install_osv_scanner() -> Result<PathBuf> {
+    let (root, _guard) = lock_install_root().await?;
+    let destination = osv_scanner_directory(&root);
+    if managed_osv_scanner(&root).is_some() {
+        return Ok(destination);
+    }
+    let (asset, checksum) = osv_scanner_asset(std::env::consts::OS, std::env::consts::ARCH)
+        .ok_or_else(|| miette!("No verified OSV-Scanner release is available on this platform"))?;
+    if destination.exists() {
+        if !destination.join(MANAGED).is_file() {
+            bail!(
+                "Refusing to overwrite an unmanaged engine directory at {}",
+                destination.display()
+            );
+        }
+        fs::remove_dir_all(&destination).into_diagnostic()?;
+    }
+    let temporary = tempfile::tempdir_in(&root).into_diagnostic()?;
+    let download = temporary.path().join(asset);
+    run(
+        Command::new("curl")
+            .args([
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--location",
+                "--proto",
+                "=https",
+                "--proto-redir",
+                "=https",
+                "--output",
+            ])
+            .arg(&download)
+            .arg(format!(
+                "https://github.com/google/osv-scanner/releases/download/v{OSV_SCANNER_VERSION}/{asset}"
+            )),
+        "download OSV-Scanner",
+    )
+    .await?;
+    verify_checksum(&download, checksum).wrap_err("OSV-Scanner download verification failed")?;
+
+    fs::create_dir(&destination).into_diagnostic()?;
+    File::create(destination.join(MANAGED)).into_diagnostic()?;
+    let binary = destination.join(if cfg!(windows) {
+        "osv-scanner.exe"
+    } else {
+        "osv-scanner"
+    });
+    fs::copy(&download, &binary).into_diagnostic()?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&binary, fs::Permissions::from_mode(0o755)).into_diagnostic()?;
+    }
+    let output = tokio::time::timeout(
+        Duration::from_secs(30),
+        Command::new(&binary).arg("--version").output(),
+    )
+    .await
+    .into_diagnostic()
+    .wrap_err("OSV-Scanner version check timed out")?
+    .into_diagnostic()
+    .wrap_err("Could not run the downloaded OSV-Scanner")?;
+    if !String::from_utf8_lossy(&output.stdout).contains(OSV_SCANNER_VERSION) {
+        bail!("Downloaded OSV-Scanner is not version {OSV_SCANNER_VERSION}");
+    }
+    File::create(destination.join(READY)).into_diagnostic()?;
+    Ok(destination)
 }
 
 /// The managed ESLint, used only when neither the project nor `PATH` provides one.
@@ -622,5 +764,38 @@ mod eslint_tests {
             lock["packages"]["node_modules/eslint"]["version"].as_str(),
             Some(ESLINT_INSTALL_VERSION)
         );
+    }
+}
+
+#[cfg(test)]
+mod osv_tests {
+    use super::*;
+
+    #[test]
+    fn every_supported_platform_has_a_sha256() {
+        for (os, arch) in [
+            ("macos", "x86_64"),
+            ("macos", "aarch64"),
+            ("linux", "x86_64"),
+            ("linux", "aarch64"),
+            ("windows", "x86_64"),
+            ("windows", "aarch64"),
+        ] {
+            let (asset, checksum) = osv_scanner_asset(os, arch).unwrap_or(("", ""));
+            assert!(asset.starts_with("osv-scanner_"), "{os} {arch}");
+            assert_eq!(checksum.len(), 64, "{os} {arch}");
+            assert!(checksum.bytes().all(|byte| byte.is_ascii_hexdigit()));
+        }
+        assert!(osv_scanner_asset("freebsd", "x86_64").is_none());
+    }
+
+    #[test]
+    fn a_download_with_the_wrong_checksum_is_rejected() -> std::io::Result<()> {
+        let directory = tempfile::tempdir()?;
+        let file = directory.path().join("osv-scanner");
+        fs::write(&file, b"not the released binary")?;
+        let (_, checksum) = osv_scanner_asset("linux", "x86_64").unwrap_or(("", ""));
+        assert!(verify_checksum(&file, checksum).is_err());
+        Ok(())
     }
 }

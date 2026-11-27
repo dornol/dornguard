@@ -29,7 +29,8 @@ dornguard doctor
 ```
 
 To install an individual engine, add `semgrep`, `pmd` or `eslint` to the
-install command. Semgrep requires Python 3.10 through 3.14. Set `DORNGUARD_PYTHON`
+install command. `osv-scanner`, which `dornguard audit` uses, installs the same
+way and downloads with curl (see [dependency audit](dependency-audit.md)). Semgrep requires Python 3.10 through 3.14. Set `DORNGUARD_PYTHON`
 to select an executable. PMD requires JDK 21 and uses curl and unzip
 (`tar.exe` on Windows) for managed installation.
 

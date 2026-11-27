@@ -289,7 +289,7 @@ async fn audit_inventory(reactor: &Reactor, working: &Path) -> Result<Vec<Findin
 
     let output = tokio::time::timeout(
         Duration::from_secs(120),
-        Command::new("osv-scanner")
+        Command::new(dornguard_engine::osv_scanner_executable())
             .current_dir(scan_dir)
             .kill_on_drop(true)
             .args([
@@ -307,7 +307,7 @@ async fn audit_inventory(reactor: &Reactor, working: &Path) -> Result<Vec<Findin
     .into_diagnostic()
     .wrap_err("OSV-Scanner timed out")?
     .into_diagnostic()
-    .wrap_err("Could not start OSV-Scanner. Install OSV-Scanner v2 on PATH")?;
+    .wrap_err("Could not start OSV-Scanner. Install OSV-Scanner v2 on PATH, or run dornguard engines install osv-scanner")?;
     if !matches!(output.status.code(), Some(0 | 1)) {
         let stderr = String::from_utf8_lossy(&output.stderr);
         bail!("OSV-Scanner failed ({})\n{}", output.status, stderr.trim());

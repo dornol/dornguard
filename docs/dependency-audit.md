@@ -2,7 +2,11 @@
 
 Run the audit from the reactor directory containing the root `pom.xml`.
 Install [OSV-Scanner v2](https://google.github.io/osv-scanner/installation/)
-and put it on PATH. DornGuard uses the Maven Wrapper when the directory
+and put it on PATH, or run `dornguard engines install osv-scanner` to download
+the pinned release (2.7.0) from GitHub into DornGuard's engine directory. The
+download is verified against a SHA-256 recorded in DornGuard for each
+supported platform (macOS, Linux and Windows on x86-64 and ARM64) and is
+rejected on any mismatch. An OSV-Scanner on PATH takes precedence. DornGuard uses the Maven Wrapper when the directory
 contains one and otherwise uses Maven on PATH.
 
 ```sh

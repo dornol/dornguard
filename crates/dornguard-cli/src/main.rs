@@ -210,10 +210,27 @@ async fn create_baseline(
 }
 
 async fn install_engines(engine: Option<InstallTarget>) -> Result<u8> {
+    if let Some(InstallTarget::OsvScanner) = engine {
+        return match dornguard_engine::install_osv_scanner().await {
+            Ok(path) => {
+                println!(
+                    "osv-scanner {} installed at {}",
+                    dornguard_engine::OSV_SCANNER_VERSION,
+                    path.display()
+                );
+                Ok(0)
+            }
+            Err(error) => {
+                eprintln!("Could not install osv-scanner: {error:#}");
+                Ok(3)
+            }
+        };
+    }
     let engines: &[EngineName] = match engine {
         Some(InstallTarget::Semgrep) => &[EngineName::Semgrep],
         Some(InstallTarget::Pmd) => &[EngineName::Pmd],
         Some(InstallTarget::Eslint) => &[EngineName::Eslint],
+        Some(InstallTarget::OsvScanner) => &[],
         None => &[EngineName::Semgrep, EngineName::Pmd],
     };
     for &engine in engines {

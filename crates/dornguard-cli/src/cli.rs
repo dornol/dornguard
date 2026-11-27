@@ -222,6 +222,7 @@ pub(crate) enum InstallTarget {
     Semgrep,
     Pmd,
     Eslint,
+    OsvScanner,
 }
 
 #[derive(Subcommand)]

@@ -26,7 +26,7 @@ mod thymeleaf;
 
 pub use archunit::{ArchModule, check_architecture, inspect_archunit, maven_model_path};
 pub use eslint::Eslint;
-pub use install::{inspect_java, install};
+pub use install::{inspect_java, install, install_osv_scanner, osv_scanner_executable};
 pub use pmd::Pmd;
 pub use semgrep::Semgrep;
 
@@ -34,6 +34,8 @@ pub const SEMGREP_VERSION: &str = "1.182.0";
 pub const PMD_VERSION: &str = "7.29.0";
 /// The ESLint release `engines install eslint` installs. Any 9.x or 10.x already
 /// on the project or `PATH` is also accepted.
+/// The OSV-Scanner release `engines install osv-scanner` installs.
+pub const OSV_SCANNER_VERSION: &str = "2.7.0";
 pub const ESLINT_INSTALL_VERSION: &str = "10.14.0";
 
 #[derive(Clone, Copy)]
