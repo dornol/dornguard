@@ -306,6 +306,9 @@ impl Rule {
             return false;
         }
         match self.engine {
+            EngineName::Eslint if self.uses_type_information() => {
+                language == SourceLanguage::Typescript
+            }
             EngineName::Eslint => matches!(
                 language,
                 SourceLanguage::Javascript | SourceLanguage::Typescript
@@ -359,6 +362,15 @@ impl Rule {
 
     pub fn applies_to_java_tests(&self) -> bool {
         !self.skip_java_tests && self.applies_to(SourceLanguage::Java)
+    }
+
+    /// An ESLint rule from typescript-eslint that reads TypeScript type information, so it
+    /// runs only on TypeScript sources that a tsconfig.json covers.
+    pub fn uses_type_information(&self) -> bool {
+        self.engine == EngineName::Eslint
+            && self.implementation.as_ref().is_some_and(|implementation| {
+                implementation.rule_id.starts_with("@typescript-eslint/")
+            })
     }
 
     pub fn implementation(&self) -> Result<&Implementation> {

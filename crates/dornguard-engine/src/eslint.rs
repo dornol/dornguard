@@ -35,16 +35,22 @@ async fn scan(request: Request<'_>, outcome: &mut Outcome) -> Result<()> {
     let deadline = Instant::now() + Duration::from_secs(120);
     check_version(ENGINE, request.root, deadline).await?;
     let temp = tempfile::tempdir().into_diagnostic()?;
-    let rules = request
+    let (typed, plain): (Vec<&Rule>, Vec<&Rule>) = request
         .rules
         .iter()
-        .map(|rule| Ok((rule.implementation()?.rule_id.as_str(), *rule)))
-        .collect::<Result<BTreeMap<_, _>>>()?;
-    let typescript = request
+        .copied()
+        .partition(|rule| rule.uses_type_information());
+    let plain = rule_map(&plain)?;
+    let typed = rule_map(&typed)?;
+    let typescript_files = request
         .files
         .iter()
-        .any(|file| SourceLanguage::of(file) == Some(SourceLanguage::Typescript));
-    let parser = if typescript {
+        .filter(|file| SourceLanguage::of(file) == Some(SourceLanguage::Typescript))
+        .cloned()
+        .collect::<Vec<_>>();
+    let parser = if typescript_files.is_empty() {
+        None
+    } else {
         Some(
             crate::install::typescript_parser_base(request.root).ok_or_else(|| {
                 miette!(
@@ -53,13 +59,88 @@ async fn scan(request: Request<'_>, outcome: &mut Outcome) -> Result<()> {
                 )
             })?,
         )
-    } else {
-        None
     };
-    let config = write_config(temp.path(), &rules, parser.as_deref())?;
     let mut sources = Sources::default();
+    if !plain.is_empty() {
+        let config = write_config(temp.path(), &plain, parser.as_deref())?;
+        lint(
+            request,
+            request.files,
+            &config,
+            &plain,
+            false,
+            deadline,
+            &mut sources,
+            outcome,
+        )
+        .await?;
+    }
+    if !typed.is_empty() && !typescript_files.is_empty() {
+        let base = parser
+            .as_deref()
+            .filter(|base| {
+                base.join("node_modules/@typescript-eslint/eslint-plugin/package.json")
+                    .is_file()
+            })
+            .ok_or_else(|| {
+                miette!(
+                    "Rules that use TypeScript type information need @typescript-eslint/eslint-plugin \
+                     next to @typescript-eslint/parser; run 'dornguard engines install eslint' again \
+                     or add it to the project's devDependencies"
+                )
+            })?;
+        let (covered, uncovered): (Vec<_>, Vec<_>) = typescript_files
+            .into_iter()
+            .partition(|file| has_tsconfig(request.root, file));
+        for file in &uncovered {
+            outcome.scanned_files.insert(file.clone());
+        }
+        let mut skipped = uncovered.len();
+        if !covered.is_empty() {
+            let config = write_typed_config(temp.path(), &typed, base, request.root)?;
+            skipped += lint(
+                request,
+                &covered,
+                &config,
+                &typed,
+                true,
+                deadline,
+                &mut sources,
+                outcome,
+            )
+            .await?;
+        }
+        if skipped > 0 {
+            outcome.analysis_notes.insert(format!(
+                "{skipped} TypeScript {} not part of a tsconfig.json project, so rules that use type information ({}) skip {}.",
+                if skipped == 1 { "file is" } else { "files are" },
+                typed
+                    .values()
+                    .map(|rule| rule.id.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                if skipped == 1 { "it" } else { "them" },
+            ));
+        }
+    }
+    Ok(())
+}
 
-    for batch in request.files.chunk_by(budgeted_batch()) {
+/// Run ESLint over `files` in batches. Returns the number of files the TypeScript project
+/// service did not find, which typed runs skip instead of failing.
+#[allow(clippy::too_many_arguments)]
+async fn lint(
+    request: Request<'_>,
+    files: &[PathBuf],
+    config: &std::path::Path,
+    rules: &BTreeMap<String, &Rule>,
+    typed: bool,
+    deadline: Instant,
+    sources: &mut Sources,
+    outcome: &mut Outcome,
+) -> Result<usize> {
+    let mut skipped = 0;
+    for batch in files.chunk_by(budgeted_batch()) {
         let mut lint = command(ENGINE, request.root)?;
         lint.args([
             "--no-config-lookup",
@@ -68,7 +149,7 @@ async fn scan(request: Request<'_>, outcome: &mut Outcome) -> Result<()> {
             "--format=json",
             "--config",
         ])
-        .arg(&config)
+        .arg(config)
         .arg("--")
         .args(
             batch
@@ -87,7 +168,7 @@ async fn scan(request: Request<'_>, outcome: &mut Outcome) -> Result<()> {
             .into_diagnostic()
             .wrap_err("ESLint returned missing or invalid JSON")?;
         for report in reports {
-            record_report(request.root, batch, report, &rules, &mut sources, outcome)?;
+            skipped += record_report(request.root, batch, report, rules, typed, sources, outcome)?;
         }
         if batch
             .iter()
@@ -97,7 +178,22 @@ async fn scan(request: Request<'_>, outcome: &mut Outcome) -> Result<()> {
             bail!("ESLint skipped requested source files");
         }
     }
-    Ok(())
+    Ok(skipped)
+}
+
+fn rule_map<'r>(rules: &[&'r Rule]) -> Result<BTreeMap<String, &'r Rule>> {
+    rules
+        .iter()
+        .map(|rule| Ok((rule.implementation()?.rule_id.clone(), *rule)))
+        .collect()
+}
+
+/// Whether a tsconfig.json in the file's directory or an ancestor within the project
+/// can describe the file.
+fn has_tsconfig(root: &std::path::Path, file: &std::path::Path) -> bool {
+    file.ancestors()
+        .skip(1)
+        .any(|dir| root.join(dir).join("tsconfig.json").is_file())
 }
 
 /// Convert one ESLint file report into diagnostics, failures and coverage.
@@ -105,15 +201,29 @@ fn record_report(
     root: &std::path::Path,
     batch: &[PathBuf],
     report: FileReport,
-    rules: &BTreeMap<&str, &Rule>,
+    rules: &BTreeMap<String, &Rule>,
+    typed: bool,
     sources: &mut Sources,
     outcome: &mut Outcome,
-) -> Result<()> {
+) -> Result<usize> {
     let expected = batch.iter().collect::<BTreeSet<_>>();
     let path = relative_path(root, &report.file_path)
         .filter(|path| expected.contains(path))
         .ok_or_else(|| miette!("ESLint returned a file outside the requested sources"))?;
     let mut parsed = true;
+    // typescript-eslint 8 reports a file outside every tsconfig.json project as
+    // "<path> was not found by the project service".
+    if typed
+        && report.messages.iter().any(|finding| {
+            finding.fatal
+                && finding
+                    .message
+                    .contains("was not found by the project service")
+        })
+    {
+        outcome.scanned_files.insert(path);
+        return Ok(1);
+    }
     for finding in report.messages {
         if finding.fatal {
             let mut failure = engine_failure(ENGINE, finding.message);
@@ -174,7 +284,7 @@ fn record_report(
     if parsed {
         outcome.scanned_files.insert(path);
     }
-    Ok(())
+    Ok(0)
 }
 
 /// TypeScript sources, which ESLint does not lint unless a config names them.
@@ -185,13 +295,13 @@ const TYPESCRIPT_FILES: [&str; 4] = ["**/*.ts", "**/*.mts", "**/*.cts", "**/*.ts
 /// without type information, so only syntax-based rules apply.
 fn write_config(
     dir: &std::path::Path,
-    rules: &BTreeMap<&str, &Rule>,
+    rules: &BTreeMap<String, &Rule>,
     parser: Option<&std::path::Path>,
 ) -> Result<PathBuf> {
     let config = dir.join("eslint.config.mjs");
     let enabled = rules
         .keys()
-        .map(|id| (*id, "error"))
+        .map(|id| (id.as_str(), "error"))
         .collect::<BTreeMap<_, _>>();
     let timer_globals = [
         "setTimeout",
@@ -226,6 +336,41 @@ fn write_config(
             )
         }
     };
+    std::fs::write(&config, source)
+        .into_diagnostic()
+        .wrap_err("Could not write ESLint configuration")?;
+    Ok(config)
+}
+
+/// Write the ESLint flat config for typescript-eslint rules that read type information.
+/// The project service finds each file's tsconfig.json below `root`; the parser and the
+/// plugin are resolved from `base`.
+fn write_typed_config(
+    dir: &std::path::Path,
+    rules: &BTreeMap<String, &Rule>,
+    base: &std::path::Path,
+    root: &std::path::Path,
+) -> Result<PathBuf> {
+    let config = dir.join("eslint.typed.config.mjs");
+    let enabled = rules
+        .keys()
+        .map(|id| (id.as_str(), "error"))
+        .collect::<BTreeMap<_, _>>();
+    let anchor =
+        serde_json::to_string(&base.join("package.json").to_string_lossy()).into_diagnostic()?;
+    let root = serde_json::to_string(&root.to_string_lossy()).into_diagnostic()?;
+    let files = json!(TYPESCRIPT_FILES);
+    let rules = json!(enabled);
+    let source = format!(
+        "import {{ createRequire }} from \"node:module\";\n\
+         const require = createRequire({anchor});\n\
+         const parser = require(\"@typescript-eslint/parser\");\n\
+         const plugin = require(\"@typescript-eslint/eslint-plugin\");\n\
+         export default [\n\
+         {{ files: {files}, languageOptions: {{ parser, parserOptions: {{ projectService: true, tsconfigRootDir: {root} }} }}, plugins: {{ \"@typescript-eslint\": plugin }}, rules: {rules} }},\n\
+         {{ files: [\"**/*.tsx\"], languageOptions: {{ parserOptions: {{ ecmaFeatures: {{ jsx: true }} }} }} }},\n\
+         ];\n"
+    );
     std::fs::write(&config, source)
         .into_diagnostic()
         .wrap_err("Could not write ESLint configuration")?;

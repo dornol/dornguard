@@ -582,6 +582,12 @@ async fn install_eslint(destination: &Path) -> Result<()> {
     {
         bail!("The TypeScript parser for ESLint was not installed");
     }
+    if !destination
+        .join("node_modules/@typescript-eslint/eslint-plugin/package.json")
+        .is_file()
+    {
+        bail!("The typescript-eslint plugin for ESLint was not installed");
+    }
     File::create(destination.join(READY)).into_diagnostic()?;
     Ok(())
 }

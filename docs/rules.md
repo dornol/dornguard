@@ -125,6 +125,7 @@ confirm a finding before fixing it.
 | [`spring.transactional-self-invocation`](#springtransactional-self-invocation) | builtin | warning | high | `spring-boot` |
 | [`thymeleaf.restricted-bean-access`](#thymeleafrestricted-bean-access) | semgrep | error | high | `thymeleaf` |
 | [`thymeleaf.unescaped-output`](#thymeleafunescaped-output) | semgrep | warning | medium | `thymeleaf-output-review` |
+| [`typescript.no-floating-promises`](#typescriptno-floating-promises) | eslint | warning | high | `typescript-review` |
 
 ## architecture.adapter-isolation
 
@@ -2813,4 +2814,29 @@ Good:
 
 ```html
 <div th:text="${comment.body}"></div>
+```
+
+## typescript.no-floating-promises
+
+A Promise is neither awaited nor handled, so its rejection goes unnoticed and the code after it does not wait for it.
+
+- Reports: An expression statement whose value TypeScript types as a Promise, or an array of Promises, that is not awaited, returned, or given a rejection handler (typescript-eslint no-floating-promises, with type information; typescript-review profile).
+- Not reported: A call prefixed with void, a Promise with .catch() or a two-argument .then(), and TypeScript files that no tsconfig.json project includes; the report notes how many files that skips. Values whose types cannot be resolved, such as imports from packages that are not installed.
+- Fix: Await the Promise, return it, or handle its rejection with .catch() or a two-argument .then(). Mark an intentional fire-and-forget call with the void operator.
+- Suppression: Prefer void for an intentional fire-and-forget call. Suppress only when a framework handles the Promise in a way the types do not show; say so in the reason.
+
+Bad:
+
+```java
+async function save(order: Order): Promise<void> { /* ... */ }
+
+save(order);
+```
+
+Good:
+
+```java
+await save(order);
+// or, intentionally in the background:
+void save(order).catch(report);
 ```

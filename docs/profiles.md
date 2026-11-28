@@ -22,6 +22,7 @@ What each rule reports, with an example and when it may be suppressed, is in
 | `html`, `javascript`, `jsp`, `thymeleaf` | Web sources; see [web checks](web-checks.md) |
 | `go`, `rust` | Go with `go vet`, Rust with `cargo clippy`; see [Go and Rust](go-rust.md) |
 | `java-review`, `java-design`, `kotlin-review`, `spring-rollback`, `jpa-web`, `thymeleaf-output-review`, `flyway` | Opt-in reviews; start them as warnings and measure the findings first |
+| `typescript-review` | Opt-in TypeScript checks with type information; needs a `tsconfig.json` and the project's installed dependencies |
 
 Rules skip test sources, any file below a `src/test` directory, by default.
 `java.assert-throws-nested-call` still checks them. Set

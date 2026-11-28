@@ -28,7 +28,11 @@ Each is reported as `javascript.<rule>`, for example `javascript.use-isnan`;
 `no-promise-executor-return` is not included, because it also reports the
 common `new Promise((resolve) => setTimeout(resolve, 10))`.
 TypeScript is parsed with `@typescript-eslint/parser` without type information,
-so the same rules apply and no `tsconfig.json` is read. Declaration files
+so the same rules apply and no `tsconfig.json` is read. The opt-in
+`typescript-review` profile adds `typescript.no-floating-promises`, which uses
+type information: it runs in a separate ESLint pass on the TypeScript files
+that a `tsconfig.json` project includes, with types from the project's
+installed dependencies, and notes how many files it skips. Declaration files
 (`.d.ts`) are skipped, and the `format` rules do not check TypeScript. See
 [engine setup](engines.md) for where the parser comes from.
 It uses its own ESLint config

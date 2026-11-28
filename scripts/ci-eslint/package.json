@@ -1,8 +1,9 @@
 {
   "name": "dornguard-ci-eslint",
   "private": true,
-  "description": "Pins the ESLint version and TypeScript parser used by the JavaScript profile tests.",
+  "description": "Pins the ESLint version and TypeScript parser and plugin used by the JavaScript profile tests.",
   "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "8.72.2",
     "@typescript-eslint/parser": "8.72.2",
     "eslint": "9.39.1",
     "typescript": "6.0.3"

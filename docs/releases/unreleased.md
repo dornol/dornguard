@@ -49,8 +49,11 @@ ARM64. Linux ARM64 is new; `install.sh` selects it on `aarch64` machines.
   - `layered`: `architecture.service-independence` (error) keeps services from
     depending on controllers.
   - New opt-in profiles: `java-design` (`java.cognitive-complexity`,
-    `java.excessive-parameters`, `java.god-class`, `java.loose-coupling`) and
-    `kotlin-review` (`kotlin.not-null-assertion`).
+    `java.excessive-parameters`, `java.god-class`, `java.loose-coupling`),
+    `kotlin-review` (`kotlin.not-null-assertion`) and `typescript-review`
+    (`typescript.no-floating-promises`, which uses TypeScript type
+    information from the project's `tsconfig.json` and skips, with a note,
+    TypeScript files that no `tsconfig.json` project includes).
 - `dornguard engines install eslint` installs a pinned ESLint, TypeScript parser
   and TypeScript from a lockfile with integrity hashes, without install scripts.
   `dornguard engines install osv-scanner` downloads a pinned, checksum-verified
@@ -93,5 +96,6 @@ New default rules can add findings, and the error-severity rules among them
 `dornguard check` after upgrading, then fix the findings, suppress them with a
 reason, or record them with `dornguard baseline create --force`.
 
-An earlier managed ESLint has no TypeScript parser. Run `dornguard engines
-install eslint` again before checking TypeScript sources.
+An earlier managed ESLint has no TypeScript parser or typescript-eslint
+plugin. Run `dornguard engines install eslint` again before checking
+TypeScript sources or using `typescript-review`.

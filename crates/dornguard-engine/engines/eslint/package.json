@@ -2,8 +2,9 @@
   "name": "dornguard-eslint",
   "version": "0.0.0",
   "private": true,
-  "description": "Pinned ESLint and TypeScript parser installed by dornguard engines install eslint",
+  "description": "Pinned ESLint and TypeScript parser and plugin installed by dornguard engines install eslint",
   "dependencies": {
+    "@typescript-eslint/eslint-plugin": "8.72.2",
     "@typescript-eslint/parser": "8.72.2",
     "eslint": "10.14.0",
     "typescript": "6.0.3"

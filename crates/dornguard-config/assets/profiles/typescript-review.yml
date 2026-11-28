@@ -1,0 +1,4 @@
+name: typescript-review
+description: Opt-in TypeScript checks that use type information from the project's tsconfig.json
+rules:
+  - typescript.no-floating-promises

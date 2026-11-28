@@ -181,6 +181,80 @@ export const View = ({ label }: Props) => <a href="javascript:void(0)">{label}</
     );
 }
 
+#[test]
+#[ignore = "requires ESLint 9 or 10, @typescript-eslint/parser and @typescript-eslint/eslint-plugin"]
+fn typescript_review_uses_type_information_for_files_in_a_tsconfig_project() {
+    let project = project("class Unused {}\n");
+    let root = project.path();
+    fs::remove_file(root.join("src/Example.java")).unwrap();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [typescript-review]\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("web/src")).unwrap();
+    fs::write(
+        root.join("web/tsconfig.json"),
+        r#"{ "compilerOptions": { "strict": true, "target": "ES2022", "module": "ESNext", "moduleResolution": "Bundler", "noEmit": true }, "include": ["src"] }"#,
+    )
+    .unwrap();
+    fs::write(
+        root.join("web/src/app.ts"),
+        r#"async function save(id: number): Promise<void> {
+  if (id < 0) throw new Error("bad id");
+}
+
+export async function run(): Promise<void> {
+  save(1);
+  await save(2);
+  void save(3);
+  save(4).catch(() => undefined);
+  [save(5), save(6)];
+  Promise.resolve(7).then(() => undefined, () => undefined);
+}
+"#,
+    )
+    .unwrap();
+    // Outside the tsconfig.json include list, and with no tsconfig.json at all.
+    fs::write(
+        root.join("web/legacy.ts"),
+        "async function save(): Promise<void> {}\nsave();\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("src/tool.ts"),
+        "async function work(): Promise<void> {}\nwork();\n",
+    )
+    .unwrap();
+    let result = report(check(root).output().unwrap(), 0);
+    assert_eq!(result["complete"], true, "{result}");
+    let findings = result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|finding| {
+            (
+                finding["path"].as_str().unwrap(),
+                finding["line"].as_u64().unwrap(),
+                finding["rule_id"].as_str().unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        findings,
+        [
+            ("web/src/app.ts", 6, "typescript.no-floating-promises"),
+            ("web/src/app.ts", 10, "typescript.no-floating-promises"),
+        ],
+        "{result}"
+    );
+    assert_eq!(
+        result["analysis_notes"][0],
+        "2 TypeScript files are not part of a tsconfig.json project, so rules that use type information (typescript.no-floating-promises) skip them.",
+        "{result}"
+    );
+}
+
 /// The first executable `name` on PATH, with symlinks resolved.
 #[cfg(unix)]
 fn on_path(name: &str) -> Option<std::path::PathBuf> {

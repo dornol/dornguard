@@ -1,0 +1,30 @@
+id: typescript.no-floating-promises
+engine: eslint
+severity: warning
+description: A Promise is neither awaited nor handled, so its rejection goes unnoticed and the code after it does not wait for it.
+fix: Await the Promise, return it, or handle its rejection with .catch() or a two-argument .then(). Mark an intentional fire-and-forget call with the void operator.
+implementation:
+  rule_id: "@typescript-eslint/no-floating-promises"
+guidance:
+  reports: >-
+    An expression statement whose value TypeScript types as a Promise, or an
+    array of Promises, that is not awaited, returned, or given a rejection
+    handler (typescript-eslint no-floating-promises, with type information;
+    typescript-review profile).
+  not_reported: >-
+    A call prefixed with void, a Promise with .catch() or a two-argument
+    .then(), and TypeScript files that no tsconfig.json project includes;
+    the report notes how many files that skips. Values whose types cannot be
+    resolved, such as imports from packages that are not installed.
+  bad: |-
+    async function save(order: Order): Promise<void> { /* ... */ }
+
+    save(order);
+  good: |-
+    await save(order);
+    // or, intentionally in the background:
+    void save(order).catch(report);
+  suppress: >-
+    Prefer void for an intentional fire-and-forget call. Suppress only when a
+    framework handles the Promise in a way the types do not show; say so in
+    the reason.

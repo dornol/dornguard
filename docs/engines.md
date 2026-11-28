@@ -46,7 +46,9 @@ managed one. See [web checks](web-checks.md) for the ESLint rules and the
 independent CSP command.
 
 TypeScript sources also need `@typescript-eslint/parser`. The managed install
-includes `@typescript-eslint/parser` 8.72.2 and TypeScript 6.0.3. Otherwise
+includes `@typescript-eslint/parser` and `@typescript-eslint/eslint-plugin`
+8.72.2 and TypeScript 6.0.3. The `typescript-review` profile needs the plugin
+beside the parser. Otherwise
 DornGuard uses the parser installed in the project, or the one installed beside
 the ESLint on PATH (for example by a global `npm install -g`). If an
 earlier DornGuard installed the managed ESLint, run `dornguard engines install
