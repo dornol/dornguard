@@ -287,16 +287,28 @@ fn default_skip_tests() -> bool {
     true
 }
 
-/// A source file below a `src/test` directory.
+/// A source file below a `src/test` directory, or a JavaScript or TypeScript test named
+/// `*.test.*` or `*.spec.*` or kept in a `__tests__` directory.
 pub fn is_test_source(path: &Path) -> bool {
     let names = path
         .parent()
         .into_iter()
         .flat_map(Path::components)
         .collect::<Vec<_>>();
-    names
+    if names
         .windows(2)
         .any(|pair| pair[0].as_os_str() == "src" && pair[1].as_os_str() == "test")
+    {
+        return true;
+    }
+    matches!(
+        SourceLanguage::of(path),
+        Some(SourceLanguage::Javascript | SourceLanguage::Typescript)
+    ) && (names.iter().any(|name| name.as_os_str() == "__tests__")
+        || path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.contains(".test.") || name.contains(".spec.")))
 }
 
 impl Rule {
@@ -871,6 +883,27 @@ impl ProjectConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_sources_follow_java_and_javascript_conventions() {
+        for path in [
+            "api/src/test/java/a/ATest.java",
+            "src/test/kotlin/A.kt",
+            "web/src/site-settings.test.ts",
+            "web/src/view.spec.tsx",
+            "web/src/__tests__/view.js",
+        ] {
+            assert!(is_test_source(Path::new(path)), "{path}");
+        }
+        for path in [
+            "src/main/java/a/Latest.java",
+            "src/main/java/a/Some.test.java",
+            "web/src/contest.ts",
+            "web/src/__tests__.ts",
+        ] {
+            assert!(!is_test_source(Path::new(path)), "{path}");
+        }
+    }
 
     #[test]
     fn format_indentation_is_off_by_default_and_tests_are_skipped() {

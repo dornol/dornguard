@@ -1491,6 +1491,7 @@ const add = (a, b) => a + b;
 A javascript: URL runs code like eval and is blocked by a strict Content Security Policy.
 
 - Reports: A `javascript:` URL string (ESLint no-script-url).
+- Not reported: A `javascript:` string the code checks for rather than uses: an operand of ==, ===, != or !==, an argument of startsWith, endsWith, includes or indexOf, or a case label.
 - Fix: Attach an event listener, or use a regular URL.
 - Suppression: Do not suppress; the code does not do what it appears to.
 

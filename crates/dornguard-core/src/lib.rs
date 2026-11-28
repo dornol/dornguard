@@ -352,7 +352,7 @@ impl Outcome {
     pub fn finish(mut self) -> CheckReport {
         if !self.skipped_test_files.is_empty() {
             self.analysis_notes.insert(format!(
-                "{} test source files below src/test are skipped by rules that skip tests, which is the default. Set skip_java_tests: false on a rule to include them.",
+                "{} test source files below src/test, or JavaScript and TypeScript tests named *.test.* or *.spec.* or under __tests__, are skipped by rules that skip tests, which is the default. Set skip_java_tests: false on a rule to include them.",
                 self.skipped_test_files.len()
             ));
         }

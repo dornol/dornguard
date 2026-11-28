@@ -257,6 +257,13 @@ fn record_report(
                 .zip(start)
                 .is_some_and(|(end, start)| start < end)
         });
+        if finding.rule_id.as_deref() == Some("no-script-url")
+            && let Some(source) = source
+            && let Some((start, end)) = start.zip(end.and_then(|end| source.offset(end)))
+            && checks_the_scheme(source.text(), start, end)
+        {
+            continue;
+        }
         outcome.diagnostics.push(Diagnostic {
             path: Some(display_path(&path)),
             module: None,
@@ -285,6 +292,29 @@ fn record_report(
         outcome.scanned_files.insert(path);
     }
     Ok(0)
+}
+
+/// Whether the `javascript:` literal at `start..end` is a value the code checks for, such as
+/// `protocol === "javascript:"`, `url.startsWith("javascript:")` or `case "javascript:"`,
+/// rather than a URL it uses.
+fn checks_the_scheme(text: &str, start: usize, end: usize) -> bool {
+    let (Some(before), Some(after)) = (text.get(..start), text.get(end..)) else {
+        return false;
+    };
+    let before = before.trim_end();
+    let after = after.trim_start();
+    before.ends_with("==")
+        || before.ends_with("!=")
+        || after.starts_with("==")
+        || after.starts_with("!=")
+        || [".startsWith(", ".includes(", ".indexOf(", ".endsWith("]
+            .iter()
+            .any(|call| before.ends_with(call))
+        || before.ends_with("case")
+            && before[..before.len() - 4]
+                .chars()
+                .last()
+                .is_none_or(|c| !c.is_alphanumeric() && c != '_' && c != '$')
 }
 
 /// TypeScript sources, which ESLint does not lint unless a config names them.
@@ -401,6 +431,24 @@ struct Finding {
 mod tests {
     #![allow(clippy::unwrap_used)]
     use super::*;
+
+    #[test]
+    fn a_checked_scheme_is_not_a_script_url() {
+        let checked = |code: &str| {
+            let start = code.find('\'').unwrap();
+            let end = code[start + 1..].find('\'').unwrap() + start + 2;
+            checks_the_scheme(code, start, end)
+        };
+        assert!(checked("if (url.protocol === 'javascript:') return false;"));
+        assert!(checked("if ('javascript:' !== scheme) ok();"));
+        assert!(checked("if (href.startsWith('javascript:')) block();"));
+        assert!(checked(
+            "switch (scheme) { case 'javascript:': return false; }"
+        ));
+        assert!(!checked("location.href = 'javascript:void(0)';"));
+        assert!(!checked("open('javascript:alert(1)');"));
+        assert!(!checked("const showcase = 'javascript:x';"));
+    }
 
     #[test]
     fn typescript_config_is_added_only_with_a_parser() {

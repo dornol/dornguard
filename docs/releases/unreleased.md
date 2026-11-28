@@ -69,6 +69,10 @@ ARM64. Linux ARM64 is new; `install.sh` selects it on `aarch64` machines.
   multibyte text.
 - The Gradle project model works with Gradle 8.10 and earlier, where
   module dependencies failed with "Could not get unknown property 'path'".
+- Rules that skip test sources also skip JavaScript and TypeScript tests named
+  `*.test.*` or `*.spec.*` or kept in a `__tests__` directory, as they skip
+  Java and Kotlin sources below `src/test`. Set `skip_java_tests: false` on a
+  rule to check them.
 - `java.preserve-stack-trace` no longer reports throwing the exception a caught
   wrapper carries, such as `throw e.original()` or
   `throw (RuntimeException) e.getCause()`.

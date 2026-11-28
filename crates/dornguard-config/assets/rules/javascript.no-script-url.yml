@@ -8,6 +8,10 @@ implementation:
 guidance:
   reports: >-
     A `javascript:` URL string (ESLint no-script-url).
+  not_reported: >-
+    A `javascript:` string the code checks for rather than uses: an operand
+    of ==, ===, != or !==, an argument of startsWith, endsWith, includes or
+    indexOf, or a case label.
   bad: |-
     link.href = "javascript:void(0)";
   good: |-

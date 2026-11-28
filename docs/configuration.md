@@ -33,7 +33,8 @@ Use the same option with `baseline create` to record that profile selection.
 The module's rule fields override project fields, followed by profile defaults
 and built-in values. Conflicting profile defaults require an explicit override.
 Use `enabled: false` to disable an activated rule in a project or module. Rules
-skip test sources, any file below `src/test`, by default. Set
+skip test sources by default: any file below `src/test`, and JavaScript and
+TypeScript files named `*.test.*` or `*.spec.*` or under `__tests__`. Set
 `skip_java_tests: false` on a rule to check them. For
 ArchUnit, `options` replaces the rule's package selectors. A single name
 matches a package segment and a dotted name matches a package prefix.

@@ -24,7 +24,9 @@ What each rule reports, with an example and when it may be suppressed, is in
 | `java-review`, `java-design`, `kotlin-review`, `spring-rollback`, `jpa-web`, `thymeleaf-output-review`, `flyway` | Opt-in reviews; start them as warnings and measure the findings first |
 | `typescript-review` | Opt-in TypeScript checks with type information; needs a `tsconfig.json` and the project's installed dependencies |
 
-Rules skip test sources, any file below a `src/test` directory, by default.
+Rules skip test sources by default: any file below a `src/test` directory, and
+JavaScript and TypeScript files named `*.test.*` or `*.spec.*` or kept in a
+`__tests__` directory.
 `java.assert-throws-nested-call` still checks them. Set
 `rules: { RULE: { skip_java_tests: false } }` to check test sources with
 another rule.

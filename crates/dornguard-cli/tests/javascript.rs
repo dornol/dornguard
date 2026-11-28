@@ -255,6 +255,62 @@ export async function run(): Promise<void> {
     );
 }
 
+#[test]
+#[ignore = "requires ESLint 9 or 10 on PATH"]
+fn checked_script_urls_and_test_files_are_not_reported() {
+    let project = project("class Unused {}\n");
+    let root = project.path();
+    fs::remove_file(root.join("src/Example.java")).unwrap();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [javascript]\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("src/links.js"),
+        r#"export function safe(url) {
+  const parsed = new URL(url, "https://example.com");
+  if (parsed.protocol === "javascript:") return false;
+  if (url.startsWith("javascript:")) return false;
+  return true;
+}
+export const link = "javascript:void(0)";
+"#,
+    )
+    .unwrap();
+    fs::write(
+        root.join("src/links.test.js"),
+        "safe(\"javascript:alert(1)\");\neval(\"1\");\n",
+    )
+    .unwrap();
+    let result = report(check(root).output().unwrap(), 0);
+    assert_eq!(result["complete"], true, "{result}");
+    let findings = result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|finding| {
+            (
+                finding["path"].as_str().unwrap(),
+                finding["line"].as_u64().unwrap(),
+                finding["rule_id"].as_str().unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        findings,
+        [("src/links.js", 7, "javascript.no-script-url")],
+        "{result}"
+    );
+    assert!(
+        result["analysis_notes"][0]
+            .as_str()
+            .unwrap()
+            .starts_with("1 test source files"),
+        "{result}"
+    );
+}
+
 /// The first executable `name` on PATH, with symlinks resolved.
 #[cfg(unix)]
 fn on_path(name: &str) -> Option<std::path::PathBuf> {

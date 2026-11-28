@@ -44,7 +44,7 @@ class Example {
         result["analysis_notes"][0]
             .as_str()
             .unwrap()
-            .starts_with("1 test source files below src/test"),
+            .starts_with("1 test source files below src/test, or JavaScript"),
         "{result}"
     );
     assert_eq!(
