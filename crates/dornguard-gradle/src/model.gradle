@@ -32,7 +32,7 @@ gradle.projectsEvaluated {
                     project.tasks.findByName(main.getCompileTaskName('kotlin'))
                 def dependencies = ['api', 'implementation', 'compileOnly', 'compileOnlyApi', 'runtimeOnly'].collectMany { name ->
                     def configuration = project.configurations.findByName(name)
-                    configuration == null ? [] : configuration.allDependencies.withType(ProjectDependency).collect { it.path }
+                    configuration == null ? [] : configuration.allDependencies.withType(ProjectDependency).collect { projectPath(it) }
                 }.unique().sort()
                 [
                     path: project.path,
@@ -79,6 +79,13 @@ Integer javaVersion(compile, String option, String compatibility) {
         }
     }
     return parseJavaVersion(compatibility)
+}
+
+// ProjectDependency.getPath() exists from Gradle 8.11; getDependencyProject() is the
+// only way to the path before it and is gone in Gradle 9.
+String projectPath(ProjectDependency dependency) {
+    dependency.metaClass.respondsTo(dependency, 'getPath') ?
+        dependency.path : dependency.dependencyProject.path
 }
 
 Integer parseJavaVersion(String value) {

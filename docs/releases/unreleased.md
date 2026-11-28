@@ -67,6 +67,8 @@ ARM64. Linux ARM64 is new; `install.sh` selects it on `aarch64` machines.
   explains the annotation processor change and the fixes.
 - The Thymeleaf literal-markup hint finds the right column on lines with
   multibyte text.
+- The Gradle project model works with Gradle 8.10 and earlier, where
+  module dependencies failed with "Could not get unknown property 'path'".
 - `java.resource-not-closed` no longer reports a resource that a Spring `@Bean`
   method, or a private helper only `@Bean` methods call, hands to the object it
   builds, such as a connection manager passed to an HTTP client builder.
