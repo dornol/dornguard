@@ -94,7 +94,7 @@ jobs:
       - name: Lint and test without external engines
         run: |
           cargo clippy --locked --workspace --all-targets -- -D warnings
-          cargo test --locked --workspace
+          cargo test --locked --workspace --no-fail-fast
 
   verify:
     runs-on: ubuntu-24.04

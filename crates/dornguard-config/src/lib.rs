@@ -1130,7 +1130,10 @@ mod tests {
         if std::env::var_os("DORNGUARD_BLESS").is_some() {
             fs::write(&path, &expected).unwrap();
         }
-        let actual = fs::read_to_string(&path).unwrap_or_default();
+        // A Windows checkout may convert the file to CRLF line endings.
+        let actual = fs::read_to_string(&path)
+            .unwrap_or_default()
+            .replace("\r\n", "\n");
         assert!(
             actual == expected,
             "docs/rules.md is out of date; run DORNGUARD_BLESS=1 cargo test -p dornguard-config rule_catalog"
