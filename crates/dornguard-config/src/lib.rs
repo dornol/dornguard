@@ -32,6 +32,7 @@ pub const IGNORED_RETURN_VALUE_RULE: &str = "java.ignored-return-value";
 pub const UNNECESSARY_IMPORT_RULE: &str = "java.unnecessary-import";
 pub const RESOURCE_RULE: &str = "java.resource-not-closed";
 pub const PRESERVE_STACK_TRACE_RULE: &str = "java.preserve-stack-trace";
+pub const LOG_FORMAT_RULE: &str = "java.log-format-arguments";
 pub const GO_VET_RULE: &str = "go.vet";
 pub const CLIPPY_RULE: &str = "rust.clippy";
 pub const RUSTC_LINT_RULE: &str = "rust.rustc-lint";

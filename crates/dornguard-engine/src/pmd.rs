@@ -7,7 +7,9 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::source::Sources;
-use dornguard_config::{PRESERVE_STACK_TRACE_RULE, RESOURCE_RULE, UNNECESSARY_IMPORT_RULE};
+use dornguard_config::{
+    LOG_FORMAT_RULE, PRESERVE_STACK_TRACE_RULE, RESOURCE_RULE, UNNECESSARY_IMPORT_RULE,
+};
 use dornguard_core::{Diagnostic, EngineName, Outcome, PMD_JAVA_DEFAULT, PMD_JAVA_VERSIONS};
 use miette::{IntoDiagnostic, Result, WrapErr, bail};
 use serde::Deserialize;
@@ -22,6 +24,21 @@ use crate::{
 const ENGINE: EngineName = EngineName::Pmd;
 const CLOSE_RESOURCE: &str = "category/java/errorprone.xml/CloseResource";
 const PRESERVE_STACK_TRACE: &str = "category/java/bestpractices.xml/PreserveStackTrace";
+const INVALID_LOG_MESSAGE_FORMAT: &str = "category/java/errorprone.xml/InvalidLogMessageFormat";
+// PMD skips a trailing exception argument only when it can resolve the argument's type to
+// Throwable. Without the classpath, a project or library exception parameter looks like one
+// argument too many. Keep the finding unless the call has exactly one argument beyond its
+// placeholders and that argument is a parameter or local declared with an exception-like
+// type name. Escaped placeholders are left to PMD.
+const UNRESOLVED_TRAILING_EXCEPTION: &str = concat!(
+    "self::MethodCall[ArgumentList/*[1][self::StringLiteral][not(contains(@Image, '\\'))]]",
+    "[let $name := ArgumentList/*[last()][self::VariableAccess]/@Name, ",
+    "$format := ArgumentList/*[1]/@Image return ",
+    "ArgumentList/@Size = (string-length($format) - string-length(replace($format, '\\{\\}', ''))) div 2 + 2 ",
+    "and (ancestor::*/FormalParameters/FormalParameter[VariableId/@Name = $name] ",
+    "| ancestor::Block/LocalVariableDeclaration[VariableDeclarator/VariableId/@Name = $name])",
+    "/ClassType[matches(@SimpleName, '(Exception|Error|Throwable)$')]]"
+);
 const NON_CLOSEABLE_EXECUTOR: &str = concat!(
     "self::VariableId[some $class in ('ExecutorService', 'ScheduledExecutorService', ",
     "'AbstractExecutorService', 'ThreadPoolExecutor', 'ScheduledThreadPoolExecutor', 'ForkJoinPool') ",
@@ -199,6 +216,10 @@ async fn scan(request: Request<'_>, settings: &Pmd<'_>, outcome: &mut Outcome) -
                         "{CAUSE_PRESERVING_EXCEPTION} | {RETHROWN_NARROWED_EXCEPTION}"
                     ))
                 },
+            )),
+            LOG_FORMAT_RULE => Some((
+                INVALID_LOG_MESSAGE_FORMAT,
+                Cow::Borrowed(UNRESOLVED_TRAILING_EXCEPTION),
             )),
             _ => None,
         };

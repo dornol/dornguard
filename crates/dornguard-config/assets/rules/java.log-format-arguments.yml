@@ -11,7 +11,11 @@ guidance:
     A log call whose {} placeholders do not match the number of arguments,
     as reported by PMD.
   not_reported: >-
-    A trailing exception argument, which needs no placeholder.
+    A trailing exception argument, which needs no placeholder. Without the
+    classpath, PMD cannot tell that a project or library exception is a
+    Throwable, so a trailing parameter or local whose declared type name ends
+    in Exception, Error or Throwable is also treated as the exception when the
+    other arguments match the placeholders.
   bad: |-
     log.info("user {} signed in from {}", user);
   good: |-

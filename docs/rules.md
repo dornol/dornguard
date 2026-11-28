@@ -1011,7 +1011,7 @@ try {
 The number of {} placeholders in a log message does not match its arguments.
 
 - Reports: A log call whose {} placeholders do not match the number of arguments, as reported by PMD.
-- Not reported: A trailing exception argument, which needs no placeholder.
+- Not reported: A trailing exception argument, which needs no placeholder. Without the classpath, PMD cannot tell that a project or library exception is a Throwable, so a trailing parameter or local whose declared type name ends in Exception, Error or Throwable is also treated as the exception when the other arguments match the placeholders.
 - Fix: Pass one argument for each {} placeholder. Pass an exception as the last argument without a placeholder so the logger records its stack trace.
 - Suppression: Do not suppress; fix the message or the arguments.
 
