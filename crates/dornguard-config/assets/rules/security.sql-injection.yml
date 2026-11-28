@@ -3,7 +3,11 @@ engine: semgrep
 severity: error
 confidence: medium
 description: SQL text built by string concatenation or formatting can allow SQL injection.
-fix: Use bind parameters such as ? or :name, and pass the values separately.
+fix: >-
+  Use bind parameters such as ? or :name, and pass the values separately. A
+  table or column name cannot be bound: check it against an allow-list or a
+  strict identifier pattern where it enters the code, then suppress the
+  finding and name that check in the reason.
 implementation:
   config: rules/semgrep/security/sql-injection.yml
   rule_id: security-sql-injection
@@ -21,5 +25,7 @@ guidance:
     jdbc.query("select * from book where title = ?", mapper, title);
   suppress: >-
     When the concatenated value is a constant or comes from a fixed
-    allow-list, such as a validated sort column; name the allow-list in the
-    reason.
+    allow-list, such as a validated sort column, or is a table or column
+    name checked against a strict identifier pattern such as
+    [A-Za-z_][A-Za-z0-9_]* before it reaches the query; name the check in
+    the reason.
