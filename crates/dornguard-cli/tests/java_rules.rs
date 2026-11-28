@@ -374,6 +374,25 @@ class Other {
         ]
     );
     assert_eq!(exceptions, ["conditional", "original", "reassigned"]);
+    let notes = |config: &str| {
+        fs::write(root.join(".dornguard.yml"), config).unwrap();
+        report(check(root).output().unwrap(), 0)["analysis_notes"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|note| note.as_str())
+            .filter(|note| note.starts_with("java.resource-not-closed"))
+            .map(str::to_owned)
+            .collect::<Vec<_>>()
+    };
+    // Without a known target, the JDK HttpClient is reported with a hint to set java_target.
+    assert_eq!(
+        notes("version: 1\nprofiles: [java]\n"),
+        [
+            "java.resource-not-closed reports HttpClient because the Java target is unknown. HttpClient is AutoCloseable only from Java 21; set java_target in .dornguard.yml when the project targets an earlier release."
+        ]
+    );
+    assert!(notes("version: 1\nprofiles: [java]\njava_target: 21\n").is_empty());
 }
 
 #[test]

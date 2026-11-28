@@ -58,7 +58,9 @@ compiler settings or Gradle's main Java compile task. A configured release
 takes precedence over a bytecode target. Set `java_target` for source-only
 checks or to override the discovered target. With a known target below 21,
 `java.resource-not-closed` excludes the JDK's `java.net.http.HttpClient`.
-With an unknown target, the rule uses PMD's runtime analysis. JDBC resources
+With an unknown target, the rule uses PMD's runtime analysis, and a report
+that includes a JDK `HttpClient` or `ExecutorService` finding adds a note
+asking for `java_target`. JDBC resources
 and project types named `HttpClient` remain subject to the rule.
 With a known target below 19, the rule also excludes JDK `ExecutorService`.
 For other targets, it recognizes `shutdown()` or `shutdownNow()` at the start

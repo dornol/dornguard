@@ -423,6 +423,18 @@ async fn scan(request: Request<'_>, settings: &Pmd<'_>, outcome: &mut Outcome) -
             {
                 continue;
             }
+            if rule.id == RESOURCE_RULE
+                && settings.java_target.is_none()
+                && let Some((kind, package)) = finding.version_dependent_resource()
+                && sources
+                    .get(request.root, &path)
+                    .is_some_and(|source| source.text().contains(package))
+            {
+                outcome.analysis_notes.insert(format!(
+                    "java.resource-not-closed reports {kind} because the Java target is unknown. {kind} is AutoCloseable only from Java {}; set java_target in .dornguard.yml when the project targets an earlier release.",
+                    if kind == "HttpClient" { 21 } else { 19 }
+                ));
+            }
             let source = sources.get(request.root, &path);
             let start =
                 source.and_then(|source| source.offset((finding.beginline, finding.begincolumn)));
@@ -589,6 +601,27 @@ impl Finding {
                 .map(|(name, _)| name),
             _ => None,
         }
+    }
+
+    /// A JDK resource type whose closeability depends on the Java release, with the package
+    /// that a file using the JDK type names. PMD 7.29 names the type in "Ensure that resources
+    /// like this HttpClient object are closed after use".
+    fn version_dependent_resource(&self) -> Option<(&'static str, &'static str)> {
+        let kind = self
+            .description
+            .strip_prefix("Ensure that resources like this ")?
+            .split_once(' ')?
+            .0;
+        [
+            ("HttpClient", "java.net.http."),
+            ("ExecutorService", "java.util.concurrent."),
+            ("ScheduledExecutorService", "java.util.concurrent."),
+            ("ThreadPoolExecutor", "java.util.concurrent."),
+            ("ScheduledThreadPoolExecutor", "java.util.concurrent."),
+            ("ForkJoinPool", "java.util.concurrent."),
+        ]
+        .into_iter()
+        .find(|(known, _)| *known == kind)
     }
 
     fn is_unused_wildcard_import(&self) -> bool {

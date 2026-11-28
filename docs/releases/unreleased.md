@@ -66,6 +66,10 @@ ARM64. Linux ARM64 is new; `install.sh` selects it on `aarch64` machines.
 - `java.resource-not-closed` no longer reports a resource that a Spring `@Bean`
   method, or a private helper only `@Bean` methods call, hands to the object it
   builds, such as a connection manager passed to an HTTP client builder.
+- When the Java target is unknown, as in a source-only check, a
+  `java.resource-not-closed` finding for the JDK `HttpClient` or an
+  `ExecutorService` comes with a note to set `java_target`; on a target below
+  Java 21 or 19 these types are not `AutoCloseable`.
 - Rule guidance for coding agents. `dornguard rules explain RULE...` prints
   what each rule reports and does not report, the fix, a bad and a good
   example, when suppression is legitimate and the exact suppression syntax;
