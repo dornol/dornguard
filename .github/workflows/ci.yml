@@ -68,11 +68,9 @@ jobs:
           cargo test --locked --workspace
 
   windows:
-    # Windows-native support is still being verified (docs/plan/PLAN.md), so a
-    # failure here is reported without failing the workflow.
+    # Engine-free tests on native Windows. Real-engine tests run on Linux only.
     runs-on: windows-2025
     timeout-minutes: 20
-    continue-on-error: true
     defaults:
       run:
         shell: bash
