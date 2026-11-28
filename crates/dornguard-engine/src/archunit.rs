@@ -489,13 +489,19 @@ fn runner_path() -> Result<PathBuf> {
 }
 
 pub fn maven_model_path() -> Result<PathBuf> {
-    let path = match std::env::var_os("DORNGUARD_ARCHUNIT_RUNNER") {
+    let runner = std::env::var_os("DORNGUARD_ARCHUNIT_RUNNER");
+    let path = match &runner {
         Some(runner) => PathBuf::from(runner).with_file_name("maven-model.jar"),
         None => installed_exe()?.with_file_name("maven-model.jar"),
     };
     let path = dunce::canonicalize(&path).into_diagnostic().wrap_err_with(|| {
+        let hint = if runner.is_some() {
+            "maven-model.jar must be in the same directory as DORNGUARD_ARCHUNIT_RUNNER; the runner's jar task builds both"
+        } else {
+            "use a matching release bundle, or build the runner's jar task and set DORNGUARD_ARCHUNIT_RUNNER to archunit-runner.jar, whose directory also holds maven-model.jar"
+        };
         format!(
-            "Could not find the Maven extension at {}; use a matching release bundle or build the runner",
+            "Could not find the Maven extension at {}; {hint}",
             path.display()
         )
     })?;
