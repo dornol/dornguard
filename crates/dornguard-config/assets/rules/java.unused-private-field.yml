@@ -6,3 +6,15 @@ fix: Remove the field, or use it where its value was meant to be read.
 implementation:
   config: rules/pmd/java/unused-private-field.xml
   rule_id: UnusedPrivateField
+guidance:
+  reports: >-
+    A private field that is never read, as reported by PMD.
+  not_reported: >-
+    serialVersionUID and fields read by Lombok-generated accessors.
+  bad: |-
+    private String lastUser; // assigned, never read
+  good: |-
+    // field removed, or read where its value was meant to be used
+  suppress: >-
+    When reflection reads the field, such as a serialization framework PMD
+    does not know; name it in the reason.

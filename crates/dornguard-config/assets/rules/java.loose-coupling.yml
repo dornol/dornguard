@@ -6,3 +6,16 @@ fix: Declare the type as List, Set, Map or another interface, and choose the imp
 implementation:
   config: rules/pmd/java/loose-coupling.xml
   rule_id: LooseCoupling
+guidance:
+  reports: >-
+    A field, parameter or return type declared as a collection
+    implementation such as ArrayList, HashMap or HashSet instead of its
+    interface (java-design profile).
+  bad: |-
+    HashMap<String, Integer> counts() { return new HashMap<>(); }
+  good: |-
+    Map<String, Integer> counts() { return new HashMap<>(); }
+  suppress: >-
+    When callers rely on the implementation's guarantees, such as
+    LinkedHashMap ordering or ArrayDeque operations missing from the
+    interface; say which in the reason.

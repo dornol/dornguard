@@ -6,3 +6,18 @@ fix: Keep cleanup in finally and throw outside it. If cleanup can fail, catch th
 implementation:
   config: rules/pmd/java/throw-from-finally.xml
   rule_id: DoNotThrowExceptionInFinally
+guidance:
+  reports: >-
+    A throw statement inside a finally block, as reported by PMD.
+  bad: |-
+    finally {
+        if (!closed) throw new IllegalStateException("not closed");
+    }
+  good: |-
+    finally {
+        try { close(); }
+        catch (IOException e) { failure.addSuppressed(e); }
+    }
+  suppress: >-
+    Do not suppress; it replaces the exception or return value of the try
+    block.

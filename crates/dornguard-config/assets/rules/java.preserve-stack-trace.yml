@@ -7,3 +7,23 @@ fix: Pass the caught exception as the cause.
 implementation:
   config: rules/pmd/java/preserve-stack-trace.xml
   rule_id: PreserveStackTrace
+guidance:
+  reports: >-
+    A catch block that throws a new exception without passing the caught one
+    as its cause, as reported by PMD.
+  not_reported: >-
+    Rethrowing the caught exception, also after an instanceof check, and,
+    with allow_logged_exceptions, a caught exception that is logged first.
+  bad: |-
+    catch (NumberFormatException e) {
+        throw new IllegalStateException(e.getMessage());
+    }
+  good: |-
+    catch (NumberFormatException e) {
+        throw new IllegalStateException("Invalid port", e);
+    }
+  suppress: >-
+    When the cause must not leave a security boundary, such as an error
+    returned to a client; say so in the reason.
+  options: >-
+    allow_logged_exceptions (false)

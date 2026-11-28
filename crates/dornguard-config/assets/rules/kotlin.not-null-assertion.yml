@@ -8,3 +8,13 @@ fix: >-
 implementation:
   config: rules/semgrep/kotlin/not-null-assertion.yml
   rule_id: kotlin-not-null-assertion
+guidance:
+  reports: >-
+    Each use of the not-null assertion operator !! (kotlin-review profile).
+  bad: |-
+    val length = name!!.length
+  good: |-
+    val length = requireNotNull(name) { "name is set by init()" }.length
+  suppress: >-
+    When a framework guarantees the value right after the check, such as a
+    test fixture; prefer requireNotNull with a message.

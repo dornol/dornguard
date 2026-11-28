@@ -6,3 +6,20 @@ fix: Keep cleanup in finally and return outside the finally block.
 implementation:
   config: rules/pmd/java/return-from-finally.xml
   rule_id: ReturnFromFinallyBlock
+guidance:
+  reports: >-
+    A return statement inside a finally block, as reported by PMD.
+  bad: |-
+    try {
+        return compute();
+    } finally {
+        return fallback;
+    }
+  good: |-
+    try {
+        return compute();
+    } finally {
+        cleanup();
+    }
+  suppress: >-
+    Do not suppress; it hides exceptions from the try block.

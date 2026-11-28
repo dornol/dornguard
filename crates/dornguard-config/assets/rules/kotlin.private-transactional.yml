@@ -7,3 +7,15 @@ fix: >-
 implementation:
   config: rules/semgrep/kotlin/private-transactional.yml
   rule_id: kotlin-private-transactional
+guidance:
+  reports: >-
+    A private Kotlin function annotated with Spring's @Transactional, which
+    a proxy cannot advise.
+  bad: |-
+    @Transactional
+    private fun save() {}
+  good: |-
+    @Transactional
+    fun save() {} // called through the bean, not from the same class
+  suppress: >-
+    Do not suppress; the annotation has no effect.

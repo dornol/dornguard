@@ -205,7 +205,14 @@ pub(crate) enum ProfileAction {
 #[derive(Subcommand)]
 pub(crate) enum RuleAction {
     List,
-    Explain { id: String },
+    /// Show what rules report, an example, the fix, and when and how to suppress
+    Explain {
+        /// Rule IDs, such as the ones a check report names
+        #[arg(required = true)]
+        ids: Vec<String>,
+        #[arg(long, value_enum, default_value_t = TextOrJson::Text)]
+        format: TextOrJson,
+    },
 }
 
 #[derive(Subcommand)]

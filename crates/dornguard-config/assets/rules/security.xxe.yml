@@ -11,3 +11,23 @@ fix: >-
 implementation:
   config: rules/semgrep/security/xxe.yml
   rule_id: security-xxe
+guidance:
+  reports: >-
+    A DocumentBuilderFactory, SAXParserFactory, XMLInputFactory,
+    TransformerFactory or SchemaFactory created without disabling DOCTYPE
+    declarations or external DTD access later in the same method.
+  not_reported: >-
+    Factories on which the same method sets disallow-doctype-decl to true,
+    XMLConstants.ACCESS_EXTERNAL_DTD to "", or XMLInputFactory.SUPPORT_DTD
+    to false.
+  bad: |-
+    DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+    return factory.newDocumentBuilder().parse(input);
+  good: |-
+    DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+    factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+    return factory.newDocumentBuilder().parse(input);
+  suppress: >-
+    When another method configures the factory before use, or the input is a
+    trusted file bundled with the application; name that method or file in
+    the reason.

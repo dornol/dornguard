@@ -6,3 +6,14 @@ fix: Use a decimal string or BigDecimal.valueOf for a double literal.
 implementation:
   config: rules/pmd/java/bigdecimal-from-floating-point-literal.xml
   rule_id: AvoidDecimalLiteralsInBigDecimalConstructor
+guidance:
+  reports: >-
+    A decimal literal passed to the BigDecimal constructor, as reported by
+    PMD.
+  bad: |-
+    BigDecimal price = new BigDecimal(0.1);
+  good: |-
+    BigDecimal price = new BigDecimal("0.1"); // or BigDecimal.valueOf(0.1)
+  suppress: >-
+    Do not suppress; the constructor keeps the binary rounding error of the
+    literal.

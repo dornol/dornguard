@@ -254,6 +254,29 @@ pub struct Rule {
     skip_java_tests: bool,
     #[serde(skip)]
     semgrep_languages: Vec<String>,
+    /// What an agent needs to act on a finding. Every built-in rule has it.
+    #[serde(default)]
+    pub guidance: Option<Guidance>,
+}
+
+/// Guidance for acting on a rule's findings, shown by `dornguard rules explain`.
+#[derive(Clone, Debug, Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Guidance {
+    /// Exactly what the rule reports.
+    pub reports: String,
+    /// Similar code the rule deliberately does not report.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub not_reported: Option<String>,
+    /// A minimal snippet that is reported.
+    pub bad: String,
+    /// The same snippet fixed.
+    pub good: String,
+    /// When suppressing a finding is legitimate.
+    pub suppress: String,
+    /// Configuration keys that change what the rule reports.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub options: Option<String>,
 }
 
 fn default_skip_tests() -> bool {
@@ -946,6 +969,32 @@ mod tests {
     }
 
     #[test]
+    fn every_builtin_rule_has_guidance_with_an_example() {
+        let registry = Registry::builtin().unwrap();
+        let incomplete = registry
+            .rules()
+            .filter(|rule| {
+                rule.guidance.as_ref().is_none_or(|guidance| {
+                    [
+                        &guidance.reports,
+                        &guidance.bad,
+                        &guidance.good,
+                        &guidance.suppress,
+                    ]
+                    .iter()
+                    .any(|text| text.trim().is_empty())
+                        || guidance.bad == guidance.good
+                })
+            })
+            .map(|rule| rule.id.as_str())
+            .collect::<Vec<_>>();
+        assert!(
+            incomplete.is_empty(),
+            "rules without complete guidance (reports, bad, good, suppress): {incomplete:?}"
+        );
+    }
+
+    #[test]
     fn every_engine_configuration_belongs_to_a_rule() {
         let registry = Registry::builtin().unwrap();
         let used = registry
@@ -981,44 +1030,92 @@ mod tests {
         assert_eq!(unlisted, ["architecture.module-dependency"]);
     }
 
+    fn fence(rule: &Rule) -> &'static str {
+        let id = rule.id.as_str();
+        if id.starts_with("kotlin.") {
+            "kotlin"
+        } else if id.starts_with("javascript.") {
+            "javascript"
+        } else if id.starts_with("html.") || id.starts_with("thymeleaf.") || id.starts_with("jsp.")
+        {
+            "html"
+        } else if id.starts_with("go.") {
+            "go"
+        } else if id.starts_with("rust.") {
+            "rust"
+        } else if id.starts_with("flyway.") {
+            "sql"
+        } else if id == "spring.open-in-view-enabled" {
+            "yaml"
+        } else {
+            "java"
+        }
+    }
+
     fn rule_catalog(registry: &Registry) -> String {
-        let mut out = String::from(
-            "# Rule catalog\n\n\
-             <!-- Generated from the built-in rules. Regenerate with\n\
-             DORNGUARD_BLESS=1 cargo test -p dornguard-config rule_catalog -->\n\n\
-             Every built-in rule with its engine, default severity, confidence and\n\
-             the profiles that enable it. Run `dornguard rules explain RULE` for the\n\
-             fix guidance. See [policy bundles](profiles.md) for what each profile\n\
-             covers and [rule confidence](profiles.md#rule-confidence) for how to treat findings.\n\n\
-             | Rule | Engine | Severity | Confidence | Profiles | Description |\n\
-             | --- | --- | --- | --- | --- | --- |\n",
-        );
-        for rule in registry.rules() {
+        let name = |value: serde_json::Value| value.as_str().unwrap_or_default().to_owned();
+        let profiles_of = |rule: &Rule| {
             let profiles = registry
                 .profiles()
                 .filter(|profile| profile.rules.contains(&rule.id))
                 .map(|profile| format!("`{}`", profile.name))
                 .collect::<Vec<_>>();
-            let profiles = if profiles.is_empty() {
+            if profiles.is_empty() {
                 "`module_dependencies`".to_owned()
             } else {
                 profiles.join(", ")
-            };
-            let description = rule
-                .description
-                .split_whitespace()
-                .collect::<Vec<_>>()
-                .join(" ")
-                .replace('|', "\\|");
-            let name = |value: serde_json::Value| value.as_str().unwrap_or_default().to_owned();
+            }
+        };
+        let mut out = String::from(
+            "# Rule catalog\n\n\
+             <!-- Generated from the built-in rules. Regenerate with\n\
+             DORNGUARD_BLESS=1 cargo test -p dornguard-config rule_catalog -->\n\n\
+             Every built-in rule with what it reports, an example, the fix and when\n\
+             suppression is allowed. `dornguard rules explain RULE...` prints the same\n\
+             guidance, and `--format json` returns it as data. Severity is the default;\n\
+             `medium` confidence means the rule infers intent from code shape, so\n\
+             confirm a finding before fixing it.\n\n\
+             | Rule | Engine | Severity | Confidence | Profiles |\n\
+             | --- | --- | --- | --- | --- |\n",
+        );
+        for rule in registry.rules() {
             out.push_str(&format!(
-                "| `{}` | {} | {} | {} | {} | {} |\n",
-                rule.id,
+                "| [`{id}`](#{anchor}) | {} | {} | {} | {} |\n",
                 name(serde_json::to_value(rule.engine).unwrap()),
                 name(serde_json::to_value(rule.severity).unwrap()),
                 name(serde_json::to_value(rule.confidence).unwrap()),
-                profiles,
-                description,
+                profiles_of(rule),
+                id = rule.id,
+                anchor = rule.id.replace('.', ""),
+            ));
+        }
+        let one_line = |text: &str| text.split_whitespace().collect::<Vec<_>>().join(" ");
+        for rule in registry.rules() {
+            out.push_str(&format!(
+                "\n## {}\n\n{}\n\n",
+                rule.id,
+                one_line(&rule.description)
+            ));
+            let Some(guidance) = &rule.guidance else {
+                continue;
+            };
+            out.push_str(&format!("- Reports: {}\n", one_line(&guidance.reports)));
+            if let Some(not_reported) = &guidance.not_reported {
+                out.push_str(&format!("- Not reported: {}\n", one_line(not_reported)));
+            }
+            out.push_str(&format!("- Fix: {}\n", one_line(&rule.fix)));
+            out.push_str(&format!(
+                "- Suppression: {}\n",
+                one_line(&guidance.suppress)
+            ));
+            if let Some(options) = &guidance.options {
+                out.push_str(&format!("- Configuration: {}\n", one_line(options)));
+            }
+            let fence = fence(rule);
+            out.push_str(&format!(
+                "\nBad:\n\n```{fence}\n{}\n```\n\nGood:\n\n```{fence}\n{}\n```\n",
+                guidance.bad.trim_end(),
+                guidance.good.trim_end()
             ));
         }
         out

@@ -6,3 +6,13 @@ fix: Use coroutineScope or a CoroutineScope owned by the component that manages 
 implementation:
   config: rules/semgrep/kotlin/global-scope.yml
   rule_id: kotlin-global-scope
+guidance:
+  reports: >-
+    GlobalScope.launch or GlobalScope.async.
+  bad: |-
+    GlobalScope.launch { refresh() }
+  good: |-
+    scope.launch { refresh() } // a scope the owner cancels, or coroutineScope { } in a suspend function
+  suppress: >-
+    For work that must outlive every component, such as a process-wide
+    shutdown hook; say so in the reason.

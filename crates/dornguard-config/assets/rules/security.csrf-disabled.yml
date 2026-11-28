@@ -7,3 +7,15 @@ fix: Keep CSRF enabled for browser sessions, or suppress this rule where the API
 implementation:
   config: rules/semgrep/security/csrf-disabled.yml
   rule_id: security-csrf-disabled
+guidance:
+  reports: >-
+    Spring Security csrf configuration that disables CSRF protection.
+  not_reported: >-
+    Methods that also set SessionCreationPolicy.STATELESS.
+  bad: |-
+    http.csrf(csrf -> csrf.disable());
+  good: |-
+    http.csrf(Customizer.withDefaults());
+  suppress: >-
+    For an API authenticated only by tokens in headers, never cookies; say
+    so in the reason.

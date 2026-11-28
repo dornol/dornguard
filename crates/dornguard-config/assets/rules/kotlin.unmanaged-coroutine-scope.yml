@@ -10,3 +10,21 @@ fix: >-
 implementation:
   config: rules/semgrep/kotlin/unmanaged-coroutine-scope.yml
   rule_id: kotlin-unmanaged-coroutine-scope
+guidance:
+  reports: >-
+    A val initialized with CoroutineScope(...) in a class with no function
+    that calls cancel on it.
+  bad: |-
+    class Poller {
+        private val scope = CoroutineScope(Dispatchers.Default)
+    }
+  good: |-
+    class Poller {
+        private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+        @PreDestroy
+        fun close() = scope.cancel()
+    }
+  suppress: >-
+    When the class lives as long as the process, such as an application-wide
+    singleton; say so in the reason.

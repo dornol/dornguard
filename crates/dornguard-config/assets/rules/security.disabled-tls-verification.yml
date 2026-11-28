@@ -7,3 +7,18 @@ fix: Use the default trust store and host name verification, or trust a specific
 implementation:
   config: rules/semgrep/security/disabled-tls-verification.yml
   rule_id: security-disabled-tls-verification
+guidance:
+  reports: >-
+    A trust-all X509TrustManager or a HostnameVerifier that always returns
+    true.
+  not_reported: >-
+    Code inside an if or conditional whose condition mentions verif,
+    insecure, trustAll, skip or validat, treated as an opt-in setting. The
+    trust-all implementation itself is still reported.
+  bad: |-
+    HostnameVerifier any = (host, session) -> true;
+  good: |-
+    // use the default verifier; trust a private CA by adding it to a trust store
+  suppress: >-
+    For a trust-all implementation used only behind an explicit opt-in flag
+    for local development; name the flag in the reason.

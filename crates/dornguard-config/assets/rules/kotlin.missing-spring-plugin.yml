@@ -7,3 +7,25 @@ fix: >-
   plugins { kotlin("plugin.spring") version "<kotlin version>" }, which opens
   Spring-annotated classes and their members. Declaring each class and
   function open also works.
+guidance:
+  reports: >-
+    A Gradle Kotlin module without the kotlin("plugin.spring") or allopen
+    plugin that has a final class or function annotated with @Configuration,
+    @SpringBootApplication, @Transactional, @Async, a cache annotation,
+    @Retryable or @Validated. Reported once per module at the first such
+    declaration.
+  not_reported: >-
+    Declarations marked open or abstract, and interfaces.
+  bad: |-
+    plugins {
+        kotlin("jvm") version "2.4.21"
+    }
+    // @Transactional class Catalog
+  good: |-
+    plugins {
+        kotlin("jvm") version "2.4.21"
+        kotlin("plugin.spring") version "2.4.21"
+    }
+  suppress: >-
+    Do not suppress; apply the plugin, or mark each proxied class and
+    function open.

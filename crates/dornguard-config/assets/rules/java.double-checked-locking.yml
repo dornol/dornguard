@@ -6,3 +6,22 @@ fix: Declare the field volatile, or use a holder class or an enum for lazy initi
 implementation:
   config: rules/pmd/java/double-checked-locking.xml
   rule_id: DoubleCheckedLocking
+guidance:
+  reports: >-
+    Double-checked lazy initialization of a field that is not volatile, as
+    reported by PMD.
+  bad: |-
+    private static Config instance;
+
+    static Config get() {
+        if (instance == null) {
+            synchronized (Config.class) {
+                if (instance == null) instance = new Config();
+            }
+        }
+        return instance;
+    }
+  good: |-
+    private static volatile Config instance; // or a holder class
+  suppress: >-
+    Do not suppress; make the field volatile or use a holder class.

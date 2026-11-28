@@ -10,3 +10,27 @@ fix: >-
 implementation:
   config: rules/semgrep/spring/jpa-lombok-entity.yml
   rule_id: spring-jpa-lombok-entity
+guidance:
+  reports: >-
+    A JPA @Entity class with Lombok @Data, or @EqualsAndHashCode or
+    @ToString without arguments.
+  not_reported: >-
+    Those annotations with arguments such as onlyExplicitlyIncluded = true,
+    and Lombok on classes that are not entities.
+  bad: |-
+    @Data
+    @Entity
+    class Order { ... }
+  good: |-
+    @Entity
+    @Getter
+    @Setter
+    @EqualsAndHashCode(onlyExplicitlyIncluded = true)
+    class Order {
+        @Id
+        @EqualsAndHashCode.Include
+        private Long id;
+    }
+  suppress: >-
+    For an entity with no associations and an assigned natural identifier;
+    say so in the reason.

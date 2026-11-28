@@ -7,3 +7,18 @@ fix: >-
 implementation:
   config: rules/semgrep/kotlin/jpa-data-class-entity.yml
   rule_id: kotlin-jpa-data-class-entity
+guidance:
+  reports: >-
+    A Kotlin data class annotated with @Entity. Its generated equals,
+    hashCode and toString read every property, including lazy associations.
+  bad: |-
+    @Entity
+    data class Book(@Id val id: Long, val title: String)
+  good: |-
+    @Entity
+    class Book(@Id val id: Long, var title: String) {
+        override fun equals(other: Any?) = other is Book && other.id == id
+        override fun hashCode() = id.hashCode()
+    }
+  suppress: >-
+    Do not suppress; keep data classes for DTOs.

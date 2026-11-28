@@ -6,3 +6,12 @@ fix: Call the suspending operation directly or use coroutineScope for structured
 implementation:
   config: rules/semgrep/kotlin/run-blocking-in-suspend.yml
   rule_id: kotlin-run-blocking-in-suspend
+guidance:
+  reports: >-
+    kotlinx.coroutines.runBlocking inside a suspend function.
+  bad: |-
+    suspend fun load() = runBlocking { fetch() }
+  good: |-
+    suspend fun load() = fetch()
+  suppress: >-
+    Do not suppress; it blocks the coroutine's thread.

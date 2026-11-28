@@ -8,3 +8,18 @@ skip_java_tests: false
 implementation:
   config: rules/semgrep/java/assert-throws-nested-call.yml
   rule_id: junit-assert-throws-nested-call
+guidance:
+  reports: >-
+    A JUnit assertThrows or assertThrowsExactly lambda that passes the
+    result of another method call directly to the operation under test, so
+    preparing the argument may throw first and satisfy the assertion
+    (java-review profile). Test sources are checked.
+  bad: |-
+    assertThrows(IllegalArgumentException.class,
+        () -> parser.parse(loadFixture("bad.json")));
+  good: |-
+    String input = loadFixture("bad.json");
+    assertThrows(IllegalArgumentException.class, () -> parser.parse(input));
+  suppress: >-
+    When the nested call cannot throw the asserted exception, such as a
+    constant factory; say why in the reason.

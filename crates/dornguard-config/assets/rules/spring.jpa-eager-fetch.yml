@@ -6,3 +6,19 @@ fix: Use FetchType.LAZY and load the association where it is needed with a fetch
 implementation:
   config: rules/semgrep/spring/jpa-eager-fetch.yml
   rule_id: spring-jpa-eager-fetch
+guidance:
+  reports: >-
+    An association or element collection mapped with fetch =
+    FetchType.EAGER.
+  not_reported: >-
+    @ManyToOne and @OneToOne without a fetch attribute, which are eager by
+    JPA default but not reported.
+  bad: |-
+    @ManyToOne(fetch = FetchType.EAGER)
+    private Customer customer;
+  good: |-
+    @ManyToOne(fetch = FetchType.LAZY)
+    private Customer customer; // load it with a fetch join where needed
+  suppress: >-
+    For a small, always-needed reference whose eager load was measured; say
+    so in the reason.

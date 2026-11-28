@@ -7,3 +7,18 @@ all_html: true
 implementation:
   config: rules/semgrep/html/inline-script.yml
   rule_id: html-inline-script
+guidance:
+  reports: >-
+    An executable inline <script> block in HTML and templates.
+  not_reported: >-
+    Scripts loaded through src or th:src, and data blocks such as
+    application/ld+json.
+  bad: |-
+    <script>
+      initPage();
+    </script>
+  good: |-
+    <script src="/js/page.js"></script>
+  suppress: >-
+    Only for a script that carries a CSP nonce or hash the server sets, and
+    say which in the reason.

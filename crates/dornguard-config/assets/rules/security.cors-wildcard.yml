@@ -7,3 +7,15 @@ fix: List the trusted origins explicitly.
 implementation:
   config: rules/semgrep/security/cors-wildcard.yml
   rule_id: security-cors-wildcard
+guidance:
+  reports: >-
+    A Spring CORS configuration that allows the `*` origin through
+    allowedOrigins("*"), addAllowedOrigin("*") or
+    setAllowedOrigins(List.of("*")).
+  bad: |-
+    registry.addMapping("/api/**").allowedOrigins("*");
+  good: |-
+    registry.addMapping("/api/**").allowedOrigins("https://app.example.com");
+  suppress: >-
+    For a public, unauthenticated, read-only API that sends no credentials;
+    say so in the reason.

@@ -6,3 +6,15 @@ fix: Place the transaction boundary on a method invoked through a Spring proxy.
 implementation:
   config: rules/semgrep/spring/private-transactional.yml
   rule_id: spring-private-transactional
+guidance:
+  reports: >-
+    A private Java method with Spring's @Transactional, which a proxy cannot
+    advise.
+  bad: |-
+    @Transactional
+    private void save() {}
+  good: |-
+    @Transactional
+    public void save() {} // called through the bean
+  suppress: >-
+    Do not suppress; the annotation has no effect.

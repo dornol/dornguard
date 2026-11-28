@@ -5,3 +5,14 @@ description: An optional chain that can be undefined is used where undefined thr
 fix: Provide a fallback such as (obj?.items ?? []) before calling, spreading or destructuring the result.
 implementation:
   rule_id: no-unsafe-optional-chaining
+guidance:
+  reports: >-
+    An optional chain that can be undefined used where undefined throws,
+    such as a call, spread or destructuring (ESLint
+    no-unsafe-optional-chaining).
+  bad: |-
+    const { name } = user?.profile;
+  good: |-
+    const { name } = user?.profile ?? {};
+  suppress: >-
+    Do not suppress; the code does not do what it appears to.

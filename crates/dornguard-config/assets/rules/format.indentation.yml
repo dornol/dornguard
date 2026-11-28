@@ -3,3 +3,25 @@ engine: builtin
 severity: error
 description: Use spaces and the configured indentation for this language.
 fix: Indent each block level by the configured number of spaces.
+guidance:
+  reports: >-
+    When enabled (off by default), indentation with tabs or a width other
+    than the configured one at block boundaries and for direct block
+    members. Continuation lines may align freely.
+  bad: |-
+    void run() {
+      start();
+    }
+  good: |-
+    void run() {
+        start();
+    }
+  suppress: >-
+    Only for files whose layout is owned elsewhere, such as generated or
+    vendored files; prefer format.exclude or an ignore entry with a path for
+    those.
+  options: >-
+    Off by default; enable with rules.format.indentation.enabled: true.
+    format.indent_style (spaces), format.java_indent (4),
+    format.kotlin_indent (4), format.javascript_indent (2),
+    format.overrides[].indent_style and indent_size

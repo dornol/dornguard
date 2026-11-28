@@ -13,3 +13,21 @@ fix: >-
 implementation:
   config: rules/semgrep/spring/field-injection.yml
   rule_id: spring-field-injection
+guidance:
+  reports: >-
+    A Java field annotated with @Autowired, @Inject or @Resource, with or
+    without arguments, static or not.
+  not_reported: >-
+    Setter and constructor injection.
+  bad: |-
+    @Autowired
+    private OrderRepository orders;
+  good: |-
+    private final OrderRepository orders;
+
+    OrderService(OrderRepository orders) {
+        this.orders = orders;
+    }
+  suppress: >-
+    In a test class that the Spring test framework injects; test sources are
+    skipped by default.

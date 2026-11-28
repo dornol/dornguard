@@ -79,6 +79,14 @@ For Java projects that use Maven, place `.dornguard.yml` beside the root
 `pom.xml` and add `layered` or `hexagonal` to its profiles for bytecode checks.
 See [Maven architecture checks](docs/architecture.md#maven).
 
+## Set up a coding agent
+
+Copy [docs/templates/AGENTS.md](docs/templates/AGENTS.md) into the project's
+`AGENTS.md` (or `CLAUDE.md`). The agent then runs
+`dornguard check --changed --format agent`, reads
+`dornguard rules explain RULE...` for each rule it reports, and fixes or
+justifiably suppresses each finding. See [coding agents](docs/agents.md).
+
 ## Common commands
 
 ```sh
@@ -89,7 +97,7 @@ dornguard check --module :api
 dornguard check --format sarif
 dornguard check --only-profile format
 dornguard check --changed --format json --report-rule java.stdout-usage
-dornguard rules explain java.stdout-usage
+dornguard rules explain java.stdout-usage --format json
 dornguard doctor
 ```
 

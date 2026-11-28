@@ -7,3 +7,17 @@ fix: Use an import and the simple type name where it is unambiguous.
 implementation:
   config: rules/semgrep/kotlin/fully-qualified-type.yml
   rule_id: kotlin-fully-qualified-type
+guidance:
+  reports: >-
+    A package-qualified name shaped like a type in Kotlin code.
+  not_reported: >-
+    Import and package declarations, comments and string literals.
+  bad: |-
+    val names = java.util.ArrayList<String>()
+  good: |-
+    import java.util.ArrayList
+
+    val names = ArrayList<String>()
+  suppress: >-
+    When two imported types share a simple name; use an import alias
+    (`import a.B as AB`) instead where possible.

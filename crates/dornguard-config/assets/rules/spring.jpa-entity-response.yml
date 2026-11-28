@@ -4,3 +4,18 @@ severity: warning
 confidence: medium
 description: This Spring MVC endpoint declares a JPA entity as a response type.
 fix: Map the entity to a response DTO with the intended API fields.
+guidance:
+  reports: >-
+    A JPA entity declared as the response type of a Spring MVC endpoint:
+    @RestController, @Controller with @ResponseBody, or an explicit
+    ResponseEntity, following arrays and containers such as
+    ResponseEntity<List<Book>> (jpa-web profile).
+  bad: |-
+    @GetMapping("/books/{id}")
+    Book show(@PathVariable long id) { ... }
+  good: |-
+    @GetMapping("/books/{id}")
+    BookView show(@PathVariable long id) { return BookView.from(books.find(id)); }
+  suppress: >-
+    When the entity is a deliberate read model with only public fields; say
+    so in the reason.

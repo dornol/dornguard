@@ -3,3 +3,26 @@ engine: builtin
 severity: error
 description: Java types must be in an org.jspecify.annotations.NullMarked scope.
 fix: Apply JSpecify @NullMarked to the type or its package and remove any @NullUnmarked that overrides it.
+guidance:
+  reports: >-
+    A Java type outside an org.jspecify.annotations.NullMarked scope
+    (jspecify profile). A package with no scope is reported once at its
+    first type, with the type count and up to three names; types opted out
+    with @NullUnmarked are reported one by one.
+  not_reported: >-
+    Types covered by @NullMarked on the type, an enclosing declaration, the
+    package's package-info.java or the module's module-info.java.
+  bad: |-
+    // src/main/java/com/example/service/OrderService.java, no package-info.java
+    package com.example.service;
+
+    class OrderService {}
+  good: |-
+    // src/main/java/com/example/service/package-info.java
+    @NullMarked
+    package com.example.service;
+
+    import org.jspecify.annotations.NullMarked;
+  suppress: >-
+    For generated packages; add an ignore entry with the package path and
+    say which generator in the reason.

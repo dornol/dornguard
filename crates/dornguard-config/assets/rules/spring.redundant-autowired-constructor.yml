@@ -6,3 +6,16 @@ fix: Remove @Autowired from the constructor.
 implementation:
   config: rules/semgrep/spring/redundant-autowired-constructor.yml
   rule_id: spring-redundant-autowired-constructor
+guidance:
+  reports: >-
+    @Autowired on the only constructor of a class.
+  not_reported: >-
+    @Autowired on one of several constructors, where it selects the
+    constructor Spring uses.
+  bad: |-
+    @Autowired
+    CheckoutController(OrderService orders) { ... }
+  good: |-
+    CheckoutController(OrderService orders) { ... }
+  suppress: >-
+    Not needed; remove the annotation.

@@ -7,3 +7,22 @@ fix: Use an immutable DateTimeFormatter or create the formatter for each operati
 implementation:
   config: rules/semgrep/spring/shared-simple-date-format.yml
   rule_id: spring-shared-simple-date-format
+guidance:
+  reports: >-
+    A field of type SimpleDateFormat, or initialized with one, in a
+    singleton Spring component.
+  not_reported: >-
+    Method-local formatters and request-, session-, application- and
+    prototype-scoped beans.
+  bad: |-
+    @Service
+    class Report {
+        private final SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd");
+    }
+  good: |-
+    @Service
+    class Report {
+        private static final DateTimeFormatter FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+    }
+  suppress: >-
+    When every use is synchronized on the formatter; say so in the reason.

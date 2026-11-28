@@ -5,3 +5,13 @@ description: A return, throw, break or continue in finally replaces the outcome 
 fix: Keep cleanup in finally and return or throw outside it.
 implementation:
   rule_id: no-unsafe-finally
+guidance:
+  reports: >-
+    return, throw, break or continue inside finally (ESLint
+    no-unsafe-finally).
+  bad: |-
+    try { return save(); } finally { return false; }
+  good: |-
+    try { return save(); } finally { release(); }
+  suppress: >-
+    Do not suppress; the code does not do what it appears to.

@@ -5,3 +5,12 @@ description: A value is compared with itself, which is always true or false exce
 fix: Compare with the intended value. Use Number.isNaN(value) to test for NaN.
 implementation:
   rule_id: no-self-compare
+guidance:
+  reports: >-
+    A value compared with itself (ESLint no-self-compare).
+  bad: |-
+    if (value !== value) { ... } // NaN check
+  good: |-
+    if (Number.isNaN(value)) { ... }
+  suppress: >-
+    Do not suppress; the code does not do what it appears to.

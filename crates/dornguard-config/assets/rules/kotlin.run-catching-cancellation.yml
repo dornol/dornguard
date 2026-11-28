@@ -7,3 +7,23 @@ fix: Let cancellation propagate or explicitly rethrow CancellationException.
 implementation:
   config: rules/semgrep/kotlin/run-catching-cancellation.yml
   rule_id: kotlin-run-catching-cancellation
+guidance:
+  reports: >-
+    A known suspending coroutine call, such as delay or withContext, or a
+    direct call to a sibling no-argument suspend function, inside
+    runCatching, which turns cancellation into a failure value.
+  not_reported: >-
+    runCatching { ... }.getOrThrow() chains.
+  bad: |-
+    val result = runCatching { delay(100); fetch() }
+  good: |-
+    val result = try {
+        Result.success(fetch())
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: IOException) {
+        Result.failure(e)
+    }
+  suppress: >-
+    When the block cannot be cancelled, such as inside NonCancellable; say
+    so in the reason.

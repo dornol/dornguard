@@ -6,3 +6,19 @@ fix: Implement equals and hashCode together so equal objects have the same hash 
 implementation:
   config: rules/pmd/java/equals-hashcode-contract.xml
   rule_id: OverrideBothEqualsAndHashcode
+guidance:
+  reports: >-
+    A class that overrides equals without hashCode, or hashCode without
+    equals, as reported by PMD.
+  bad: |-
+    @Override
+    public boolean equals(Object other) { ... } // no hashCode
+  good: |-
+    @Override
+    public boolean equals(Object other) { ... }
+
+    @Override
+    public int hashCode() { return Objects.hash(id); }
+  suppress: >-
+    Do not suppress; hash-based collections break when only one is
+    overridden.

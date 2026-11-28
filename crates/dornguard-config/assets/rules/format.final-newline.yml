@@ -3,3 +3,15 @@ engine: builtin
 severity: error
 description: End nonempty files with a newline.
 fix: Add a line break after the last line.
+guidance:
+  reports: >-
+    A nonempty source file that does not end with a newline.
+  bad: |-
+    class A {}<end of file>
+  good: |-
+    class A {}
+    <end of file>
+  suppress: >-
+    Only for files whose layout is owned elsewhere, such as generated or
+    vendored files; prefer format.exclude or an ignore entry with a path for
+    those.

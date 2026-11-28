@@ -7,3 +7,19 @@ fix: Use bind parameters such as ? or :name, and pass the values separately.
 implementation:
   config: rules/semgrep/security/sql-injection.yml
   rule_id: security-sql-injection
+guidance:
+  reports: >-
+    A JDBC, JPA or JdbcTemplate query method whose SQL argument is built by
+    concatenation or formatting and contains SQL text such as select, update
+    or drop in a string literal.
+  not_reported: >-
+    Calls whose string literals contain no SQL keyword, such as
+    signature.update("id=" + name).
+  bad: |-
+    jdbc.query("select * from book where title = '" + title + "'", mapper);
+  good: |-
+    jdbc.query("select * from book where title = ?", mapper, title);
+  suppress: >-
+    When the concatenated value is a constant or comes from a fixed
+    allow-list, such as a validated sort column; name the allow-list in the
+    reason.

@@ -10,3 +10,27 @@ fix: >-
 implementation:
   config: rules/semgrep/java/optional-misuse.yml
   rule_id: java-optional-misuse
+guidance:
+  reports: >-
+    An Optional field, an Optional method or constructor parameter, or
+    `return null` in a method that returns Optional.
+  not_reported: >-
+    Optional local variables and return types, and `return null` inside a
+    lambda or anonymous class.
+  bad: |-
+    private Optional<String> nickname;
+
+    Optional<User> find(String id) {
+        return null;
+    }
+  good: |-
+    private @Nullable String nickname;
+
+    Optional<String> nickname() { return Optional.ofNullable(nickname); }
+
+    Optional<User> find(String id) {
+        return Optional.empty();
+    }
+  suppress: >-
+    When a framework requires the Optional field or parameter, such as a
+    serialization contract you do not own; name it in the reason.

@@ -5,3 +5,13 @@ description: Avoid evaluating strings as JavaScript with eval.
 fix: Use a direct function call or a data parser.
 implementation:
   rule_id: no-eval
+guidance:
+  reports: >-
+    Calls to eval (ESLint no-eval).
+  bad: |-
+    const config = eval("(" + text + ")");
+  good: |-
+    const config = JSON.parse(text);
+  suppress: >-
+    Only in build or development tooling that never runs on untrusted input;
+    say so in the reason.

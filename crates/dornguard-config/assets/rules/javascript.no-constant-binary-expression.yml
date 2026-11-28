@@ -5,3 +5,14 @@ description: A comparison or logical expression has a result that does not depen
 fix: Check operator precedence and compare with the intended value. A new object or array never equals another value, and a ?? b has no effect when a cannot be null.
 implementation:
   rule_id: no-constant-binary-expression
+guidance:
+  reports: >-
+    A comparison or logical expression whose result does not depend on its
+    operands, such as `x === []` or `a + b ?? c` (ESLint
+    no-constant-binary-expression).
+  bad: |-
+    if (items === []) { showEmpty(); }
+  good: |-
+    if (items.length === 0) { showEmpty(); }
+  suppress: >-
+    Do not suppress; the code does not do what it appears to.

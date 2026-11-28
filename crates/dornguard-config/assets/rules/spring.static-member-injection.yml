@@ -8,3 +8,20 @@ fix: >-
 implementation:
   config: rules/semgrep/spring/static-member-injection.yml
   rule_id: spring-static-member-injection
+guidance:
+  reports: >-
+    Spring's @Value on a static field or static method, or @Autowired on a
+    static method.
+  not_reported: >-
+    @Autowired fields, static or not, which spring.field-injection reports.
+  bad: |-
+    @Value("${app.name}")
+    private static String name;
+  good: |-
+    private final String name;
+
+    AppSettings(@Value("${app.name}") String name) {
+        this.name = name;
+    }
+  suppress: >-
+    Do not suppress; Spring never sets the value.

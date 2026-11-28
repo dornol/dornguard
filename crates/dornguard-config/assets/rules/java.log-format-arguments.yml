@@ -6,3 +6,15 @@ fix: Pass one argument for each {} placeholder. Pass an exception as the last ar
 implementation:
   config: rules/pmd/java/log-format-arguments.xml
   rule_id: InvalidLogMessageFormat
+guidance:
+  reports: >-
+    A log call whose {} placeholders do not match the number of arguments,
+    as reported by PMD.
+  not_reported: >-
+    A trailing exception argument, which needs no placeholder.
+  bad: |-
+    log.info("user {} signed in from {}", user);
+  good: |-
+    log.info("user {} signed in from {}", user, address);
+  suppress: >-
+    Do not suppress; fix the message or the arguments.

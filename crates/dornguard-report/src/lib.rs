@@ -48,14 +48,23 @@ pub fn write_agent(report: &CheckReport, writer: &mut impl Write, limit: usize) 
                 .partition(|item| seen.insert(item.rule_id.as_str()));
             representatives.into_iter().chain(remaining)
         });
+    let mut shown = BTreeSet::new();
     for diagnostic in ordered.take(limit) {
         write_diagnostic(diagnostic, writer)?;
+        shown.insert(diagnostic.rule_id.as_str());
     }
     if report.diagnostics.len() > limit {
         writeln!(
             writer,
             "{} more diagnostics. Use --format json for the complete report.",
             report.diagnostics.len() - limit
+        )?;
+    }
+    if !shown.is_empty() {
+        writeln!(
+            writer,
+            "Before fixing, read what each rule reports, an example and when suppression is allowed: dornguard rules explain {}",
+            shown.into_iter().collect::<Vec<_>>().join(" ")
         )?;
     }
     Ok(())

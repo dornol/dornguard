@@ -8,3 +8,18 @@ fix: >-
 implementation:
   config: rules/semgrep/spring/request-mapping-without-method.yml
   rule_id: spring-request-mapping-without-method
+guidance:
+  reports: >-
+    A handler method annotated with @RequestMapping without method, which
+    answers every HTTP method.
+  not_reported: >-
+    Class-level @RequestMapping, which only shares a path prefix.
+  bad: |-
+    @RequestMapping("/cancel")
+    String cancel() { ... }
+  good: |-
+    @PostMapping("/cancel")
+    String cancel() { ... }
+  suppress: >-
+    When the endpoint must accept every method, such as a webhook receiver;
+    say so in the reason.

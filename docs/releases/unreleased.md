@@ -63,8 +63,15 @@ ARM64. Linux ARM64 is new; `install.sh` selects it on `aarch64` machines.
   explains the annotation processor change and the fixes.
 - The Thymeleaf literal-markup hint finds the right column on lines with
   multibyte text.
-- The [rule catalog](../rules.md) lists every built-in rule with its engine,
-  severity, confidence and profiles.
+- Rule guidance for coding agents. `dornguard rules explain RULE...` prints
+  what each rule reports and does not report, the fix, a bad and a good
+  example, when suppression is legitimate and the exact suppression syntax;
+  `--format json` returns the same fields. The agent report ends with the
+  `rules explain` command for the rules it shows. The
+  [AGENTS.md template](../templates/AGENTS.md) is now a complete,
+  language-independent workflow, and the generated [rule catalog](../rules.md)
+  replaces the rule tables in the profile documentation. Custom rules can
+  carry the same `guidance` block.
 
 ### Upgrading from v0.0.8
 

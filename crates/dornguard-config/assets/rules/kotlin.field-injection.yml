@@ -7,3 +7,19 @@ fix: >-
 implementation:
   config: rules/semgrep/kotlin/field-injection.yml
   rule_id: kotlin-field-injection
+guidance:
+  reports: >-
+    A Kotlin lateinit var or var property annotated with @Autowired, @Inject
+    or @Resource.
+  not_reported: >-
+    Constructor injection, including `@Autowired constructor`.
+  bad: |-
+    class Catalog {
+        @Autowired
+        lateinit var books: BookRepository
+    }
+  good: |-
+    class Catalog(private val books: BookRepository)
+  suppress: >-
+    In a test class that Spring's test framework injects; test sources are
+    skipped by default.

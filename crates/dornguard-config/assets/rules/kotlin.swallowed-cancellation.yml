@@ -7,3 +7,18 @@ fix: Rethrow the cancellation exception after any logging or cleanup.
 implementation:
   config: rules/semgrep/kotlin/swallowed-cancellation.yml
   rule_id: kotlin-swallowed-cancellation
+guidance:
+  reports: >-
+    A catch of CancellationException (or a coroutine cancellation subtype)
+    that is empty, returns without a value or only logs.
+  bad: |-
+    catch (e: CancellationException) {
+        log.warn("cancelled", e)
+    }
+  good: |-
+    catch (e: CancellationException) {
+        log.warn("cancelled", e)
+        throw e
+    }
+  suppress: >-
+    Do not suppress; rethrow so structured concurrency can cancel.

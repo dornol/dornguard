@@ -6,3 +6,17 @@ fix: Log the exception with the project logger and pass it as the last argument.
 implementation:
   config: rules/semgrep/java/print-stack-trace.yml
   rule_id: java-print-stack-trace
+guidance:
+  reports: >-
+    A call to printStackTrace(), which writes to standard error instead of
+    the logger.
+  bad: |-
+    catch (IOException e) {
+        e.printStackTrace();
+    }
+  good: |-
+    catch (IOException e) {
+        log.error("Could not read {}", path, e);
+    }
+  suppress: >-
+    Only in a command-line tool without a logger; say so in the reason.

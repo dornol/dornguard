@@ -11,3 +11,18 @@ fix: >-
 implementation:
   config: rules/semgrep/security/jackson-default-typing.yml
   rule_id: security-jackson-default-typing
+guidance:
+  reports: >-
+    Jackson enableDefaultTyping, activateDefaultTyping with
+    LaissezFaireSubTypeValidator, and @JsonTypeInfo(use = Id.CLASS) or
+    Id.MINIMAL_CLASS, which let the input choose the class to instantiate.
+  not_reported: >-
+    activateDefaultTyping with another validator, and Id.NAME.
+  bad: |-
+    mapper.activateDefaultTyping(LaissezFaireSubTypeValidator.instance);
+  good: |-
+    mapper.activateDefaultTyping(BasicPolymorphicTypeValidator.builder()
+        .allowIfSubType("com.example.events.").build());
+  suppress: >-
+    When the JSON never comes from outside the system, such as a local cache
+    file the application writes; say so in the reason.

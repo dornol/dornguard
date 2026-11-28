@@ -7,3 +7,20 @@ fix: Split the class by responsibility and move behavior next to the data it use
 implementation:
   config: rules/pmd/java/god-class.xml
   rule_id: GodClass
+guidance:
+  reports: >-
+    A class that PMD's GodClass rule finds large (high weighted method
+    count), complex and dependent on other classes' data, with low cohesion
+    (java-design profile).
+  bad: |-
+    class OrderManager {
+        // validation, pricing, persistence, mail and reporting in one class,
+        // reading the fields of Customer, Invoice and Shipment directly
+    }
+  good: |-
+    class OrderValidator { ... }
+    class PriceCalculator { ... }
+    class OrderRepository { ... }
+  suppress: >-
+    For a facade that only delegates, such as a generated client; say so in
+    the reason.

@@ -3,3 +3,21 @@ engine: builtin
 severity: warning
 description: This direct call bypasses the target method's transaction advice in Spring proxy mode.
 fix: Move the transaction boundary to a proxied entry point or invoke the operation on another Spring bean.
+guidance:
+  reports: >-
+    A direct Java call, unqualified or through this, to a same-class method
+    with Spring's @Transactional, which runs without the annotation's
+    transaction settings.
+  not_reported: >-
+    Calls through another bean or an injected self reference, and
+    parameterized calls the rule cannot resolve to one declared method.
+  bad: |-
+    void importAll() { importOne(); }
+
+    @Transactional(propagation = REQUIRES_NEW)
+    void importOne() { ... }
+  good: |-
+    void importAll() { importer.importOne(); } // @Transactional method on another bean
+  suppress: >-
+    When the caller already runs in the same transaction and the callee's
+    settings add nothing; say so in the reason.

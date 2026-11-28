@@ -5,3 +5,25 @@ description: Packages must not depend on each other in a cycle.
 fix: Break the cycle by moving shared types to a lower-level package or inverting one dependency.
 options:
   cycles: true
+guidance:
+  reports: >-
+    Each package edge of a dependency cycle between packages in one module,
+    with the number of class dependencies behind it (package-cycles
+    profile). Dependencies on packages outside the cycle are not reported.
+  bad: |-
+    // example.order uses example.billing, and example.billing uses example.order
+    package example.billing;
+
+    class Invoice { example.order.Order order; }
+  good: |-
+    // example.billing depends on an interface it owns; example.order implements it
+    package example.billing;
+
+    class Invoice { Billable item; }
+  suppress: >-
+    Only for a dependency the team has accepted as a documented exception,
+    such as generated code; otherwise move the code so the dependency goes
+    the allowed way.
+  options: >-
+    rules.architecture.package-cycle.options: { from: [example.service],
+    cycles: true } considers only matching packages.

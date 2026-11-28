@@ -1,16 +1,19 @@
 # Using DornGuard with coding agents
 
-Copy the [AGENTS.md instructions](templates/AGENTS.md) into the project's
-`AGENTS.md` for agents that read it. For Claude Code, put the same quality gate
-instructions in the project's `CLAUDE.md`.
+Copy [templates/AGENTS.md](templates/AGENTS.md) into the project's
+`AGENTS.md`, or into `CLAUDE.md` for Claude Code. It is the complete workflow
+an agent follows: when to run the check, what each exit code means, how to
+read rule guidance, and when a finding may be suppressed.
 
-Use `dornguard check --changed --format agent` for a concise report that shows
-the first 20 diagnostics. Use `--format json` for every result and
-`dornguard rules explain RULE_ID` for the rule's guidance. Exit codes match
-those used by the full CI check.
+The agent reads everything else from the CLI:
 
-A finding from a rule with `medium` confidence carries a `Review:` line in the
-text and agent reports. The rule infers intent from code shape, so confirm the
-finding before fixing it, and suppress it with a reason when the code is
-correct. Findings without that line are policy violations that need a code
-change. See [rule confidence](profiles.md#rule-confidence).
+- `dornguard check --changed --format agent` shows up to 20 diagnostics, the
+  most severe first, and ends with the `dornguard rules explain` command for
+  the rules involved. `--format json` returns every diagnostic.
+- `dornguard rules explain RULE...` prints what a rule reports and does not
+  report, the fix, a bad and a good example, when suppression is legitimate
+  and the exact suppression syntax. `--format json` returns the same fields.
+- Findings with a `Review:` line come from `medium` confidence rules and need
+  a judgment; the others need a code change.
+
+DornGuard reports fixes as text and never edits files itself.

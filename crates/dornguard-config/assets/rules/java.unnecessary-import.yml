@@ -6,3 +6,20 @@ fix: Remove the unused, duplicated, or implicit import.
 implementation:
   config: rules/pmd/java/unnecessary-import.xml
   rule_id: UnnecessaryImport
+guidance:
+  reports: >-
+    Unused, duplicate or implicit imports (java.lang, same package), as
+    reported by PMD. Unused wildcard imports are reported when the module's
+    compiled classpath is available.
+  not_reported: >-
+    An import whose type the file also writes in full;
+    java.fully-qualified-type reports that once and asks for the simple
+    name.
+  bad: |-
+    import java.util.List; // never used
+    import java.lang.String;
+  good: |-
+    // both imports removed
+  suppress: >-
+    When PMD lacks the classpath to see a use, such as a type used only in
+    Javadoc; say so in the reason, or run with --resolve-imports.

@@ -3,3 +3,17 @@ engine: go_vet
 severity: error
 description: go vet reported a suspicious construct.
 fix: Fix the reported construct; go vet findings are almost always bugs.
+guidance:
+  reports: >-
+    Every finding of the default go vet analyzers for the checked packages.
+    The analyzer is the diagnostic's subject, such as printf, assign or
+    copylocks.
+  not_reported: >-
+    Files under vendor and testdata directories.
+  bad: |-
+    fmt.Printf("%d\n", name) // name is a string
+  good: |-
+    fmt.Printf("%s\n", name)
+  suppress: >-
+    Almost never; go vet findings are bugs. For a deliberate case, explain
+    it in the dornguard-ignore reason.

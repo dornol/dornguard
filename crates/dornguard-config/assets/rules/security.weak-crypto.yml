@@ -7,3 +7,16 @@ fix: Use SHA-256 or stronger for hashing and an authenticated mode such as AES/G
 implementation:
   config: rules/semgrep/security/weak-crypto.yml
   rule_id: security-weak-crypto
+guidance:
+  reports: >-
+    MessageDigest MD2, MD5 or SHA-1, DigestUtils md5/sha1, and Cipher DES,
+    DESede, RC2, RC4, Blowfish, or AES in ECB or default mode.
+  bad: |-
+    MessageDigest.getInstance("MD5");
+    Cipher.getInstance("AES");
+  good: |-
+    MessageDigest.getInstance("SHA-256");
+    Cipher.getInstance("AES/GCM/NoPadding");
+  suppress: >-
+    For a non-security checksum an external format requires, such as an ETag
+    or a legacy protocol field; name the format in the reason.

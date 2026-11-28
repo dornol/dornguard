@@ -6,3 +6,14 @@ fix: Use a reactive transaction manager with a TransactionalOperator, or move th
 implementation:
   config: rules/semgrep/kotlin/transactional-suspend.yml
   rule_id: kotlin-transactional-suspend
+guidance:
+  reports: >-
+    Spring @Transactional on a Kotlin suspend function.
+  bad: |-
+    @Transactional
+    suspend fun save(book: Book) { ... }
+  good: |-
+    suspend fun save(book: Book) = transactionalOperator.executeAndAwait { ... }
+  suppress: >-
+    When the application uses a reactive transaction manager (R2DBC); say so
+    in the reason.

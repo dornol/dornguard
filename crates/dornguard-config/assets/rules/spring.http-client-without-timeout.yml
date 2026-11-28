@@ -10,3 +10,20 @@ fix: >-
 implementation:
   config: rules/semgrep/spring/http-client-without-timeout.yml
   rule_id: spring-http-client-without-timeout
+guidance:
+  reports: >-
+    new RestTemplate() without a request factory set right after it,
+    RestClient.create(...) and WebClient.create(...).
+  not_reported: >-
+    Clients built from RestTemplateBuilder, RestClient.builder() or
+    WebClient.builder().
+  bad: |-
+    RestTemplate template = new RestTemplate();
+  good: |-
+    RestTemplate template = builder
+        .connectTimeout(Duration.ofSeconds(2))
+        .readTimeout(Duration.ofSeconds(5))
+        .build();
+  suppress: >-
+    When the timeouts are configured on the instance elsewhere, such as a
+    customizer bean; name it in the reason.

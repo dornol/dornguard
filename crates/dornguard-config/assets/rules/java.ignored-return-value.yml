@@ -7,3 +7,17 @@ fix: Use the returned value in the next operation or remove the call if the resu
 implementation:
   config: rules/pmd/java/ignored-return-value.xml
   rule_id: UnusedReturnValue
+guidance:
+  reports: >-
+    A call whose result must be used, such as String.trim() or
+    BigDecimal.add(), whose result the caller discards, as reported by PMD
+    (java-review profile).
+  bad: |-
+    name.trim();
+    total.add(tax);
+  good: |-
+    name = name.trim();
+    total = total.add(tax);
+  suppress: >-
+    When the call is made only for an exception it may throw, such as a
+    validating parse; say so in the reason.

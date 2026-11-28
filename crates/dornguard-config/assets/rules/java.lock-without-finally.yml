@@ -10,3 +10,22 @@ fix: >-
 implementation:
   config: rules/semgrep/java/lock-without-finally.yml
   rule_id: java-lock-without-finally
+guidance:
+  reports: >-
+    lock() or lockInterruptibly() on a java.util.concurrent lock, including
+    readLock() and writeLock(), that is not followed by or inside a try
+    block with finally.
+  bad: |-
+    lock.lock();
+    update();
+    lock.unlock();
+  good: |-
+    lock.lock();
+    try {
+        update();
+    } finally {
+        lock.unlock();
+    }
+  suppress: >-
+    When another method releases the lock by design, such as a lock handed
+    to a caller; name that method in the reason.

@@ -3,3 +3,25 @@ engine: builtin
 severity: error
 description: This source has too many consecutive blank lines.
 fix: Remove excess blank lines.
+guidance:
+  reports: >-
+    More consecutive blank lines than format.max_blank_lines (1) in Java,
+    Kotlin and JavaScript sources. Test sources are skipped unless
+    skip_java_tests is false.
+  not_reported: >-
+    Blank lines inside string literals, text blocks and template literals.
+  bad: |-
+    int a = 1;
+
+
+    int b = 2;
+  good: |-
+    int a = 1;
+
+    int b = 2;
+  suppress: >-
+    Only for files whose layout is owned elsewhere, such as generated or
+    vendored files; prefer format.exclude or an ignore entry with a path for
+    those.
+  options: >-
+    format.max_blank_lines (1), format.overrides[].max_blank_lines

@@ -5,7 +5,7 @@ use std::process::ExitCode;
 
 use clap::Parser;
 use dornguard_config::{BUILTIN_VERSION, CONFIG_FILE, DEFAULT_CONFIG};
-use dornguard_core::{Confidence, EngineName, FailureKind, Scope};
+use dornguard_core::{EngineName, FailureKind, Scope};
 use dornguard_engine::{install, supported_version};
 use miette::{IntoDiagnostic, Result, WrapErr, bail};
 
@@ -21,6 +21,7 @@ mod check;
 mod cli;
 mod csp;
 mod doctor;
+mod explain;
 mod flyway;
 mod maven;
 mod overlap;
@@ -130,49 +131,6 @@ async fn run_check(args: CheckArgs) -> Result<u8> {
     .into_diagnostic()
     .wrap_err("Could not write the check result")?;
     Ok(report.exit_code)
-}
-
-fn explain_rule(registry: &dornguard_config::Registry, id: &str) -> Result<()> {
-    let rule = registry.rule(id)?;
-    println!("{}  {}\nFix: {}", rule.id, rule.description, rule.fix);
-    println!(
-        "Confidence: {}",
-        match rule.confidence {
-            Confidence::High => "high (a finding needs fixing)",
-            Confidence::Medium => "medium (confirm the finding, or suppress it with a reason)",
-        }
-    );
-    let options = match rule.id.as_str() {
-        "format.indentation" => Some(
-            "Off by default; enable with rules.format.indentation.enabled: true. format.indent_style (spaces), format.java_indent (4), format.kotlin_indent (4), format.javascript_indent (2), format.overrides[].indent_style and indent_size",
-        ),
-        "format.control-spacing" => {
-            Some("format.control_spacing (space), format.overrides[].control_spacing")
-        }
-        "format.line-ending" => Some("format.line_ending (lf), format.overrides[].line_ending"),
-        "format.blank-lines" => {
-            Some("format.max_blank_lines (1), format.overrides[].max_blank_lines")
-        }
-        "java.resource-not-closed" => {
-            Some("java_target, java_resource_owners, java_managed_resource_factories")
-        }
-        "java.preserve-stack-trace" => Some("allow_logged_exceptions (false)"),
-        "thymeleaf.unescaped-output" => Some("thymeleaf_sanitizers"),
-        _ if rule.options.is_some() => {
-            Some("rules.<id>.options.from, rules.<id>.options.forbidden")
-        }
-        _ => None,
-    };
-    if let Some(options) = options {
-        println!("Configuration keys: {options}");
-    }
-    if rule.is_format_rule() {
-        println!(
-            "Use format.exclude for formatting-only globs, format.include_minified to check minified JavaScript, or check --only-profile format to run formatting alone."
-        );
-    }
-
-    Ok(())
 }
 
 async fn create_baseline(
@@ -370,7 +328,7 @@ async fn dispatch(action: Action) -> Result<u8> {
                         println!("{}  {}", rule.id, rule.description);
                     }
                 }
-                RuleAction::Explain { id } => explain_rule(&registry, &id)?,
+                RuleAction::Explain { ids, format } => explain::explain(&registry, &ids, format)?,
             }
             Ok(0)
         }

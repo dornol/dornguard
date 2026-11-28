@@ -6,3 +6,26 @@ fix: Expose the operation through a service.
 options:
   from: [controller]
   forbidden: [repository]
+guidance:
+  reports: >-
+    A class in a `controller` package that depends on a class in a
+    `repository` package (layered profile).
+  bad: |-
+    package example.controller;
+
+    class BookController {
+        private final example.repository.BookRepository books;
+    }
+  good: |-
+    package example.controller;
+
+    class BookController {
+        private final example.service.BookService books;
+    }
+  suppress: >-
+    Only for a dependency the team has accepted as a documented exception,
+    such as generated code; otherwise move the code so the dependency goes
+    the allowed way.
+  options: >-
+    rules.<id>.options.from and rules.<id>.options.forbidden take package
+    name segments, which replace the defaults listed under Reports.

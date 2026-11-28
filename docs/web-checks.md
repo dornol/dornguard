@@ -18,13 +18,13 @@ The `javascript` profile requires ESLint 9 or 10. DornGuard prefers
 checks `.js`, `.mjs`, `.cjs`, and TypeScript `.ts`, `.mts`, `.cts`, and `.tsx`
 with these ESLint core rules:
 
-| Area | Rules |
-| --- | --- |
-| Code evaluation | `no-eval`, `no-implied-eval`, `no-new-func`, `no-script-url` |
-| Comparisons that are always true or false | `no-self-compare`, `no-constant-binary-expression`, `use-isnan`, `valid-typeof`, `no-unsafe-negation` |
-| Lost results and errors | `no-unsafe-finally`, `no-unsafe-optional-chaining`, `no-async-promise-executor` |
+`no-eval`, `no-implied-eval`, `no-new-func`, `no-script-url`,
+`no-self-compare`, `no-constant-binary-expression`, `use-isnan`,
+`valid-typeof`, `no-unsafe-negation`, `no-unsafe-finally`,
+`no-unsafe-optional-chaining` and `no-async-promise-executor`.
 
-Each is reported as `javascript.<rule>`, for example `javascript.use-isnan`.
+Each is reported as `javascript.<rule>`, for example `javascript.use-isnan`;
+`dornguard rules explain javascript.use-isnan` shows what it reports and an example.
 `no-promise-executor-return` is not included, because it also reports the
 common `new Promise((resolve) => setTimeout(resolve, 10))`.
 TypeScript is parsed with `@typescript-eslint/parser` without type information,

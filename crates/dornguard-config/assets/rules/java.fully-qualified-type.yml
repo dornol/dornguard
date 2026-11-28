@@ -7,3 +7,20 @@ fix: Use an import and the simple type name where it is unambiguous.
 implementation:
   config: rules/semgrep/java/fully-qualified-type.yml
   rule_id: java-fully-qualified-type
+guidance:
+  reports: >-
+    A package-qualified name shaped like a type, such as `java.util.List`,
+    in Java code.
+  not_reported: >-
+    Import and package declarations, comments, string literals, and
+    qualified expressions rooted in a visible local value.
+  bad: |-
+    java.util.List<String> names = new java.util.ArrayList<>();
+  good: |-
+    import java.util.ArrayList;
+    import java.util.List;
+
+    List<String> names = new ArrayList<>();
+  suppress: >-
+    When two imported types share a simple name and the qualifier tells them
+    apart; name both types in the reason.

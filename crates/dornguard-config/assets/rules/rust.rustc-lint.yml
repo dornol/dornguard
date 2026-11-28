@@ -3,3 +3,14 @@ engine: clippy
 severity: warning
 description: The Rust compiler reported a lint warning.
 fix: Fix the warning, or allow the lint in code with a reason when it does not apply.
+guidance:
+  reports: >-
+    Compiler lint warnings from cargo clippy, such as unused_variables,
+    dead_code and unused_imports. The lint is the diagnostic's subject.
+  bad: |-
+    let unused = compute();
+  good: |-
+    let _unused = compute(); // or remove the binding
+  suppress: >-
+    When the code is kept on purpose, for example an item used only on
+    another platform; allow the lint on the item with a reason.

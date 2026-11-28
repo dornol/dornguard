@@ -7,3 +7,17 @@ fix: Group related parameters into a value object or record, or split the method
 implementation:
   config: rules/pmd/java/excessive-parameters.xml
   rule_id: ExcessiveParameterList
+guidance:
+  reports: >-
+    A method or constructor with eight or more parameters (java-design
+    profile).
+  bad: |-
+    void register(String name, String email, String phone, String street,
+                  String city, String zip, String country, boolean active) {}
+  good: |-
+    record Contact(String name, String email, String phone, Address address) {}
+
+    void register(Contact contact, boolean active) {}
+  suppress: >-
+    For a framework-defined signature or a generated constructor, such as a
+    JPA projection; say which in the reason.

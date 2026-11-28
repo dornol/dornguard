@@ -3,3 +3,20 @@ engine: builtin
 severity: warning
 description: This direct call bypasses the target method's cache advice in Spring proxy mode.
 fix: Call the cached operation through another Spring bean.
+guidance:
+  reports: >-
+    A direct Java call to a same-class method with @Cacheable, @CacheEvict,
+    @CachePut or @Caching, which bypasses the cache.
+  not_reported: >-
+    Calls through another bean or an injected self reference, and
+    parameterized calls the rule cannot resolve to one declared method.
+  bad: |-
+    Book show(long id) { return find(id); }
+
+    @Cacheable("books")
+    Book find(long id) { ... }
+  good: |-
+    Book show(long id) { return bookCache.find(id); } // cached method on another bean
+  suppress: >-
+    When the caller must read past the cache on purpose; say so in the
+    reason.

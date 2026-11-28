@@ -6,3 +6,25 @@ fix: Put the dependency behind a domain abstraction.
 options:
   from: [domain]
   forbidden: [application, adapter, infrastructure]
+guidance:
+  reports: >-
+    A class in a `domain` package that depends on a class in an
+    `application`, `adapter` or `infrastructure` package (hexagonal
+    profile).
+  bad: |-
+    package example.domain;
+
+    record Book(String title) {
+        Class<?> store() { return example.adapter.BookAdapter.class; }
+    }
+  good: |-
+    package example.domain;
+
+    record Book(String title) {}
+  suppress: >-
+    Only for a dependency the team has accepted as a documented exception,
+    such as generated code; otherwise move the code so the dependency goes
+    the allowed way.
+  options: >-
+    rules.<id>.options.from and rules.<id>.options.forbidden take package
+    name segments, which replace the defaults listed under Reports.

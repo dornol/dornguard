@@ -6,3 +6,20 @@ fix: Return an empty collection or array, such as List.of() or new String[0], so
 implementation:
   config: rules/pmd/java/return-null-collection.xml
   rule_id: ReturnEmptyCollectionRatherThanNull
+guidance:
+  reports: >-
+    `return null` in a method that returns a collection, map or array, as
+    reported by PMD.
+  bad: |-
+    List<String> names() {
+        if (!loaded) return null;
+        return names;
+    }
+  good: |-
+    List<String> names() {
+        if (!loaded) return List.of();
+        return names;
+    }
+  suppress: >-
+    When null means something different from empty to existing callers, such
+    as 'not loaded'; say so in the reason, and prefer Optional for new code.

@@ -7,3 +7,25 @@ fix: Use try-with-resources or close the resource according to its ownership.
 implementation:
   config: rules/pmd/java/resource-not-closed.xml
   rule_id: CloseResource
+guidance:
+  reports: >-
+    A resource such as a stream, reader or JDBC connection that the code
+    opens and may leave open on some path, as reported by PMD's
+    CloseResource.
+  not_reported: >-
+    Resources returned to the caller, stored in a field the class closes,
+    opened by factories listed in java_managed_resource_factories, or owned
+    by types in java_resource_owners.
+  bad: |-
+    InputStream in = Files.newInputStream(file);
+    return in.readAllBytes();
+  good: |-
+    try (InputStream in = Files.newInputStream(file)) {
+        return in.readAllBytes();
+    }
+  suppress: >-
+    When ownership passes elsewhere in a way PMD cannot see, such as a
+    framework that closes it; name the owner in the reason, or list it in
+    java_resource_owners.
+  options: >-
+    java_target, java_resource_owners, java_managed_resource_factories

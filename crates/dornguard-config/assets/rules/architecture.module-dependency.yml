@@ -3,3 +3,22 @@ engine: gradle
 severity: error
 description: A forbidden Gradle project dependency is declared.
 fix: Remove the project dependency or depend on a shared module.
+guidance:
+  reports: >-
+    A Gradle project dependency listed under module_dependencies.forbid in
+    .dornguard.yml, such as `:api -> :admin`. Reported on the build file,
+    once per forbidden pair.
+  bad: |-
+    // api/build.gradle.kts with module_dependencies.forbid: [{ from: ":api", to: ":admin" }]
+    dependencies {
+        implementation(project(":admin"))
+    }
+  good: |-
+    dependencies {
+        implementation(project(":common")) // move the shared code to a module both may use
+    }
+  suppress: >-
+    Do not suppress; change module_dependencies.forbid in .dornguard.yml if
+    the dependency is now allowed.
+  options: >-
+    module_dependencies.forbid: [{ from: ":module", to: ":other" }]

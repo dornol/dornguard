@@ -7,3 +7,20 @@ fix: Use escaped output or verify that the HTML has been sanitized before render
 implementation:
   config: rules/semgrep/thymeleaf/unescaped-output.yml
   rule_id: thymeleaf-unescaped-output
+guidance:
+  reports: >-
+    A dynamic expression rendered without HTML escaping: th:utext,
+    data-th-utext, or inline [(...)] in template text
+    (thymeleaf-output-review profile).
+  not_reported: >-
+    Expressions passed through a sanitizer listed in thymeleaf_sanitizers,
+    and literal values.
+  bad: |-
+    <div th:utext="${comment.body}"></div>
+  good: |-
+    <div th:text="${comment.body}"></div>
+  suppress: >-
+    When the value is trusted HTML or already sanitized; name the source or
+    sanitizer in the reason, or add the sanitizer to thymeleaf_sanitizers.
+  options: >-
+    thymeleaf_sanitizers

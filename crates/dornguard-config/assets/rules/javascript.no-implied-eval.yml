@@ -5,3 +5,13 @@ description: Avoid sending JavaScript strings to APIs that evaluate them.
 fix: Pass a callback function instead of a string.
 implementation:
   rule_id: no-implied-eval
+guidance:
+  reports: >-
+    A string passed as code to setTimeout, setInterval or execScript (ESLint
+    no-implied-eval).
+  bad: |-
+    setTimeout("refresh()", 1000);
+  good: |-
+    setTimeout(() => refresh(), 1000);
+  suppress: >-
+    Do not suppress; the code does not do what it appears to.

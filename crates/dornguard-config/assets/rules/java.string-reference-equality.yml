@@ -6,3 +6,15 @@ fix: Use equals, or Objects.equals when either side can be null. == compares obj
 implementation:
   config: rules/pmd/java/string-reference-equality.xml
   rule_id: UseEqualsToCompareStrings
+guidance:
+  reports: >-
+    Strings compared with == or !=, as reported by PMD.
+  not_reported: >-
+    Comparisons with null.
+  bad: |-
+    if (role == "admin") { ... }
+  good: |-
+    if ("admin".equals(role)) { ... }
+  suppress: >-
+    Only for interned constants compared on a measured hot path; say so in
+    the reason.

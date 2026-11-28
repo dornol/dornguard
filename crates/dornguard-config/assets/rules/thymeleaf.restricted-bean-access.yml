@@ -6,3 +6,16 @@ fix: Compute the value in the controller and expose it as a model attribute.
 implementation:
   config: rules/semgrep/thymeleaf/restricted-bean-access.yml
   rule_id: thymeleaf-restricted-bean-access
+guidance:
+  reports: >-
+    A Spring bean reference (`${@bean...}`) in a direct expression of
+    th:href, th:src, th:utext, th:on*, th:insert or th:replace and their
+    data-th-* forms, including simple dynamic URL bases and fragment
+    selectors. Thymeleaf 3.1.4 and later can reject these at render time.
+  bad: |-
+    <a th:href="${@bookLinks.list()}">Books</a>
+  good: |-
+    <a th:href="${booksUrl}">Books</a> <!-- the controller adds booksUrl to the model -->
+  suppress: >-
+    Do not suppress; compute the value in the controller and expose it as a
+    model attribute.

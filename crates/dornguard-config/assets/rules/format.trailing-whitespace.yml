@@ -3,3 +3,15 @@ engine: builtin
 severity: error
 description: Remove trailing spaces and tabs.
 fix: Delete the whitespace at the end of this line.
+guidance:
+  reports: >-
+    Spaces or tabs at the end of a line, outside string literals and text
+    blocks.
+  bad: |-
+    int a = 1;··
+  good: |-
+    int a = 1;
+  suppress: >-
+    Only for files whose layout is owned elsewhere, such as generated or
+    vendored files; prefer format.exclude or an ignore entry with a path for
+    those.

@@ -7,3 +7,15 @@ jsp_only: true
 implementation:
   config: rules/semgrep/jsp/scripting-element.yml
   rule_id: jsp-scripting-element
+guidance:
+  reports: >-
+    JSP scripting elements: <% ... %>, <%= ... %>, <%! ... %> and their
+    <jsp:scriptlet>, <jsp:expression> and <jsp:declaration> forms.
+    Directives <%@ ... %> and comments are not reported.
+  bad: |-
+    <%= request.getParameter("name") %>
+  good: |-
+    <c:out value="${param.name}"/>
+  suppress: >-
+    Only in a legacy page scheduled for removal, with the ticket in the
+    reason.

@@ -6,3 +6,20 @@ fix: >-
   Apply the Kotlin JPA plugin, for example
   plugins { kotlin("plugin.jpa") version "<kotlin version>" }, which adds a
   no-arg constructor to @Entity, @Embeddable and @MappedSuperclass classes.
+guidance:
+  reports: >-
+    A Gradle Kotlin module without the kotlin("plugin.jpa") or noarg plugin
+    that declares an @Entity, @Embeddable or @MappedSuperclass class.
+    Reported once per module at the first such class.
+  bad: |-
+    plugins {
+        kotlin("jvm") version "2.4.21"
+    }
+  good: |-
+    plugins {
+        kotlin("jvm") version "2.4.21"
+        kotlin("plugin.jpa") version "2.4.21"
+    }
+  suppress: >-
+    Do not suppress; JPA cannot instantiate the entity without a no-arg
+    constructor.

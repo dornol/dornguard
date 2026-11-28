@@ -3,3 +3,22 @@ engine: clippy
 severity: warning
 description: Clippy reported a lint.
 fix: Follow the Clippy suggestion, or allow the lint in code with a reason when it does not apply.
+guidance:
+  reports: >-
+    Clippy lints (`clippy::...`) from cargo clippy --workspace --all-targets
+    with the project's lint levels. The lint is the diagnostic's subject; a
+    lint the project denies is an error.
+  not_reported: >-
+    Files under target directories.
+  bad: |-
+    if values.len() == 0 {
+        return;
+    }
+  good: |-
+    if values.is_empty() {
+        return;
+    }
+  suppress: >-
+    When the lint does not fit the code, allow it on the item with a reason;
+    allow a lint project-wide in [lints] in Cargo.toml instead of
+    suppressing many findings.

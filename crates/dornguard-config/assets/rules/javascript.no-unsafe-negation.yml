@@ -5,3 +5,13 @@ description: The ! operator applies to the left operand of in or instanceof inst
 fix: Parenthesize the test, for example !(key in object) or !(value instanceof Type).
 implementation:
   rule_id: no-unsafe-negation
+guidance:
+  reports: >-
+    ! applied to the left operand of in or instanceof (ESLint
+    no-unsafe-negation).
+  bad: |-
+    if (!key in settings) { ... }
+  good: |-
+    if (!(key in settings)) { ... }
+  suppress: >-
+    Do not suppress; the code does not do what it appears to.

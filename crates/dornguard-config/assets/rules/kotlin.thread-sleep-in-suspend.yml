@@ -6,3 +6,12 @@ fix: Use kotlinx.coroutines.delay for a suspending wait.
 implementation:
   config: rules/semgrep/kotlin/thread-sleep-in-suspend.yml
   rule_id: kotlin-thread-sleep-in-suspend
+guidance:
+  reports: >-
+    Thread.sleep inside a suspend function.
+  bad: |-
+    suspend fun poll() { Thread.sleep(1000) }
+  good: |-
+    suspend fun poll() { delay(1000) }
+  suppress: >-
+    Do not suppress; it blocks the thread the coroutine runs on.

@@ -6,3 +6,13 @@ fix: Remove the method, or call it where it was meant to run.
 implementation:
   config: rules/pmd/java/unused-private-method.xml
   rule_id: UnusedPrivateMethod
+guidance:
+  reports: >-
+    A private method that is never called, as reported by PMD.
+  bad: |-
+    private void leftover() {}
+  good: |-
+    // method removed
+  suppress: >-
+    When a framework calls it reflectively, such as a JUnit @MethodSource
+    factory or a serialization hook; name the caller in the reason.

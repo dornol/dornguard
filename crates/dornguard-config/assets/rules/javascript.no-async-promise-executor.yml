@@ -5,3 +5,15 @@ description: An async Promise executor can leave the outer Promise pending if it
 fix: Use an async function directly or keep the Promise executor synchronous.
 implementation:
   rule_id: no-async-promise-executor
+guidance:
+  reports: >-
+    An async function passed as the executor of new Promise (ESLint
+    no-async-promise-executor).
+  bad: |-
+    new Promise(async (resolve) => {
+      resolve(await load());
+    });
+  good: |-
+    const value = await load(); // or: load().then(resolve, reject)
+  suppress: >-
+    Do not suppress; the code does not do what it appears to.

@@ -5,3 +5,12 @@ description: A comparison with NaN is always false.
 fix: Use Number.isNaN(value). In a switch, test Number.isNaN before the switch.
 implementation:
   rule_id: use-isnan
+guidance:
+  reports: >-
+    A comparison with NaN (ESLint use-isnan).
+  bad: |-
+    if (total === NaN) { ... }
+  good: |-
+    if (Number.isNaN(total)) { ... }
+  suppress: >-
+    Do not suppress; the code does not do what it appears to.

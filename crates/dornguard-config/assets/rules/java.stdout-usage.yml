@@ -6,3 +6,16 @@ fix: Use the project logger.
 implementation:
   config: rules/semgrep/java/stdout-usage.yml
   rule_id: java-stdout-usage
+guidance:
+  reports: >-
+    System.out.println calls.
+  not_reported: >-
+    Calls inside a main entry point, because a command-line tool writes to
+    standard output by design. Helpers that main calls are still reported.
+  bad: |-
+    System.out.println("progress " + count);
+  good: |-
+    log.info("progress {}", count);
+  suppress: >-
+    When standard output is the program's interface, such as a tool whose
+    output another script reads; say so in the reason.

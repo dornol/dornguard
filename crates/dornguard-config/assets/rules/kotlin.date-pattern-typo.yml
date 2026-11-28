@@ -10,3 +10,17 @@ fix: >-
 implementation:
   config: rules/semgrep/kotlin/date-pattern-typo.yml
   rule_id: kotlin-date-pattern-typo
+guidance:
+  reports: >-
+    A DateTimeFormatter or SimpleDateFormat pattern literal in Kotlin with
+    the week-based year YYYY and no week field w, or the day of the year D
+    together with a month M.
+  not_reported: >-
+    String templates and applyPattern calls.
+  bad: |-
+    DateTimeFormatter.ofPattern("YYYY-MM-DD")
+  good: |-
+    DateTimeFormatter.ofPattern("yyyy-MM-dd")
+  suppress: >-
+    Only for a week-date or ordinal-date format the reader expects; name it
+    in the reason.

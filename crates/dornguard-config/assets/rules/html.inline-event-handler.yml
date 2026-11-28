@@ -7,3 +7,15 @@ all_html: true
 implementation:
   config: rules/semgrep/html/inline-event-handler.yml
   rule_id: html-inline-event-handler
+guidance:
+  reports: >-
+    Inline event attributes such as onclick and onerror, and the Thymeleaf
+    th:on* and data-th-on* forms, in HTML and templates.
+  bad: |-
+    <button onclick="save()">Save</button>
+  good: |-
+    <button id="save">Save</button>
+    <script src="/js/save.js"></script> <!-- addEventListener('click', save) -->
+  suppress: >-
+    Only for pages that are never served with a Content Security Policy that
+    blocks inline handlers, and say so in the reason.

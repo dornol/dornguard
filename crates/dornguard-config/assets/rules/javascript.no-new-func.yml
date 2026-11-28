@@ -5,3 +5,13 @@ description: Avoid creating functions from strings.
 fix: Use a declared function or a function expression.
 implementation:
   rule_id: no-new-func
+guidance:
+  reports: >-
+    new Function(...) or Function(...) creating a function from strings
+    (ESLint no-new-func).
+  bad: |-
+    const add = new Function("a", "b", "return a + b");
+  good: |-
+    const add = (a, b) => a + b;
+  suppress: >-
+    Only in tooling that compiles trusted templates; say so in the reason.

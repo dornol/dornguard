@@ -7,3 +7,24 @@ fix: Rethrow the exception or restore the interrupt status with Thread.currentTh
 implementation:
   config: rules/semgrep/java/ignored-interrupt.yml
   rule_id: java-ignored-interrupt
+guidance:
+  reports: >-
+    An InterruptedException catch block whose only statement is a logging
+    call, optionally followed by a bare return, so the interrupt status is
+    lost.
+  not_reported: >-
+    Blocks that rethrow, restore the status with
+    Thread.currentThread().interrupt() or call something other than a
+    logger.
+  bad: |-
+    catch (InterruptedException e) {
+        log.warn("Interrupted", e);
+    }
+  good: |-
+    catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        log.warn("Interrupted", e);
+    }
+  suppress: >-
+    When the thread ends right after the catch and nothing reads its
+    interrupt status; say so in the reason.

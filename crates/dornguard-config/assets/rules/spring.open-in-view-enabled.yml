@@ -7,3 +7,24 @@ fix: >-
   Set spring.jpa.open-in-view=false in application.properties or
   application.yml, and load what each response needs in the service with fetch
   joins, entity graphs or DTO queries.
+guidance:
+  reports: >-
+    A @SpringBootApplication class in a module whose build file, or a parent
+    build file, names spring-boot-starter-data-jpa, and whose
+    src/main/resources/application.properties, application.yml or
+    application.yaml does not set spring.jpa.open-in-view to false outside a
+    profile-specific document. With --changed it runs only when the
+    application class changes.
+  bad: |-
+    # application.yml
+    spring:
+      jpa:
+        show-sql: false
+  good: |-
+    # application.yml
+    spring:
+      jpa:
+        open-in-view: false
+  suppress: >-
+    When the property is set elsewhere, such as environment variables or a
+    config server; say where in the reason.

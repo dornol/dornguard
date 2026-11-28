@@ -10,15 +10,10 @@ version: 1
 profiles: [go]        # or [rust], or both beside JVM profiles
 ```
 
-| Rule | Tool | Default severity | Reports |
-| --- | --- | --- | --- |
-| `go.vet` | `go vet` | error | Every finding of the default `go vet` analyzers |
-| `rust.clippy` | `cargo clippy` | warning | Clippy lints (`clippy::...`) |
-| `rust.rustc-lint` | `cargo clippy` | warning | Compiler lints such as `unused_variables` and `dead_code` |
-
-Each diagnostic names the analyzer or lint in `subject`, for example `printf`
-or `clippy::len_zero`, and in its message. The tool's own suggestion, when it
-has one, is the fix text. DornGuard does not apply or report automatic edits.
+The rules are `go.vet`, `rust.clippy` (Clippy lints) and `rust.rustc-lint`
+(compiler lints). Each diagnostic names the analyzer or lint in `subject`, and
+the tool's own suggestion is the fix text. See `dornguard rules explain go.vet
+rust.clippy rust.rustc-lint` for what each reports and how to suppress it.
 
 `dornguard init` writes these profiles for a directory with `go.mod` or
 `Cargo.toml` and no Maven or Gradle build.

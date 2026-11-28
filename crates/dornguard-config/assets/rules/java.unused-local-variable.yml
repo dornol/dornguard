@@ -6,3 +6,17 @@ fix: Remove the variable, or use its value where it was meant to be used.
 implementation:
   config: rules/pmd/java/unused-local-variable.xml
   rule_id: UnusedLocalVariable
+guidance:
+  reports: >-
+    A local variable that is declared or assigned but never read, as
+    reported by PMD.
+  not_reported: >-
+    Variables whose name starts with ignored or unused.
+  bad: |-
+    String copy = label;
+    return format();
+  good: |-
+    return format();
+  suppress: >-
+    Not needed; rename a deliberately unused variable to ignored or unused,
+    for example in a catch or try-with-resources.

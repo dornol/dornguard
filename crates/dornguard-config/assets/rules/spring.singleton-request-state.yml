@@ -7,3 +7,24 @@ fix: Keep request data in local variables or a request-scoped object.
 implementation:
   config: rules/semgrep/spring/singleton-request-state.yml
   rule_id: spring-singleton-request-state
+guidance:
+  reports: >-
+    A Java Spring MVC singleton controller handler that stores one of its
+    parameters directly in a this field, sharing request data between
+    concurrent requests.
+  not_reported: >-
+    Request- and prototype-scoped controllers.
+  bad: |-
+    @GetMapping("/books")
+    String handler(@RequestParam String user) {
+        this.lastUser = user;
+        return render(user);
+    }
+  good: |-
+    @GetMapping("/books")
+    String handler(@RequestParam String user) {
+        return render(user);
+    }
+  suppress: >-
+    When the field is thread-safe and meant to hold the latest value, such
+    as a metrics gauge; say so in the reason.

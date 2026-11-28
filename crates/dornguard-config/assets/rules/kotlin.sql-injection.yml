@@ -7,3 +7,15 @@ fix: Use bind parameters such as ? or :name, and pass the values separately.
 implementation:
   config: rules/semgrep/kotlin/sql-injection.yml
   rule_id: kotlin-sql-injection
+guidance:
+  reports: >-
+    A JDBC, JPA or JdbcTemplate query method in Kotlin whose SQL string
+    interpolates, concatenates or formats a value.
+  bad: |-
+    jdbc.query("select * from book where title = '$title'", mapper)
+  good: |-
+    jdbc.query("select * from book where title = ?", mapper, title)
+  suppress: >-
+    When the interpolated value is a constant or comes from a fixed
+    allow-list, such as a validated sort column; name the allow-list in the
+    reason.

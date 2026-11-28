@@ -5,3 +5,12 @@ description: 'A javascript: URL runs code like eval and is blocked by a strict C
 fix: Attach an event listener, or use a regular URL.
 implementation:
   rule_id: no-script-url
+guidance:
+  reports: >-
+    A `javascript:` URL string (ESLint no-script-url).
+  bad: |-
+    link.href = "javascript:void(0)";
+  good: |-
+    link.addEventListener("click", (event) => event.preventDefault());
+  suppress: >-
+    Do not suppress; the code does not do what it appears to.

@@ -6,3 +6,23 @@ fix: Move @Transactional to the service method the controller calls, and keep th
 implementation:
   config: rules/semgrep/spring/transactional-in-controller.yml
   rule_id: spring-transactional-in-controller
+guidance:
+  reports: >-
+    Spring or JTA @Transactional on a @Controller or @RestController class
+    or on one of its methods.
+  bad: |-
+    @RestController
+    class CheckoutController {
+        @Transactional
+        @PostMapping("/orders")
+        String place(...) { ... }
+    }
+  good: |-
+    @Service
+    class CheckoutService {
+        @Transactional
+        void place(...) { ... }
+    }
+  suppress: >-
+    For a thin controller in a prototype or admin tool without a service
+    layer; say so in the reason.

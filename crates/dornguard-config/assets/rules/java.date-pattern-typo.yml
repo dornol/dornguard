@@ -10,3 +10,18 @@ fix: >-
 implementation:
   config: rules/semgrep/java/date-pattern-typo.yml
   rule_id: java-date-pattern-typo
+guidance:
+  reports: >-
+    A DateTimeFormatter, SimpleDateFormat or Commons Lang
+    FastDateFormat/DateFormatUtils pattern literal that uses the week-based
+    year YYYY without a week-of-year field w, or the day of the year D
+    together with a month M.
+  not_reported: >-
+    Patterns built at run time and applyPattern calls.
+  bad: |-
+    DateTimeFormatter.ofPattern("YYYY-MM-DD")
+  good: |-
+    DateTimeFormatter.ofPattern("yyyy-MM-dd")
+  suppress: >-
+    Only for a week-date or ordinal-date format that the reader expects, and
+    name that format in the reason.

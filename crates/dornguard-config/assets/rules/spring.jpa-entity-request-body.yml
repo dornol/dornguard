@@ -3,3 +3,22 @@ engine: builtin
 severity: warning
 description: A Spring MVC handler binds request data directly to a JPA entity, so a client can set any of its fields, including ones it must not change (mass assignment).
 fix: Bind the request to a DTO or record with only the fields the client may set, validate it, and copy those fields onto the entity in the service.
+guidance:
+  reports: >-
+    A Spring MVC handler parameter of a JPA entity type bound from the
+    request: @RequestBody, @ModelAttribute, or an unannotated object
+    parameter, including containers such as List<Book>.
+  not_reported: >-
+    @PathVariable and @RequestParam parameters, such as an entity resolved
+    by id.
+  bad: |-
+    @PostMapping("/orders")
+    Order place(@RequestBody Order order) { ... }
+  good: |-
+    record PlaceOrder(String productId, int quantity) {}
+
+    @PostMapping("/orders")
+    OrderView place(@RequestBody @Valid PlaceOrder request) { ... }
+  suppress: >-
+    When every entity field is safe for the client to set, such as an
+    internal admin tool; say so in the reason.

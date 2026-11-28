@@ -3,3 +3,20 @@ engine: builtin
 severity: warning
 description: This direct call bypasses the target method's asynchronous advice in Spring proxy mode.
 fix: Call the asynchronous operation through another Spring bean.
+guidance:
+  reports: >-
+    A direct Java call, unqualified or through this, to a same-class method
+    annotated with @Async, which runs synchronously because it bypasses the
+    proxy.
+  not_reported: >-
+    Calls through another bean or an injected self reference, and
+    parameterized calls the rule cannot resolve to one declared method.
+  bad: |-
+    void handle() { sendMail(); }
+
+    @Async
+    void sendMail() { ... }
+  good: |-
+    void handle() { mailer.sendMail(); } // @Async method on another bean
+  suppress: >-
+    When running synchronously here is intended; say so in the reason.

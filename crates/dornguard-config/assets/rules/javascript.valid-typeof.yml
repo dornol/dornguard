@@ -5,3 +5,12 @@ description: typeof is compared with a string it never returns.
 fix: 'Compare with one of "undefined", "object", "boolean", "number", "string", "function", "symbol" or "bigint".'
 implementation:
   rule_id: valid-typeof
+guidance:
+  reports: >-
+    typeof compared with a string it never returns (ESLint valid-typeof).
+  bad: |-
+    if (typeof callback === "fucntion") { ... }
+  good: |-
+    if (typeof callback === "function") { ... }
+  suppress: >-
+    Do not suppress; the code does not do what it appears to.

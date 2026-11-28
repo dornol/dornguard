@@ -167,3 +167,60 @@ fn organization_policy_reports_its_full_scope_alongside_changed_scope() {
     assert_eq!(failed["scope"], "full");
     assert_eq!(failed["diagnostics"][0]["path"], "src/Example.java");
 }
+
+#[test]
+fn rules_explain_gives_agents_scope_examples_and_suppression_syntax() {
+    let explain = |args: &[&str]| {
+        let output = Command::new(env!("CARGO_BIN_EXE_dornguard"))
+            .current_dir(env!("CARGO_MANIFEST_DIR"))
+            .args(["rules", "explain"])
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8(output.stdout).unwrap()
+    };
+    let text = explain(&["java.optional-misuse", "thymeleaf.unescaped-output"]);
+    for expected in [
+        "java.optional-misuse  ",
+        "Confidence: medium",
+        "Reports: ",
+        "Not reported: ",
+        "Bad:\n    ",
+        "Good:\n    ",
+        "Suppression: ",
+        "Suppress with: // dornguard-ignore java.optional-misuse -- ",
+        "Suppress with: <!-- dornguard-ignore thymeleaf.unescaped-output -- ",
+        "Configuration keys: thymeleaf_sanitizers",
+    ] {
+        assert!(text.contains(expected), "missing {expected:?} in\n{text}");
+    }
+
+    let json: Value = serde_json::from_str(&explain(&[
+        "architecture.service-independence",
+        "--format",
+        "json",
+    ]))
+    .unwrap();
+    let rule = &json["rules"][0];
+    assert_eq!(rule["id"], "architecture.service-independence");
+    assert_eq!(rule["profiles"][0], "layered");
+    assert!(
+        rule["example"]["bad"]
+            .as_str()
+            .unwrap()
+            .contains("controller")
+    );
+    // Class-level findings have no line to put a comment on.
+    assert!(
+        rule["suppress_with"]
+            .as_str()
+            .unwrap()
+            .starts_with("add to .dornguard.yml: ignore:"),
+        "{rule}"
+    );
+}

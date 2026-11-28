@@ -6,3 +6,14 @@ fix: Use the project logger.
 implementation:
   config: rules/semgrep/kotlin/stdout-usage.yml
   rule_id: kotlin-stdout-usage
+guidance:
+  reports: >-
+    println calls in Kotlin.
+  not_reported: >-
+    Calls inside a main entry point.
+  bad: |-
+    println("progress $count")
+  good: |-
+    log.info("progress {}", count)
+  suppress: >-
+    When standard output is the program's interface; say so in the reason.

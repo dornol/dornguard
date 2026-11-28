@@ -3,3 +3,17 @@ engine: builtin
 severity: error
 description: This file uses a different line ending than the configured format.
 fix: Save the file with the configured line ending.
+guidance:
+  reports: >-
+    A line ending other than the configured one (LF by default) anywhere in
+    the file.
+  bad: |-
+    class A {}\r\n
+  good: |-
+    class A {}\n
+  suppress: >-
+    Only for files whose layout is owned elsewhere, such as generated or
+    vendored files; prefer format.exclude or an ignore entry with a path for
+    those.
+  options: >-
+    format.line_ending (lf), format.overrides[].line_ending

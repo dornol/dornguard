@@ -7,3 +7,18 @@ fix: Use a short-circuit condition that accesses the value only when it is non-n
 implementation:
   config: rules/pmd/java/broken-null-check.xml
   rule_id: BrokenNullCheck
+guidance:
+  reports: >-
+    A null check that still dereferences the value when it is null, usually
+    && and || swapped, as reported by PMD.
+  bad: |-
+    if (name != null || name.isEmpty()) {
+        return;
+    }
+  good: |-
+    if (name == null || name.isEmpty()) {
+        return;
+    }
+  suppress: >-
+    Rarely; confirm the condition by evaluating it with a null value before
+    suppressing.

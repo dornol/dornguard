@@ -6,3 +6,23 @@ fix: Recover, report the exception, or propagate it to a caller that can handle 
 implementation:
   config: rules/pmd/java/empty-catch.xml
   rule_id: EmptyCatchBlock
+guidance:
+  reports: >-
+    A catch block with no statements and no comment, as reported by PMD.
+  not_reported: >-
+    A catch block that contains a comment explaining why the exception is
+    ignored.
+  bad: |-
+    try {
+        Files.delete(temp);
+    } catch (IOException e) {
+    }
+  good: |-
+    try {
+        Files.delete(temp);
+    } catch (IOException e) {
+        // The temporary file is removed on the next start.
+    }
+  suppress: >-
+    Not needed; a comment in the block that says why the exception is
+    ignored is enough.

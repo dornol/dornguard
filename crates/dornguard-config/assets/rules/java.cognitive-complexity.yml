@@ -7,3 +7,30 @@ fix: Extract nested conditions and loops into well-named methods, return early, 
 implementation:
   config: rules/pmd/java/cognitive-complexity.xml
   rule_id: CognitiveComplexity
+guidance:
+  reports: >-
+    A method whose PMD cognitive complexity is 15 or more (java-design
+    profile). Nesting, breaks in control flow and boolean operator sequences
+    add to it.
+  bad: |-
+    int score(int[] values, boolean strict) {
+        for (int value : values) {
+            if (value > 0) {
+                if (strict) {
+                    for (...) { if (... && ... || ...) { ... } else if (...) { ... } }
+                } else if (...) { while (...) { ... } }
+            } else { switch (value) { ... } }
+        }
+    }
+  good: |-
+    int score(int[] values, boolean strict) {
+        int total = 0;
+        for (int value : values) {
+            total += value > 0 ? positiveScore(value, strict) : negativeScore(value);
+        }
+        return total;
+    }
+  suppress: >-
+    When the method mirrors an external specification step by step, such as
+    a parser state machine, and splitting it would hide the mapping; say so
+    in the reason.

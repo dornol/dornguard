@@ -3,3 +3,19 @@ engine: builtin
 severity: warning
 description: This direct call bypasses the target method's retry advice in Spring proxy mode.
 fix: Call the retryable operation through another Spring bean.
+guidance:
+  reports: >-
+    A direct Java call to a same-class method with Spring Retry's
+    @Retryable, which runs once without retries.
+  not_reported: >-
+    Calls through another bean or an injected self reference, and
+    parameterized calls the rule cannot resolve to one declared method.
+  bad: |-
+    void sync() { push(); }
+
+    @Retryable
+    void push() { ... }
+  good: |-
+    void sync() { pusher.push(); } // @Retryable method on another bean
+  suppress: >-
+    When a single attempt is intended here; say so in the reason.

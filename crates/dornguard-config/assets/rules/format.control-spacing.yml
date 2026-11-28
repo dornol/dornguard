@@ -3,3 +3,21 @@ engine: builtin
 severity: error
 description: Use one space before a control statement's opening parenthesis.
 fix: Insert exactly one space between the control keyword and its opening parenthesis.
+guidance:
+  reports: >-
+    A control keyword (if, for, while, switch, catch, synchronized) not
+    followed by exactly one space before its opening parenthesis.
+  bad: |-
+    if(ready) {
+        run();
+    }
+  good: |-
+    if (ready) {
+        run();
+    }
+  suppress: >-
+    Only for files whose layout is owned elsewhere, such as generated or
+    vendored files; prefer format.exclude or an ignore entry with a path for
+    those.
+  options: >-
+    format.control_spacing (space), format.overrides[].control_spacing

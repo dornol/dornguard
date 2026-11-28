@@ -7,3 +7,22 @@ fix: If the failure must roll back the transaction, configure rollbackFor for th
 implementation:
   config: rules/semgrep/spring/checked-exception-rollback.yml
   rule_id: spring-checked-exception-rollback
+guidance:
+  reports: >-
+    A direct throw of a new IOException or SQLException from a method with a
+    bare or empty Spring @Transactional, in top-level statements or simple
+    top-level if branches (spring-rollback profile). Spring does not roll
+    back for checked exceptions by default.
+  not_reported: >-
+    Methods that set rollbackFor or noRollbackFor.
+  bad: |-
+    @Transactional
+    void importBooks() throws IOException {
+        throw new IOException("bad file");
+    }
+  good: |-
+    @Transactional(rollbackFor = IOException.class)
+    void importBooks() throws IOException { ... }
+  suppress: >-
+    When committing the work done before the exception is intended; say so
+    in the reason.

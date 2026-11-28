@@ -6,3 +6,17 @@ fix: Replace the wildcard with an import for each type the file uses.
 implementation:
   config: rules/semgrep/java/wildcard-import.yml
   rule_id: java-wildcard-import
+guidance:
+  reports: >-
+    A non-static or static wildcard import (`import ...*;`).
+  not_reported: >-
+    An unused wildcard import, which java.unnecessary-import reports
+    instead.
+  bad: |-
+    import java.util.*;
+  good: |-
+    import java.util.ArrayList;
+    import java.util.List;
+  suppress: >-
+    When a generated or vendored file uses it; prefer an ignore entry with
+    the file's path.
