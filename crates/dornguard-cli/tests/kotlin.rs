@@ -503,6 +503,28 @@ class Library @Autowired constructor(private val catalog: Catalog)
     );
 }
 
+#[cfg(unix)]
+#[test]
+#[ignore = "requires Gradle, JDK 21 and the pinned Semgrep"]
+fn a_gradle_wrapper_without_the_executable_bit_still_runs() {
+    use std::os::unix::fs::PermissionsExt;
+    let project = kotlin_fixture("kotlin-single");
+    let root = project.path();
+    // A wrapper committed from Windows has mode 100644.
+    fs::set_permissions(root.join("gradlew"), fs::Permissions::from_mode(0o644)).unwrap();
+    fs::write(
+        root.join("src/main/kotlin/example/Example.kt"),
+        "package example\n\nfun greet(): String = \"hello\"\n",
+    )
+    .unwrap();
+    let result = report(check(root).output().unwrap(), 0);
+    assert_eq!(result["complete"], true, "{result}");
+    assert!(
+        result["failures"].as_array().unwrap().is_empty(),
+        "{result}"
+    );
+}
+
 #[test]
 #[ignore = "requires Gradle, JDK 21 and the pinned Semgrep"]
 fn kotlin_spring_plugin_is_not_needed_for_overrides_in_open_classes() {

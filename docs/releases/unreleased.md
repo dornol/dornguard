@@ -67,6 +67,8 @@ ARM64. Linux ARM64 is new; `install.sh` selects it on `aarch64` machines.
   explains the annotation processor change and the fixes.
 - The Thymeleaf literal-markup hint finds the right column on lines with
   multibyte text.
+- A Gradle Wrapper committed without the executable bit, as from a Windows
+  checkout, runs through `sh` instead of failing with "Permission denied".
 - The Gradle project model works with Gradle 8.10 and earlier, where
   module dependencies failed with "Could not get unknown property 'path'".
 - Rules that skip test sources also skip JavaScript and TypeScript tests named

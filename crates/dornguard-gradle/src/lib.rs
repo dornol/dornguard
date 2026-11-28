@@ -21,6 +21,23 @@ struct Request<'a> {
     compile_all: bool,
 }
 
+/// A wrapper committed without the executable bit, as from a Windows checkout, still runs
+/// through `sh`, which is how Gradle's own scripts start it.
+fn wrapper_command(wrapper: &Path) -> Command {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let executable = std::fs::metadata(wrapper)
+            .is_ok_and(|metadata| metadata.permissions().mode() & 0o111 != 0);
+        if !executable {
+            let mut command = Command::new("sh");
+            command.arg(wrapper);
+            return command;
+        }
+    }
+    Command::new(wrapper)
+}
+
 pub async fn collect(root: &Path, compile: CompileModules<'_>) -> Result<ProjectModel> {
     #[cfg(windows)]
     let wrapper = root.join("gradlew.bat");
@@ -52,7 +69,7 @@ pub async fn collect(root: &Path, compile: CompileModules<'_>) -> Result<Project
     let mut property = std::ffi::OsString::from("-PdornguardModelRequest=");
     property.push(config_path);
 
-    let mut command = Command::new(wrapper);
+    let mut command = wrapper_command(&wrapper);
     command
         .current_dir(root)
         .kill_on_drop(true)
