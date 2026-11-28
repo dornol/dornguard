@@ -25,9 +25,10 @@ ARM64. Linux ARM64 is new; `install.sh` selects it on `aarch64` machines.
     `spring.request-mapping-without-method` (warning).
   - `security`: `security.jackson-default-typing` and `security.xxe`
     (warnings, medium confidence).
-  - `kotlin`: `kotlin.date-pattern-typo` and `kotlin.field-injection` (errors),
-    `kotlin.private-transactional` and `kotlin.jpa-data-class-entity`
-    (warnings).
+  - `kotlin`: `kotlin.date-pattern-typo`, `kotlin.field-injection` and
+    `kotlin.static-member-injection` (errors, the last for `@Value` in a
+    companion object or an `object`), `kotlin.private-transactional` and
+    `kotlin.jpa-data-class-entity` (warnings).
   - `javascript`: `no-unsafe-finally`, `no-self-compare`,
     `no-constant-binary-expression`, `no-unsafe-negation`,
     `no-unsafe-optional-chaining`, `use-isnan`, `valid-typeof` and
@@ -85,7 +86,8 @@ ARM64. Linux ARM64 is new; `install.sh` selects it on `aarch64` machines.
 New default rules can add findings, and the error-severity rules among them
 (`java.date-pattern-typo`, `java.string-reference-equality`,
 `spring.static-member-injection`, `kotlin.date-pattern-typo`,
-`kotlin.field-injection`, `kotlin.missing-spring-plugin`,
+`kotlin.field-injection`, `kotlin.static-member-injection`,
+`kotlin.missing-spring-plugin`,
 `kotlin.missing-jpa-plugin` and, with `layered`,
 `architecture.service-independence`) can fail a check that passed before. Run
 `dornguard check` after upgrading, then fix the findings, suppress them with a

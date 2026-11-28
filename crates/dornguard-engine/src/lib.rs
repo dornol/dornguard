@@ -5,8 +5,8 @@ use std::time::Duration;
 
 use dornguard_config::{
     ASYNC_SELF_RULE, CACHE_SELF_RULE, FormatConfig, JPA_REQUEST_RULE, JPA_RESPONSE_RULE,
-    OPEN_IN_VIEW_RULE, PartialParsingPolicy, RETRY_SELF_RULE, Registry, Rule,
-    TRANSACTIONAL_SELF_RULE,
+    KOTLIN_STATIC_INJECTION_RULE, OPEN_IN_VIEW_RULE, PartialParsingPolicy, RETRY_SELF_RULE,
+    Registry, Rule, TRANSACTIONAL_SELF_RULE,
 };
 use dornguard_core::{EngineName, Failure, FailureKind, FailureStage, Outcome, SourceLanguage};
 use miette::{IntoDiagnostic, Result, WrapErr, bail};
@@ -20,6 +20,7 @@ mod go_vet;
 mod install;
 mod java_names;
 mod jspecify;
+mod kotlin_static;
 mod open_in_view;
 mod pmd;
 mod rust_clippy;
@@ -84,6 +85,33 @@ pub async fn check_builtin(
         .copied()
         .partition(|rule| rule.is_format_rule());
     let mut outcome = Outcome::default();
+    let (kotlin_rules, java_rules): (Vec<_>, Vec<_>) = java_rules
+        .into_iter()
+        .partition(|rule| rule.id == KOTLIN_STATIC_INJECTION_RULE);
+    if !kotlin_rules.is_empty() {
+        let kotlin_files = request
+            .files
+            .iter()
+            .filter(|path| SourceLanguage::of(path) == Some(SourceLanguage::Kotlin))
+            .cloned()
+            .collect::<Vec<_>>();
+        for rule in kotlin_rules {
+            let files = kotlin_files
+                .iter()
+                .filter(|path| !rule.excludes_path(path))
+                .cloned()
+                .collect::<Vec<_>>();
+            let mut result = kotlin_static::check(
+                Request {
+                    files: &files,
+                    ..request
+                },
+                rule,
+            );
+            result.scanned_files.extend(files.iter().cloned());
+            outcome.merge(result);
+        }
+    }
     if !java_rules.is_empty() {
         let java_files = request
             .files

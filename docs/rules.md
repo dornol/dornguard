@@ -89,6 +89,7 @@ confirm a finding before fixing it.
 | [`kotlin.run-blocking-in-suspend`](#kotlinrun-blocking-in-suspend) | semgrep | warning | high | `kotlin` |
 | [`kotlin.run-catching-cancellation`](#kotlinrun-catching-cancellation) | semgrep | warning | medium | `kotlin` |
 | [`kotlin.sql-injection`](#kotlinsql-injection) | semgrep | error | medium | `kotlin` |
+| [`kotlin.static-member-injection`](#kotlinstatic-member-injection) | builtin | error | high | `kotlin` |
 | [`kotlin.stdout-usage`](#kotlinstdout-usage) | semgrep | error | high | `kotlin` |
 | [`kotlin.swallowed-cancellation`](#kotlinswallowed-cancellation) | semgrep | warning | medium | `kotlin` |
 | [`kotlin.thread-sleep-in-suspend`](#kotlinthread-sleep-in-suspend) | semgrep | warning | high | `kotlin` |
@@ -1959,6 +1960,32 @@ Good:
 
 ```kotlin
 jdbc.query("select * from book where title = ?", mapper, title)
+```
+
+## kotlin.static-member-injection
+
+Spring does not inject members of a companion object or an object declaration, which compile to static members, so the value stays unset.
+
+- Reports: Spring's @Value on a property or function, or @Autowired on a function, declared in a companion object or an object declaration, including use-site targets such as @field:Value.
+- Not reported: @Autowired properties, which kotlin.field-injection reports, members of a class nested inside the object, and annotations named Value from other packages.
+- Fix: Move the property into the bean class and take the value as a primary constructor parameter, such as `class Mailer(@Value("\${mail.host}") private val host: String)`, or bind it with @ConfigurationProperties and pass the bean where it is needed.
+- Suppression: Do not suppress; Spring never sets the value.
+
+Bad:
+
+```kotlin
+class Mailer {
+    companion object {
+        @Value("\${mail.host}")
+        lateinit var host: String
+    }
+}
+```
+
+Good:
+
+```kotlin
+class Mailer(@Value("\${mail.host}") private val host: String)
 ```
 
 ## kotlin.stdout-usage

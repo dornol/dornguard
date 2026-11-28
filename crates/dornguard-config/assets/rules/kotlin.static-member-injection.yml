@@ -1,0 +1,29 @@
+id: kotlin.static-member-injection
+engine: builtin
+severity: error
+description: Spring does not inject members of a companion object or an object declaration, which compile to static members, so the value stays unset.
+fix: >-
+  Move the property into the bean class and take the value as a primary
+  constructor parameter, such as `class Mailer(@Value("\${mail.host}") private
+  val host: String)`, or bind it with @ConfigurationProperties and pass the
+  bean where it is needed.
+guidance:
+  reports: >-
+    Spring's @Value on a property or function, or @Autowired on a function,
+    declared in a companion object or an object declaration, including
+    use-site targets such as @field:Value.
+  not_reported: >-
+    @Autowired properties, which kotlin.field-injection reports, members of a
+    class nested inside the object, and annotations named Value from other
+    packages.
+  bad: |-
+    class Mailer {
+        companion object {
+            @Value("\${mail.host}")
+            lateinit var host: String
+        }
+    }
+  good: |-
+    class Mailer(@Value("\${mail.host}") private val host: String)
+  suppress: >-
+    Do not suppress; Spring never sets the value.

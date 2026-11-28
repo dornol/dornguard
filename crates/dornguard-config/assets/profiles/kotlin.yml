@@ -13,6 +13,7 @@ rules:
   - kotlin.transactional-suspend
   - kotlin.sql-injection
   - kotlin.field-injection
+  - kotlin.static-member-injection
   - kotlin.private-transactional
   - kotlin.jpa-data-class-entity
   - kotlin.unmanaged-coroutine-scope

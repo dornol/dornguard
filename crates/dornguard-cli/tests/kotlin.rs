@@ -505,6 +505,60 @@ class Library @Autowired constructor(private val catalog: Catalog)
 
 #[test]
 #[ignore = "requires Gradle, JDK 21 and the pinned Semgrep"]
+fn kotlin_reports_injection_into_companion_and_object_members() {
+    let project = kotlin_fixture("kotlin-single");
+    let root = project.path();
+    let file = "src/main/kotlin/example/Example.kt";
+    fs::write(
+        root.join(file),
+        r#"package example
+
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.beans.factory.annotation.Value
+
+class Mailer(@Value("\${mail.host}") private val host: String) {
+    @Value("\${mail.port}")
+    var port: Int = 0
+
+    companion object {
+        @Value("\${mail.limit}")
+        var limit: Int = 0
+
+        @JvmStatic
+        @field:Value("\${mail.from}")
+        lateinit var from: String
+
+        @Autowired
+        fun configure(mailer: Any) {}
+    }
+}
+
+object Defaults {
+    @Value("\${mail.retries}")
+    var retries: Int = 0
+}
+"#,
+    )
+    .unwrap();
+    let result = report(check(root).output().unwrap(), 1);
+    assert_eq!(result["complete"], true, "{result}");
+    let findings = result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|finding| finding["rule_id"] == "kotlin.static-member-injection")
+        .map(|finding| {
+            (
+                finding["line"].as_u64().unwrap(),
+                finding["column"].as_u64().unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(findings, [(11, 9), (15, 9), (18, 9), (24, 5)], "{result}");
+}
+
+#[test]
+#[ignore = "requires Gradle, JDK 21 and the pinned Semgrep"]
 fn kotlin_reports_week_based_years_and_days_of_the_year_in_date_patterns() {
     let project = kotlin_fixture("kotlin-single");
     let root = project.path();

@@ -33,6 +33,7 @@ pub const UNNECESSARY_IMPORT_RULE: &str = "java.unnecessary-import";
 pub const RESOURCE_RULE: &str = "java.resource-not-closed";
 pub const PRESERVE_STACK_TRACE_RULE: &str = "java.preserve-stack-trace";
 pub const LOG_FORMAT_RULE: &str = "java.log-format-arguments";
+pub const KOTLIN_STATIC_INJECTION_RULE: &str = "kotlin.static-member-injection";
 pub const GO_VET_RULE: &str = "go.vet";
 pub const CLIPPY_RULE: &str = "rust.clippy";
 pub const RUSTC_LINT_RULE: &str = "rust.rustc-lint";
@@ -314,6 +315,9 @@ impl Rule {
                 SourceLanguage::Java | SourceLanguage::Kotlin | SourceLanguage::Javascript
             ),
             EngineName::Builtin if self.id == FLYWAY_RULE => false,
+            EngineName::Builtin if self.id == KOTLIN_STATIC_INJECTION_RULE => {
+                language == SourceLanguage::Kotlin
+            }
             EngineName::Pmd | EngineName::Builtin => language == SourceLanguage::Java,
             EngineName::GoVet => language == SourceLanguage::Go,
             EngineName::Clippy => language == SourceLanguage::Rust,
@@ -341,7 +345,8 @@ impl Rule {
     }
 
     pub fn enables_kotlin(&self) -> bool {
-        self.semgrep_languages.iter().any(|name| name == "kotlin")
+        self.id == KOTLIN_STATIC_INJECTION_RULE
+            || self.semgrep_languages.iter().any(|name| name == "kotlin")
     }
 
     pub fn skips_tests(&self) -> bool {
