@@ -69,6 +69,9 @@ ARM64. Linux ARM64 is new; `install.sh` selects it on `aarch64` machines.
   multibyte text.
 - The Gradle project model works with Gradle 8.10 and earlier, where
   module dependencies failed with "Could not get unknown property 'path'".
+- `java.preserve-stack-trace` no longer reports throwing the exception a caught
+  wrapper carries, such as `throw e.original()` or
+  `throw (RuntimeException) e.getCause()`.
 - `java.resource-not-closed` no longer reports a resource that a Spring `@Bean`
   method, or a private helper only `@Bean` methods call, hands to the object it
   builds, such as a connection manager passed to an HTTP client builder.

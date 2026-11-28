@@ -12,7 +12,9 @@ guidance:
     A catch block that throws a new exception without passing the caught one
     as its cause, as reported by PMD.
   not_reported: >-
-    Rethrowing the caught exception, also after an instanceof check, and,
+    Rethrowing the caught exception, also after an instanceof check,
+    throwing the exception a caught wrapper carries, such as
+    `throw e.original()` or `throw (RuntimeException) e.getCause()`, and,
     with allow_logged_exceptions, a caught exception that is logged first.
   bad: |-
     catch (NumberFormatException e) {

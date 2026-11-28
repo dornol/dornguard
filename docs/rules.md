@@ -1085,7 +1085,7 @@ Optional<User> find(String id) {
 This exception drops the original cause.
 
 - Reports: A catch block that throws a new exception without passing the caught one as its cause, as reported by PMD.
-- Not reported: Rethrowing the caught exception, also after an instanceof check, and, with allow_logged_exceptions, a caught exception that is logged first.
+- Not reported: Rethrowing the caught exception, also after an instanceof check, throwing the exception a caught wrapper carries, such as `throw e.original()` or `throw (RuntimeException) e.getCause()`, and, with allow_logged_exceptions, a caught exception that is logged first.
 - Fix: Pass the caught exception as the cause.
 - Suppression: When the cause must not leave a security boundary, such as an error returned to a client; say so in the reason.
 - Configuration: allow_logged_exceptions (false)
@@ -1188,6 +1188,7 @@ try {
 A method that returns a collection or array returns null.
 
 - Reports: `return null` in a method that returns a collection, map or array, as reported by PMD.
+- Not reported: A method whose return type declares null with @Nullable on its outermost type, such as `@Nullable List<String>` or `String @Nullable []`. `@Nullable String[]` marks only the elements nullable and stays reported.
 - Fix: Return an empty collection or array, such as List.of() or new String[0], so callers need no null check.
 - Suppression: When null means something different from empty to existing callers, such as 'not loaded'; say so in the reason, and prefer Optional for new code.
 
@@ -1235,7 +1236,7 @@ log.info("progress {}", count);
 Strings are compared with == or != instead of equals.
 
 - Reports: Strings compared with == or !=, as reported by PMD.
-- Not reported: Comparisons with null.
+- Not reported: Comparisons with null, and an identity check of a local initialized by a call that takes the other operand, such as `String encoded = encode(text); if (encoded == text)`, which asks whether the call returned the same instance.
 - Fix: Use equals, or Objects.equals when either side can be null. == compares object identity and fails for strings built at run time.
 - Suppression: Only for interned constants compared on a measured hot path; say so in the reason.
 

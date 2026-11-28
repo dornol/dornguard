@@ -8,7 +8,8 @@ use std::time::Duration;
 
 use crate::source::Sources;
 use dornguard_config::{
-    LOG_FORMAT_RULE, PRESERVE_STACK_TRACE_RULE, RESOURCE_RULE, UNNECESSARY_IMPORT_RULE,
+    LOG_FORMAT_RULE, PRESERVE_STACK_TRACE_RULE, RESOURCE_RULE, RETURN_NULL_COLLECTION_RULE,
+    STRING_REFERENCE_RULE, UNNECESSARY_IMPORT_RULE,
 };
 use dornguard_core::{Diagnostic, EngineName, Outcome, PMD_JAVA_DEFAULT, PMD_JAVA_VERSIONS};
 use miette::{IntoDiagnostic, Result, WrapErr, bail};
@@ -132,6 +133,40 @@ const RETHROWN_NARROWED_EXCEPTION: &str = concat!(
 );
 // A preceding direct log call in the same catch body runs on every
 // path to that throw. Require a resolved throwable overload and the unchanged catch parameter.
+// Throwing the exception that a caught wrapper carries, such as `throw e.original()` or
+// `throw (RuntimeException) e.getCause()`, keeps that exception's own stack trace. The
+// wrapper only transported it.
+const RETHROWN_CARRIED_EXCEPTION: &str = concat!(
+    "(self::MethodCall | self::CastExpression/MethodCall)",
+    "[parent::ThrowStatement or parent::CastExpression/parent::ThrowStatement]",
+    "[ArgumentList[@Size = 0]][let $caught := ancestor::CatchClause[1]/CatchParameter/@Name return ",
+    "*[1][self::VariableAccess][@Name = $caught] ",
+    "and not(ancestor::CatchClause[1]/Block//VariableAccess[@Name = $caught and @AccessType != 'READ'])]"
+);
+const RETURN_EMPTY_COLLECTION: &str =
+    "category/java/errorprone.xml/ReturnEmptyCollectionRatherThanNull";
+// A return type whose outermost type is annotated @Nullable, such as `@Nullable List<T>` or
+// `String @Nullable []`, declares null as a result. `@Nullable String[]` marks only the
+// elements nullable, so it stays reported.
+const NULLABLE_RETURN_TYPE: &str = concat!(
+    "ancestor::MethodDeclaration[1][(ArrayType and ",
+    "ArrayType/ArrayDimensions/ArrayTypeDim[1]/Annotation[@SimpleName = 'Nullable']) ",
+    "or (not(ArrayType) and (ModifierList/Annotation[@SimpleName = 'Nullable'] ",
+    "or ClassType/Annotation[@SimpleName = 'Nullable']))]"
+);
+const USE_EQUALS_TO_COMPARE_STRINGS: &str =
+    "category/java/errorprone.xml/UseEqualsToCompareStrings";
+// `String encoded = encode(text); if (encoded == text)` asks whether the call returned the
+// same instance it was given, which is an intentional identity check.
+const RETURNED_INSTANCE_IDENTITY: &str = concat!(
+    "self::InfixExpression[@Operator = ('==', '!=')][count(VariableAccess) = 2]",
+    "[let $a := VariableAccess[1]/@Name, $b := VariableAccess[2]/@Name, ",
+    "$block := ancestor::Block[1] return ",
+    "$block//LocalVariableDeclaration/VariableDeclarator[VariableId/@Name = $a]",
+    "/MethodCall[ArgumentList/VariableAccess[@Name = $b]] ",
+    "or $block//LocalVariableDeclaration/VariableDeclarator[VariableId/@Name = $b]",
+    "/MethodCall[ArgumentList/VariableAccess[@Name = $a]]]"
+);
 const LOGGED_EXCEPTION: &str = concat!(
     "parent::ThrowStatement[parent::Block/parent::CatchClause]",
     "[let $caught := parent::Block/parent::CatchClause/CatchParameter/@Name return ",
@@ -234,13 +269,20 @@ async fn scan(request: Request<'_>, settings: &Pmd<'_>, outcome: &mut Outcome) -
                 PRESERVE_STACK_TRACE,
                 if settings.allow_logged_exceptions {
                     Cow::Owned(format!(
-                        "{CAUSE_PRESERVING_EXCEPTION} | {RETHROWN_NARROWED_EXCEPTION} | {LOGGED_EXCEPTION}"
+                        "{CAUSE_PRESERVING_EXCEPTION} | {RETHROWN_NARROWED_EXCEPTION} | {RETHROWN_CARRIED_EXCEPTION} | {LOGGED_EXCEPTION}"
                     ))
                 } else {
                     Cow::Owned(format!(
-                        "{CAUSE_PRESERVING_EXCEPTION} | {RETHROWN_NARROWED_EXCEPTION}"
+                        "{CAUSE_PRESERVING_EXCEPTION} | {RETHROWN_NARROWED_EXCEPTION} | {RETHROWN_CARRIED_EXCEPTION}"
                     ))
                 },
+            )),
+            RETURN_NULL_COLLECTION_RULE => {
+                Some((RETURN_EMPTY_COLLECTION, Cow::Borrowed(NULLABLE_RETURN_TYPE)))
+            }
+            STRING_REFERENCE_RULE => Some((
+                USE_EQUALS_TO_COMPARE_STRINGS,
+                Cow::Borrowed(RETURNED_INSTANCE_IDENTITY),
             )),
             LOG_FORMAT_RULE => Some((
                 INVALID_LOG_MESSAGE_FORMAT,

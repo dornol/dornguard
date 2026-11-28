@@ -10,6 +10,11 @@ guidance:
   reports: >-
     `return null` in a method that returns a collection, map or array, as
     reported by PMD.
+  not_reported: >-
+    A method whose return type declares null with @Nullable on its outermost
+    type, such as `@Nullable List<String>` or `String @Nullable []`.
+    `@Nullable String[]` marks only the elements nullable and stays
+    reported.
   bad: |-
     List<String> names() {
         if (!loaded) return null;

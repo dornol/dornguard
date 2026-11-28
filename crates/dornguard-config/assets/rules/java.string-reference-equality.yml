@@ -10,7 +10,10 @@ guidance:
   reports: >-
     Strings compared with == or !=, as reported by PMD.
   not_reported: >-
-    Comparisons with null.
+    Comparisons with null, and an identity check of a local initialized by a
+    call that takes the other operand, such as `String encoded =
+    encode(text); if (encoded == text)`, which asks whether the call
+    returned the same instance.
   bad: |-
     if (role == "admin") { ... }
   good: |-
