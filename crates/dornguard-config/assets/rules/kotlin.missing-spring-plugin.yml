@@ -15,7 +15,8 @@ guidance:
     @Retryable or @Validated. Reported once per module at the first such
     declaration.
   not_reported: >-
-    Declarations marked open or abstract, and interfaces.
+    Declarations marked open or abstract, override functions (other than
+    final override) in an open class, and interfaces.
   bad: |-
     plugins {
         kotlin("jvm") version "2.4.21"

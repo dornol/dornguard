@@ -505,6 +505,58 @@ class Library @Autowired constructor(private val catalog: Catalog)
 
 #[test]
 #[ignore = "requires Gradle, JDK 21 and the pinned Semgrep"]
+fn kotlin_spring_plugin_is_not_needed_for_overrides_in_open_classes() {
+    let project = kotlin_fixture("kotlin-single");
+    let root = project.path();
+    let file = "src/main/kotlin/example/Example.kt";
+    let plugin_lines = |source: &str| {
+        fs::write(root.join(file), source).unwrap();
+        let result = report(
+            check(root).output().unwrap(),
+            i32::from(source.contains("Closed")),
+        );
+        result["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|finding| finding["rule_id"] == "kotlin.missing-spring-plugin")
+            .map(|finding| finding["line"].as_u64().unwrap())
+            .collect::<Vec<_>>()
+    };
+    let open = r#"package example
+
+import org.springframework.transaction.annotation.Transactional
+
+interface Lookup {
+    fun exists(name: String): Boolean
+}
+
+open class Accounts : Lookup {
+    @Transactional(readOnly = true)
+    override fun exists(name: String): Boolean = name.isNotEmpty()
+}
+"#;
+    assert!(plugin_lines(open).is_empty());
+    // A final class cannot be proxied even when the function is open, and a final
+    // override cannot be overridden.
+    let closed = format!(
+        "{open}
+class Closed : Lookup {{
+    @Transactional(readOnly = true)
+    override fun exists(name: String): Boolean = false
+}}
+"
+    );
+    assert_eq!(plugin_lines(&closed), [15]);
+    let final_override = open.replace("    override fun", "    final override fun");
+    assert_eq!(
+        plugin_lines(&final_override.replace("Accounts", "Closed")),
+        [10]
+    );
+}
+
+#[test]
+#[ignore = "requires Gradle, JDK 21 and the pinned Semgrep"]
 fn kotlin_reports_injection_into_companion_and_object_members() {
     let project = kotlin_fixture("kotlin-single");
     let root = project.path();

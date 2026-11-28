@@ -1808,7 +1808,7 @@ plugins {
 A Gradle module declares final Kotlin classes that Spring must proxy, such as @Configuration or @Transactional classes, without the Kotlin Spring compiler plugin.
 
 - Reports: A Gradle Kotlin module without the kotlin("plugin.spring") or allopen plugin that has a final class or function annotated with @Configuration, @SpringBootApplication, @Transactional, @Async, a cache annotation, @Retryable or @Validated. Reported once per module at the first such declaration.
-- Not reported: Declarations marked open or abstract, and interfaces.
+- Not reported: Declarations marked open or abstract, override functions (other than final override) in an open class, and interfaces.
 - Fix: Apply the Kotlin Spring plugin, for example plugins { kotlin("plugin.spring") version "<kotlin version>" }, which opens Spring-annotated classes and their members. Declaring each class and function open also works.
 - Suppression: Do not suppress; apply the plugin, or mark each proxied class and function open.
 

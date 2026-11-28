@@ -137,8 +137,13 @@ fn first_use(
                     false
                 } else if !check.open_suffices {
                     line.contains("class ")
+                } else if line.contains("class ") {
+                    !is_open(line)
                 } else {
-                    !line.contains("open ") && !line.contains("abstract ")
+                    // A proxy can override the function only if its class is open too.
+                    !is_open(line)
+                        || enclosing_class(&lines[..index], line)
+                            .is_some_and(|class| !is_open(class))
                 }
             });
             if needs_plugin {
@@ -147,6 +152,24 @@ fn first_use(
         }
     }
     None
+}
+
+/// Whether a class or function declaration line is open to subclasses. An `override`
+/// member stays open unless it is `final override`.
+fn is_open(line: &str) -> bool {
+    line.contains("open ")
+        || line.contains("abstract ")
+        || (line.contains("override ") && !line.contains("final "))
+}
+
+/// The nearest class declaration above `member` that is indented less than it.
+fn enclosing_class<'l>(above: &[&'l str], member: &str) -> Option<&'l str> {
+    let indent = |line: &str| line.len() - line.trim_start().len();
+    above
+        .iter()
+        .rev()
+        .find(|line| line.contains("class ") && indent(line) < indent(member))
+        .copied()
 }
 
 fn diagnostic(
