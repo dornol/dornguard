@@ -804,6 +804,111 @@ class Example {
 
 #[test]
 #[ignore = "requires the pinned Semgrep and PMD engines"]
+fn bean_methods_hand_resources_to_the_object_they_build() {
+    let project = project(
+        r#"import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.Properties;
+import org.springframework.context.annotation.Bean;
+
+class Example {
+    static class Pool implements AutoCloseable {
+        public void close() {}
+    }
+
+    static class Client implements AutoCloseable {
+        Client(Pool pool) {}
+        public void close() {}
+    }
+
+    static class Builder {
+        Builder pool(Pool pool) { return this; }
+        Client build() { return new Client(new Pool()); }
+    }
+
+    static class Api {
+        Api(Client client) {}
+    }
+
+    @Bean
+    Api built() {
+        Pool pool = new Pool();
+        Client client = new Builder().pool(pool).build();
+        return new Api(client);
+    }
+
+    @Bean
+    Api constructed() {
+        Pool pool = new Pool();
+        Client client = new Client(pool);
+        return new Api(client);
+    }
+
+    @Bean
+    Properties loaded() throws IOException {
+        InputStream in = new FileInputStream("app.properties");
+        Properties properties = new Properties();
+        properties.load(in);
+        return properties;
+    }
+
+    @Bean
+    Api reassigned() {
+        Pool pool = new Pool();
+        pool = new Pool();
+        return new Api(new Client(pool));
+    }
+
+    Api notBean() {
+        Pool pool = new Pool();
+        Client client = new Client(pool);
+        return new Api(client);
+    }
+
+    @Bean
+    Api first() { return helper(); }
+
+    @Bean
+    Api second() { return this.helper(); }
+
+    private Api helper() {
+        Pool pool = new Pool();
+        Client client = new Builder().pool(pool).build();
+        return new Api(client);
+    }
+
+    Api plain() { return shared(); }
+
+    @Bean
+    Api third() { return shared(); }
+
+    private Api shared() {
+        Pool pool = new Pool();
+        Client client = new Builder().pool(pool).build();
+        return new Api(client);
+    }
+}
+"#,
+    );
+    let root = project.path();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [java]\n",
+    )
+    .unwrap();
+    let result = report(check(root).output().unwrap(), 0);
+    // The stream loaded by a plain call, the reassignment of a pool, the pool outside a @Bean
+    // method and the pool in a helper that a plain method also calls.
+    assert_eq!(
+        lines_of(&result, "java.resource-not-closed"),
+        [42, 51, 56, 79],
+        "{result}"
+    );
+}
+
+#[test]
+#[ignore = "requires the pinned Semgrep and PMD engines"]
 fn rethrowing_the_narrowed_caught_exception_keeps_its_cause() {
     let project = project(
         r#"import java.io.IOException;

@@ -15,7 +15,10 @@ guidance:
   not_reported: >-
     Resources returned to the caller, stored in a field the class closes,
     opened by factories listed in java_managed_resource_factories, or owned
-    by types in java_resource_owners.
+    by types in java_resource_owners. In a Spring @Bean method, a resource
+    the method only passes to a constructor or a builder chain in a local
+    initializer or the return statement, since the bean being built owns it;
+    the same holds in a private helper that only @Bean methods call.
   bad: |-
     InputStream in = Files.newInputStream(file);
     return in.readAllBytes();

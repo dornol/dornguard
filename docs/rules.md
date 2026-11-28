@@ -1133,7 +1133,7 @@ catch (IOException e) {
 The code may leave a Java resource open.
 
 - Reports: A resource such as a stream, reader or JDBC connection that the code opens and may leave open on some path, as reported by PMD's CloseResource.
-- Not reported: Resources returned to the caller, stored in a field the class closes, opened by factories listed in java_managed_resource_factories, or owned by types in java_resource_owners.
+- Not reported: Resources returned to the caller, stored in a field the class closes, opened by factories listed in java_managed_resource_factories, or owned by types in java_resource_owners. In a Spring @Bean method, a resource the method only passes to a constructor or a builder chain in a local initializer or the return statement, since the bean being built owns it; the same holds in a private helper that only @Bean methods call.
 - Fix: Use try-with-resources or close the resource according to its ownership.
 - Suppression: When ownership passes elsewhere in a way PMD cannot see, such as a framework that closes it; name the owner in the reason, or list it in java_resource_owners.
 - Configuration: java_target, java_resource_owners, java_managed_resource_factories

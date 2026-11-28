@@ -76,6 +76,30 @@ const BORROWED_RESOURCE: &str = concat!(
     "[parent::LocalVariableDeclaration[count(VariableDeclarator) = 1]/parent::Block",
     "[not(.//VariableAccess[@Name = $resource and @AccessType != 'READ'])]]]"
 );
+// A @Bean method builds an object that the container keeps for the application's lifetime.
+// A local resource that the method only hands to a constructor or to a builder chain, in a
+// local initializer or the return statement, belongs to the object being built. A private
+// helper that only @Bean methods of the same class call builds the bean too. A resource
+// also passed to a plain call, such as Properties.load(in), or reassigned stays reported.
+const BEAN_OWNED_RESOURCE: &str = concat!(
+    "self::VariableId[let $method := ancestor::MethodDeclaration[1] return ",
+    "$method[pmd-java:hasAnnotation('org.springframework.context.annotation.Bean')] ",
+    "or $method[@Visibility = 'private'][let $name := @Name, ",
+    "$calls := ancestor::ClassBody[1]//MethodCall[@MethodName = $name]",
+    "[*[1][self::ArgumentList or self::ThisExpression]] return exists($calls) ",
+    "and (every $call in $calls satisfies exists($call/ancestor::MethodDeclaration[1]",
+    "[pmd-java:hasAnnotation('org.springframework.context.annotation.Bean')]))]]",
+    "[let $resource := @Name, $body := ancestor::MethodDeclaration[1]/Block, ",
+    "$uses := ancestor::MethodDeclaration[1]/Block//ArgumentList/VariableAccess[@Name = $resource] return ",
+    "parent::VariableDeclarator/parent::LocalVariableDeclaration[count(VariableDeclarator) = 1] ",
+    "and exists($uses) ",
+    "and not($body//VariableAccess[@Name = $resource and @AccessType != 'READ']) ",
+    "and (every $use in $uses satisfies exists($use/parent::ArgumentList/parent::*",
+    "[self::ConstructorCall or self::MethodCall[*[1][self::MethodCall or self::ConstructorCall]]]",
+    "[ancestor::*[self::ExpressionStatement or self::LocalVariableDeclaration ",
+    "or self::ReturnStatement or self::LambdaExpression][1]",
+    "[self::LocalVariableDeclaration or self::ReturnStatement]]))]"
+);
 // A shutdown on this exact ExecutorService at the start of the immediately
 // following finally block runs on both normal and exceptional exits.
 const SHUTDOWN_EXECUTOR: &str = concat!(
@@ -177,6 +201,7 @@ async fn scan(request: Request<'_>, settings: &Pmd<'_>, outcome: &mut Outcome) -
                     CLOSED_PATTERN_RESOURCE,
                     BORROWED_RESOURCE,
                     SHUTDOWN_EXECUTOR,
+                    BEAN_OWNED_RESOURCE,
                 ];
                 if settings.java_target.is_some_and(|target| target < 21) {
                     conditions.push(NON_CLOSEABLE_HTTP_CLIENT);

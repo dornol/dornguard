@@ -63,6 +63,9 @@ ARM64. Linux ARM64 is new; `install.sh` selects it on `aarch64` machines.
   explains the annotation processor change and the fixes.
 - The Thymeleaf literal-markup hint finds the right column on lines with
   multibyte text.
+- `java.resource-not-closed` no longer reports a resource that a Spring `@Bean`
+  method, or a private helper only `@Bean` methods call, hands to the object it
+  builds, such as a connection manager passed to an HTTP client builder.
 - Rule guidance for coding agents. `dornguard rules explain RULE...` prints
   what each rule reports and does not report, the fix, a bad and a good
   example, when suppression is legitimate and the exact suppression syntax;
