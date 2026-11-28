@@ -311,6 +311,41 @@ export const link = "javascript:void(0)";
     );
 }
 
+#[test]
+#[ignore = "requires ESLint 9 or 10, @typescript-eslint/parser and @typescript-eslint/eslint-plugin"]
+fn an_unreadable_tsconfig_skips_typed_rules_with_a_note() {
+    let project = project("class Unused {}\n");
+    let root = project.path();
+    fs::remove_file(root.join("src/Example.java")).unwrap();
+    fs::write(
+        root.join(".dornguard.yml"),
+        "version: 1\nprofiles: [typescript-review]\n",
+    )
+    .unwrap();
+    // SvelteKit generates the extended file with `svelte-kit sync`.
+    fs::write(
+        root.join("tsconfig.json"),
+        r#"{ "extends": "./.svelte-kit/tsconfig.json", "include": ["src"] }"#,
+    )
+    .unwrap();
+    fs::write(
+        root.join("src/app.ts"),
+        "async function save(): Promise<void> {}\nsave();\n",
+    )
+    .unwrap();
+    let result = report(check(root).output().unwrap(), 0);
+    assert_eq!(result["complete"], true, "{result}");
+    assert!(
+        result["failures"].as_array().unwrap().is_empty(),
+        "{result}"
+    );
+    assert_eq!(
+        result["analysis_notes"][0],
+        "Rules that use type information skip TypeScript files whose tsconfig.json cannot be read (error TS5012: Cannot read file '.svelte-kit/tsconfig.json'). Create the files it extends, for example with the framework's sync or build step, to check them.",
+        "{result}"
+    );
+}
+
 /// The first executable `name` on PATH, with symlinks resolved.
 #[cfg(unix)]
 fn on_path(name: &str) -> Option<std::path::PathBuf> {

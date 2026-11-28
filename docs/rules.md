@@ -125,7 +125,7 @@ confirm a finding before fixing it.
 | [`spring.transactional-self-invocation`](#springtransactional-self-invocation) | builtin | warning | high | `spring-boot` |
 | [`thymeleaf.restricted-bean-access`](#thymeleafrestricted-bean-access) | semgrep | error | high | `thymeleaf` |
 | [`thymeleaf.unescaped-output`](#thymeleafunescaped-output) | semgrep | warning | medium | `thymeleaf-output-review` |
-| [`typescript.no-floating-promises`](#typescriptno-floating-promises) | eslint | warning | high | `typescript-review` |
+| [`typescript.no-floating-promises`](#typescriptno-floating-promises) | eslint | warning | medium | `typescript-review` |
 
 ## architecture.adapter-isolation
 
@@ -1950,8 +1950,8 @@ val result = try {
 SQL text built by string interpolation, concatenation, or formatting can allow SQL injection.
 
 - Reports: A JDBC, JPA or JdbcTemplate query method in Kotlin whose SQL string interpolates, concatenates or formats a value.
-- Fix: Use bind parameters such as ? or :name, and pass the values separately.
-- Suppression: When the interpolated value is a constant or comes from a fixed allow-list, such as a validated sort column; name the allow-list in the reason.
+- Fix: Use bind parameters such as ? or :name, and pass the values separately. A table or column name cannot be bound: check it against an allow-list or a strict identifier pattern where it enters the code, then suppress the finding and name that check in the reason.
+- Suppression: When the interpolated value is a constant or comes from a fixed allow-list, such as a validated sort column, or is a table or column name checked against a strict identifier pattern such as [A-Za-z_][A-Za-z0-9_]* before it reaches the query; name the check in the reason.
 
 Bad:
 
@@ -2240,8 +2240,8 @@ SQL text built by string concatenation or formatting can allow SQL injection.
 
 - Reports: A JDBC, JPA or JdbcTemplate query method whose SQL argument is built by concatenation or formatting and contains SQL text such as select, update or drop in a string literal.
 - Not reported: Calls whose string literals contain no SQL keyword, such as signature.update("id=" + name).
-- Fix: Use bind parameters such as ? or :name, and pass the values separately.
-- Suppression: When the concatenated value is a constant or comes from a fixed allow-list, such as a validated sort column; name the allow-list in the reason.
+- Fix: Use bind parameters such as ? or :name, and pass the values separately. A table or column name cannot be bound: check it against an allow-list or a strict identifier pattern where it enters the code, then suppress the finding and name that check in the reason.
+- Suppression: When the concatenated value is a constant or comes from a fixed allow-list, such as a validated sort column, or is a table or column name checked against a strict identifier pattern such as [A-Za-z_][A-Za-z0-9_]* before it reaches the query; name the check in the reason.
 
 Bad:
 
@@ -2825,7 +2825,7 @@ A Promise is neither awaited nor handled, so its rejection goes unnoticed and th
 - Reports: An expression statement whose value TypeScript types as a Promise, or an array of Promises, that is not awaited, returned, or given a rejection handler (typescript-eslint no-floating-promises, with type information; typescript-review profile).
 - Not reported: A call prefixed with void, a Promise with .catch() or a two-argument .then(), and TypeScript files that no tsconfig.json project includes; the report notes how many files that skips. Values whose types cannot be resolved, such as imports from packages that are not installed.
 - Fix: Await the Promise, return it, or handle its rejection with .catch() or a two-argument .then(). Mark an intentional fire-and-forget call with the void operator.
-- Suppression: Prefer void for an intentional fire-and-forget call. Suppress only when a framework handles the Promise in a way the types do not show; say so in the reason.
+- Suppression: Prefer void for an intentional fire-and-forget call, such as an audit log write whose function catches its own errors. Suppress only when a framework handles the Promise in a way the types do not show; say so in the reason.
 
 Bad:
 

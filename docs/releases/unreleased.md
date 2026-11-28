@@ -53,7 +53,9 @@ ARM64. Linux ARM64 is new; `install.sh` selects it on `aarch64` machines.
     `kotlin-review` (`kotlin.not-null-assertion`) and `typescript-review`
     (`typescript.no-floating-promises`, which uses TypeScript type
     information from the project's `tsconfig.json` and skips, with a note,
-    TypeScript files that no `tsconfig.json` project includes).
+    TypeScript files that no `tsconfig.json` project includes or whose
+    `tsconfig.json` cannot be read, such as before `svelte-kit sync`; medium
+    confidence).
 - `dornguard engines install eslint` installs a pinned ESLint, TypeScript parser
   and TypeScript from a lockfile with integrity hashes, without install scripts.
   `dornguard engines install osv-scanner` downloads a pinned, checksum-verified

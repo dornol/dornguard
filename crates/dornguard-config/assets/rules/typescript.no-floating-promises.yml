@@ -1,6 +1,7 @@
 id: typescript.no-floating-promises
 engine: eslint
 severity: warning
+confidence: medium
 description: A Promise is neither awaited nor handled, so its rejection goes unnoticed and the code after it does not wait for it.
 fix: Await the Promise, return it, or handle its rejection with .catch() or a two-argument .then(). Mark an intentional fire-and-forget call with the void operator.
 implementation:
@@ -25,6 +26,7 @@ guidance:
     // or, intentionally in the background:
     void save(order).catch(report);
   suppress: >-
-    Prefer void for an intentional fire-and-forget call. Suppress only when a
+    Prefer void for an intentional fire-and-forget call, such as an audit log
+    write whose function catches its own errors. Suppress only when a
     framework handles the Promise in a way the types do not show; say so in
     the reason.

@@ -224,6 +224,24 @@ fn record_report(
         outcome.scanned_files.insert(path);
         return Ok(1);
     }
+    // A tsconfig.json that extends a generated file, such as SvelteKit's
+    // .svelte-kit/tsconfig.json before `svelte-kit sync`, cannot be read. Report it once
+    // instead of as an engine error on every file it covers.
+    if typed
+        && let Some(error) = report.messages.iter().find_map(|finding| {
+            (finding.fatal
+                && finding
+                    .message
+                    .contains("Unable to parse the specified 'tsconfig' file"))
+            .then(|| tsconfig_error(root, &finding.message))
+        })
+    {
+        outcome.analysis_notes.insert(format!(
+            "Rules that use type information skip TypeScript files whose tsconfig.json cannot be read ({error}). Create the files it extends, for example with the framework's sync or build step, to check them."
+        ));
+        outcome.scanned_files.insert(path);
+        return Ok(0);
+    }
     for finding in report.messages {
         if finding.fatal {
             let mut failure = engine_failure(ENGINE, finding.message);
@@ -292,6 +310,23 @@ fn record_report(
         outcome.scanned_files.insert(path);
     }
     Ok(0)
+}
+
+/// The TypeScript error line of an unreadable tsconfig.json, with paths relative to `root`.
+fn tsconfig_error(root: &std::path::Path, message: &str) -> String {
+    let line = message
+        .lines()
+        .find(|line| line.trim_start().starts_with("error TS"))
+        .unwrap_or_else(|| message.lines().next().unwrap_or_default())
+        .trim();
+    let root = format!("{}/", root.display());
+    let line = line.replace(&root, "");
+    // TypeScript repeats the path after "ENOENT: ..., open"; keep the first clause.
+    line.split(": ENOENT")
+        .next()
+        .unwrap_or(&line)
+        .trim_end_matches(':')
+        .to_owned()
 }
 
 /// Whether the `javascript:` literal at `start..end` is a value the code checks for, such as
@@ -431,6 +466,16 @@ struct Finding {
 mod tests {
     #![allow(clippy::unwrap_used)]
     use super::*;
+
+    #[test]
+    fn an_unreadable_tsconfig_is_named_relative_to_the_project() {
+        let root = std::path::Path::new("/work/app");
+        let message = "Parsing error: Unable to parse the specified 'tsconfig' file. Ensure it's correct and has valid syntax.\n\nerror TS5012: Cannot read file '/work/app/.svelte-kit/tsconfig.json': ENOENT: no such file or directory, open '/work/app/.svelte-kit/tsconfig.json'.\n";
+        assert_eq!(
+            tsconfig_error(root, message),
+            "error TS5012: Cannot read file '.svelte-kit/tsconfig.json'"
+        );
+    }
 
     #[test]
     fn a_checked_scheme_is_not_a_script_url() {

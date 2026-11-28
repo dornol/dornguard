@@ -975,7 +975,7 @@ mod tests {
 
     /// Rules whose findings need a judgment. Adding to this list is a decision:
     /// a rule belongs here when it infers intent from code shape.
-    const MEDIUM_CONFIDENCE: [&str; 32] = [
+    const MEDIUM_CONFIDENCE: [&str; 33] = [
         "java.assert-throws-nested-call",
         "java.broken-null-check",
         "java.cognitive-complexity",
@@ -1008,6 +1008,7 @@ mod tests {
         "spring.shared-simple-date-format",
         "spring.singleton-request-state",
         "thymeleaf.unescaped-output",
+        "typescript.no-floating-promises",
     ];
 
     #[test]
